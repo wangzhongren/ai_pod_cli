@@ -1,0 +1,4 @@
+openai
+injector
+python-dotenv
+tomlkit

@@ -1,0 +1,26 @@
+# Environment
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Project runtime files (generated at runtime, not part of the framework)
+data.db
+beans_config.json
+config.toml
+routes.toml
+modules/*.py
+!modules/__init__.py
+pipelines/*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+cli.py

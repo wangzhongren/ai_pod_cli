@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "AIPodCli"
+version = "0.1.0"
+description = "AI-native Python development framework"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+dependencies = [
+    "openai",
+    "injector",
+    "python-dotenv",
+    "tomlkit",
+]
+
+[project.scripts]
+ai-pod = "ai_pod_cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ai_pod_cli*"]
