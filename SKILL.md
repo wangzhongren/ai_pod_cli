@@ -5,6 +5,14 @@
 You are working with **AIPodCli**, an AI-native Python development framework.
 Your role is to help developers use this framework to build applications where AI generates components and pipelines, and the framework handles DI assembly and execution.
 
+## Installation
+
+```bash
+pip install aipodcli
+```
+
+This installs the `ai_pod_cli` package and the `ai-pod` CLI entry point. All dependencies (openai, injector, python-dotenv, tomlkit) are installed automatically.
+
 ## Quick Decision Tree
 
 ```
@@ -265,10 +273,11 @@ project/
 ├── .env                             ← LLM API config (not committed)
 ├── modules/                         ← AI-generated components
 │   └── *.py
-├── pipelines/                       ← AI-generated pipelines
-│   └── *.py
-└── ai_pod_cli/                      ← Framework source (pip installed)
+└── pipelines/                       ← AI-generated pipelines
+    └── *.py
 ```
+
+Framework source (`ai_pod_cli/`) is installed via pip, not part of the user's project.
 
 ## Troubleshooting
 
