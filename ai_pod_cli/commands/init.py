@@ -61,7 +61,7 @@ def handle_init(args):
         skipped.append(f"📄 {CONFIG_TOML} (已存在)")
 
     if not routes_exists:
-        created.append(f"📄 {ROUTES_TOML} (路由配置，build 自动注册 pipeline)")
+        created.append(f"📄 {ROUTES_TOML} (路由配置，compose 自动注册 pipeline)")
     else:
         skipped.append(f"📄 {ROUTES_TOML} (已存在)")
 
@@ -149,7 +149,7 @@ def handle_init(args):
 
     print(f"\n   下一步:")
     print(f"   1. python -m ai_pod_cli create --category entity --name <名称> --desc \"<描述>\"")
-    print(f"   2. python -m ai_pod_cli build \"<业务指令>\"")
+    print(f"   2. python -m ai_pod_cli compose \"<业务指令>\"")
     if desc:
         print(f"   3. python {entry_info[0] if entry_info else '<entry>'}  (启动项目)")
 

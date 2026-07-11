@@ -1,4 +1,4 @@
-"""`build` command — AI generates pipeline file and registers it in routes.toml."""
+"""`compose` command — AI generates pipeline file and registers it in routes.toml."""
 
 import json
 import os
@@ -69,8 +69,8 @@ def _list_pipelines() -> list[dict]:
     return pipelines
 
 
-def handle_build(args):
-    """【build 命令】AI 编排器：生成 pipeline 文件 → 注册到 routes.toml"""
+def handle_compose(args):
+    """【compose 命令】AI 编排器：生成 pipeline 文件 → 注册到 routes.toml"""
 
     # --- --list: 列出所有已保存的 pipeline ---
     if args.list:
@@ -91,7 +91,7 @@ def handle_build(args):
         print("❌ 请提供指令描述。")
         return
 
-    print(f"🎬 [build] 人类宏观指令: '{args.cmd}'")
+    print(f"🎬 [compose] 人类宏观指令: '{args.cmd}'")
 
     config = load_config()
     existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
@@ -222,5 +222,5 @@ def handle_build(args):
     )
     print(f"📋 [路由已注册] {name} → {filepath}")
 
-    print(f"\n🎉 [build 完成] Pipeline 已生成并注册。")
+    print(f"\n🎉 [compose 完成] Pipeline 已生成并注册。")
     print(f"   运行方式: 通过你的入口文件调用 PipelineRunner().run(\"{name}\", params)")

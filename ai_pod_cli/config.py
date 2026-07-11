@@ -22,7 +22,7 @@ DEFAULT_CONFIG_TOML = """\
 DEFAULT_ROUTES_TOML = """\
 # Pipeline 路由配置
 # 每条路由映射一个命令/端点到对应的 pipeline 文件
-# 由 build 命令自动注册，也可手动编辑
+# 由 compose 命令自动注册，也可手动编辑
 
 """
 
