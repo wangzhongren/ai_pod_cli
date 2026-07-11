@@ -2,238 +2,225 @@
 
 **AI-native application framework where AI builds software and a dependency-injected runtime executes it.**
 
-Describe components in natural language. AI generates production-ready modules, assembles dependency graphs, plans execution pipelines, and the runtime executes them deterministically.
+## The Growing System
+
+Every component you create makes the system smarter:
 
 ```
-Natural Language
-      │
-      ▼
-  AI Planner
-      │
-      ▼
-Component Graph          ← AI generates reusable components, not one-off scripts
-      │
-      ▼
-Pipeline File            ← AI compiles workflows, not just code
-      │
-      ▼
-  Runtime                ← DI container assembles, PipelineRunner executes
-      │
-      ▼
-   Execution
+Round 1:  aipod create --name SqliteStore --desc "SQLite storage"
+          → Bean Pool: [ConfigStore, DbClient, SmsSender, SqliteStore]
+
+Round 2:  aipod create --name DataCollector --desc "generates sales data"
+          → Bean Pool: [ConfigStore, DbClient, SmsSender, SqliteStore, DataCollector]
+
+Round 3:  aipod create --name DataWriter --desc "depends on SqliteStore, writes to DB"
+          → AI sees SqliteStore in the pool, auto-wires it as dependency
+          → Bean Pool: [..., DataWriter]
+
+Compose:  aipod compose "collect sales and write to SQLite"
+          → AI picks [DataCollector, DataWriter] from the pool
+          → Generates pipeline: (S(DataCollector) | S(DataWriter)).execute_all(ctx)
 ```
 
-## What makes AIPod different
+**The bean pool grows with every `create`. AI sees more components, builds richer pipelines.** This is not a one-shot code generator — it's a system that accumulates capability.
 
-| | AI Code Generators | AIPod |
-|---|-------------------|-------|
-| Output | One-off scripts | Reusable, dependency-injected components |
-| Orchestration | You write glue code | AI plans execution pipelines |
-| Execution | Prompt → Run | **Generate → Review → Commit → Runtime** |
-| Configuration | You write config code | AI suggests config, auto-appends to TOML |
-| Project setup | You pick the stack | AI decides (Flask/CLI/RabbitMQ/Kafka...) |
-
-The core innovation is **generation-execution separation**: AI generates code, you review and commit it, then the runtime assembles and executes it deterministically. This makes it suitable for real engineering workflows, not just prototyping.
-
-## Quick Start
-
-### Install
+## 5-Minute Workflow
 
 ```bash
+# 1. Install
 pip install aipodcli
-```
 
-### Initialize
+# 2. Start a project — AI picks the tech stack
+aipod init "a CLI tool for data processing tasks"
+# → Generates cli.py with PipelineRunner, creates config.toml, routes.toml
 
-```bash
-aipod init "a REST API for inventory management"
-```
-
-AI decides the tech stack, generates the entry point (`app.py` / `main.py` / `consumer.py`...), and creates the project skeleton:
-
-```
-project/
-├── app.py              ← AI-generated entry point
-├── config.toml         ← Project configuration
-├── routes.toml         ← Pipeline route mapping
-├── beans_config.json   ← Component registry
-├── .env                ← LLM API config
-├── modules/            ← AI-generated components
-└── pipelines/          ← AI-generated pipelines
-```
-
-### Create Components
-
-```bash
+# 3. Build your component pool
 aipod create --category entity --name SqliteStore \
-    --desc "SQLite storage, reads database.sqlite_path from config"
+    --desc "SQLite storage, reads database.sqlite_path from ConfigStore"
+# → AI sees ConfigStore in pool → injects it → suggests [database] config → writes to config.toml
 
 aipod create --category entry --name DataCollector \
-    --desc "Generates random sales records"
+    --desc "generates random sales records, writes to ctx.set('raw_sales')"
 
 aipod create --category entry --name DataWriter \
-    --desc "Depends on SqliteStore, writes records to database"
-```
+    --desc "depends on SqliteStore, reads raw_sales from ctx, inserts into sales table"
+# → AI sees SqliteStore → auto-selects it as dependency
 
-Each `create` call: AI analyzes the component pool, selects dependencies, generates DI-wired code, runs security checks, and registers the component.
-
-### Compose Pipelines
-
-```bash
+# 4. Compose a pipeline — AI plans the chain from your pool
 aipod compose "collect sales data and write to SQLite" --name sales_flow
+# → AI picks [DataCollector → DataWriter] from pool
+# → Generates pipelines/sales_flow.py
+# → Registers route in routes.toml
+# → Does NOT execute — you review first
+
+# 5. Run it
+python cli.py sales_flow
+# → PipelineRunner loads routes.toml → finds sales_flow → executes pipeline
+# → DI container injects SqliteStore into DataWriter → pipe chain runs → data flows through ctx
 ```
 
-AI plans the execution chain, generates a pipeline file, and registers it in `routes.toml`. **No execution happens** — you review the code first.
-
-### Run
-
-```bash
-python app.py sales_flow                    # Via your entry point
-```
+**What just happened:**
+- You described 3 components in natural language
+- AI generated all the code, wired the dependencies, managed the config
+- AI planned the execution pipeline from your component pool
+- The runtime assembled everything via DI and executed it
+- **You wrote zero code**
 
 ## Commands
 
-| Command | Purpose |
-|---------|---------|
-| `aipod init "desc"` | Initialize project, AI generates entry point |
-| `aipod create --name X --desc "..."` | AI generates a component |
-| `aipod add --name X --class-path Y` | Register a hand-written component |
-| `aipod compose "instruction"` | AI plans and generates a pipeline |
-| `aipod compose --list` | List all saved pipelines |
+| Command | What it does |
+|---------|-------------|
+| `aipod init "desc"` | Create project skeleton + AI generates entry point |
+| `aipod create --name X --desc "..."` | AI generates component, adds to pool |
+| `aipod add --name X --class-path Y` | Register hand-written component to pool |
+| `aipod compose "instruction"` | AI picks from pool, generates pipeline |
+| `aipod compose --list` | List saved pipelines |
 
-## Architecture
+## How It Works
 
-### Components, not scripts
+### The Bean Pool
 
-AI generates **components** — reusable classes with constructor injection and well-defined input/output contracts:
+Every component (AI-generated or hand-written) is registered in `beans_config.json`:
+
+```json
+{
+  "id": "DataWriter",
+  "class_path": "modules.datawriter.DataWriter",
+  "dependencies": ["SqliteStore"],
+  "inputs": {"raw_sales": "list — sales records"},
+  "outputs": {"written_count": "int — number of rows written"},
+  "description": "..."
+}
+```
+
+When you run `create`, AI reads the entire pool, picks dependencies, and generates code that fits in. When you run `compose`, AI reads the pool again to plan which components to chain.
+
+**The pool is the memory of your system.** It grows with every `create` and `add`.
+
+### Components
+
+AI generates classes with constructor injection and data contracts:
 
 ```python
 class DataWriter:
     @inject
     def __init__(self, sqlite_store: SqliteStore, config_store: ConfigStore):
-        self.sqlite_store = sqlite_store
-        self.batch_size = config_store.get("writer.batch_size", 100)
+        self.sqlite_store = sqlite_store           # Auto-injected by runtime
+        self.batch_size = config_store.get("writer.batch_size", 100)  # From config.toml
 
     def execute(self, ctx: PipelineContext) -> dict:
-        records = ctx.get("clean_records", [])
+        records = ctx.get("raw_sales", [])          # Read from upstream
         for r in records:
             self.sqlite_store.insert("sales", r)
-        ctx.set("written_count", len(records))
+        ctx.set("written_count", len(records))      # Write for downstream
         return {"status": "success"}
 ```
 
-The runtime automatically resolves and injects `SqliteStore` and `ConfigStore` — you never manually wire dependencies.
+Two types of components:
+- **entry** — business logic, has `execute(ctx)` method
+- **entity** — infrastructure (DB, cache, HTTP client), has custom methods
 
-### Pipelines, not glue code
+### Pipelines
 
-The pipe syntax chains components with automatic data flow:
+AI generates pipeline files using pipe syntax:
 
 ```python
 def run(ctx: PipelineContext):
     S = Pod(build_container(load_config()))
 
-    # DataCollector → DataCleaner → DataWriter
+    # Chain: DataCollector → DataCleaner → DataWriter
     (S(DataCollector) | S(DataCleaner) | S(DataWriter)).execute_all(ctx)
 
-    # Conditional branching
+    # Branching
     if ctx.get("alert_needed"):
         (S(Notifier)).execute_all(ctx)
 
     return ctx.summary()
 ```
 
-`PipelineContext` flows data between components — each reads from `ctx.get()`, writes to `ctx.set()`.
+`PipelineContext` is the data bus — each component reads inputs via `ctx.get()`, writes outputs via `ctx.set()`.
 
-### Configuration, not code
+### Configuration
 
-Components read config through injected `ConfigStore`:
+AI suggests config entries when creating components. They go into `config.toml`:
 
 ```toml
-# config.toml — developer and AI co-maintain this
 [database]
-sqlite_path = "data.db"    # AI auto-suggests when creating SqliteStore
+sqlite_path = "data.db"    # AI suggested this when creating SqliteStore
 
 [writer]
-batch_size = 100
+batch_size = 100            # You added this manually
 ```
 
+Components read config through injected `ConfigStore`:
 ```python
-batch_size = config_store.get("writer.batch_size", 100)
+config_store.get("database.sqlite_path", "data.db")
 ```
 
-### Generation-execution separation
+### Generation → Execution
 
 ```
-┌──────────────────────────┐
-│    Generation (AI)       │
-│                          │
-│  init    → entry point   │
-│  create  → components    │
-│  compose → pipelines     │
-│                          │
-│  Developer reviews code  │
-│  Developer commits       │
-└──────────────────────────┘
-           ↓
-┌──────────────────────────┐
-│    Execution (Runtime)   │
-│                          │
-│  Entry point dispatches  │
-│  PipelineRunner loads    │
-│  DI container assembles  │
-│  Pipeline executes       │
-│  Context flows data      │
-└──────────────────────────┘
+┌─────────────────────────┐
+│   You + AI (build time) │
+│                         │
+│  aipod init "desc"      │  → entry point
+│  aipod create ...       │  → components (pool grows)
+│  aipod compose "..."    │  → pipeline + route
+│                         │
+│  You review the code    │
+│  You git commit         │
+└─────────────────────────┘
+            ↓
+┌─────────────────────────┐
+│   Runtime (run time)    │
+│                         │
+│  python cli.py route    │
+│  PipelineRunner loads   │
+│  DI container assembles │
+│  Pipeline executes      │
+│  Context flows data     │
+└─────────────────────────┘
 ```
+
+**AI never runs your code.** It generates it. You review, commit, and execute when ready.
 
 ## Key APIs
 
-### PipelineContext — data flow between components
+| API | Methods |
+|-----|---------|
+| **PipelineContext** | `ctx.params`, `ctx.set(k,v)`, `ctx.get(k,d)`, `ctx.summary()` |
+| **ConfigStore** | `get("section.key", default)`, `get_section("name")`, `sections()` |
+| **Pod** | `S = Pod(container)`, `S(Class)`, `(S(A) \| S(B)).execute_all(ctx)` |
+| **PipelineRunner** | `PipelineRunner()`, `route_names()`, `run("name", params)` |
 
-| Method | Purpose |
-|--------|---------|
-| `ctx.params` | Entry parameters dict |
-| `ctx.set(key, value)` | Write to shared data pool |
-| `ctx.get(key, default)` | Read from shared data pool |
-| `ctx.summary()` | Execution summary |
+## Project Structure
 
-### ConfigStore — centralized TOML config
-
-| Method | Purpose |
-|--------|---------|
-| `get("section.key", default)` | Dot-notation access |
-| `get_section("section")` | Entire section as dict |
-| `sections()` | List section names |
-
-### Pod — pipe-chainable component wrapper
-
-```python
-S = Pod(container)
-(S(A) | S(B) | S(C)).execute_all(ctx)
 ```
-
-### PipelineRunner — pipeline loader and executor
-
-```python
-runner = PipelineRunner()          # reads routes.toml
-runner.run("sales_flow", params)   # execute pipeline
+project/
+├── cli.py / app.py          ← AI-generated entry (init decides the type)
+├── config.toml              ← Config (you + AI maintain)
+├── routes.toml              ← Pipeline routes (compose auto-registers)
+├── beans_config.json        ← Component pool (AI maintains)
+├── .env                     ← LLM API config
+├── modules/                 ← Your component pool
+│   ├── sqlitestore.py
+│   ├── datacollector.py
+│   └── datawriter.py
+└── pipelines/               ← AI-composed pipelines
+    └── sales_flow.py
 ```
 
 ## Security
 
-AST-based validation on all AI-generated code:
-- Blocks: `eval()`, `exec()`, `compile()`, `__import__()`
-- Blocks: dunder chain access (`__subclasses__`, `__mro__`, `__globals__`)
+AST validation on all AI-generated code:
+- Blocks: `eval()`, `exec()`, `compile()`, `__import__()`, dunder chain access
 - Does NOT restrict imports — this runs locally, you own the code
 
-## Configuration
+## Install
 
-| File | Purpose | Maintained by |
-|------|---------|---------------|
-| `.env` | LLM API credentials | Developer |
-| `config.toml` | Project settings | Developer + AI |
-| `routes.toml` | Pipeline routing | AI + Developer |
-| `beans_config.json` | Component registry | AI |
+```bash
+pip install aipodcli
+```
 
 ## Roadmap
 
