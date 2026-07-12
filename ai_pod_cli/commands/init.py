@@ -70,42 +70,14 @@ def handle_init(args):
     else:
         skipped.append(f"📄 {CONFIG_FILE} (已存在)")
 
-    # 4. 创建 .env.example + .env
-    env_example = ".env.example"
-    if not os.path.exists(env_example):
-        with open(env_example, "w", encoding="utf-8") as f:
-            f.write(
-                "# AI Pod CLI 大模型配置\n"
-                "# 复制本文件为 .env 并填入真实值\n"
-                "\n"
-                "OPENAI_API_KEY=sk-your-api-key-here\n"
-                "OPENAI_BASE_URL=https://api.openai.com/v1\n"
-                "OPENAI_MODEL=deepseek-chat\n"
-            )
-        created.append(f"📄 {env_example}")
-    else:
-        skipped.append(f"📄 {env_example} (已存在)")
-
-    env_file = ".env"
-    if not os.path.exists(env_file):
-        import shutil
-        shutil.copyfile(env_example, env_file)
-        created.append(f"🔒 {env_file} (从 .env.example 复制，请编辑填入真实 Key)")
-    else:
-        skipped.append(f"🔒 {env_file} (已存在)")
-
-    # 5. .gitignore
+    # 4. .gitignore
     gitignore = ".gitignore"
-    if os.path.exists(gitignore):
-        with open(gitignore, "r", encoding="utf-8") as f:
-            content = f.read()
-        if ".env" not in content:
-            with open(gitignore, "a", encoding="utf-8") as f:
-                f.write("\n# dotenv 本地配置\n.env\n")
-    else:
+    if not os.path.exists(gitignore):
         with open(gitignore, "w", encoding="utf-8") as f:
-            f.write("# dotenv 本地配置\n.env\n")
+            f.write("# OS\n.DS_Store\nThumbs.db\n\n# IDE\n.vscode/\n.idea/\n\n# Python\n__pycache__/\n*.pyc\n")
         created.append(f"📄 {gitignore}")
+    else:
+        skipped.append(f"📄 {gitignore} (已存在)")
 
     # 6. 安装依赖
     if args.install_deps:

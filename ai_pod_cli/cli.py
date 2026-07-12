@@ -7,6 +7,7 @@ from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.commands.add import handle_add
 from ai_pod_cli.commands.compose import handle_compose
 from ai_pod_cli.commands.create import handle_create
+from ai_pod_cli.commands.env import handle_config
 from ai_pod_cli.commands.init import handle_init
 from ai_pod_cli.commands.pod import handle_pod
 
@@ -17,14 +18,18 @@ def main():
     from dotenv import load_dotenv
     load_dotenv()
 
+    # 从全局配置补充（~/.aipod/config.toml）
+    _apply_global_env()
+
     # Windows 终端 GBK 兼容：强制 UTF-8 输出
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
     if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
         sys.stderr.reconfigure(encoding="utf-8")
 
-    # init 命令自行管理初始化，其余命令走自动初始化
-    if len(sys.argv) > 1 and sys.argv[1] != "init":
+    # init/config 命令不要求 beans_config.json 存在
+    skip_init_cmds = ("init", "config")
+    if len(sys.argv) > 1 and sys.argv[1] not in skip_init_cmds:
         init_config_if_not_exists()
 
     parser = argparse.ArgumentParser(
@@ -58,10 +63,16 @@ def main():
     compose_parser.add_argument("--list", action="store_true", help="List all saved pipelines")
 
     # 5. pod
-    pod_parser = subparsers.add_parser("pod", help="AI decomposes a requirement into a set of components")
+    pod_parser = subparsers.add_parser("pod", help="AI decomposes a requirement into components + pipelines + entry")
     pod_parser.add_argument("desc", nargs="?", default="", help="Feature or system description")
     pod_parser.add_argument("--file", "-f", default="", help="Read requirements from a file (supports long specs)")
     pod_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation, generate immediately")
+
+    # 6. config
+    config_parser = subparsers.add_parser("config", help="Manage global configuration (~/.aipod/config.toml)")
+    config_parser.add_argument("action", nargs="?", default="list", choices=["list", "set", "get", "remove", "path"], help="Config action")
+    config_parser.add_argument("key", nargs="?", default="", help="Config key (for set/get/remove)")
+    config_parser.add_argument("value", nargs="?", default="", help="Config value (for set)")
 
     args = parser.parse_args()
 
@@ -75,3 +86,21 @@ def main():
         handle_compose(args)
     elif args.command == "pod":
         handle_pod(args)
+    elif args.command == "config":
+        handle_config(args)
+
+
+def _apply_global_env():
+    """Load global config from ~/.aipod/config.toml and inject into os.environ.
+
+    Only sets variables that are NOT already set (local .env takes priority).
+    """
+    import os
+    try:
+        from ai_pod_cli.commands.env import get_global_env
+        global_env = get_global_env()
+        for key, value in global_env.items():
+            if not os.environ.get(key):
+                os.environ[key] = value
+    except Exception:
+        pass
