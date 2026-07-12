@@ -8,6 +8,7 @@ from ai_pod_cli.commands.add import handle_add
 from ai_pod_cli.commands.compose import handle_compose
 from ai_pod_cli.commands.create import handle_create
 from ai_pod_cli.commands.init import handle_init
+from ai_pod_cli.commands.pod import handle_pod
 
 
 def main():
@@ -56,6 +57,10 @@ def main():
     compose_parser.add_argument("--name", default="", help="Pipeline file name (auto-generated from instruction if omitted)")
     compose_parser.add_argument("--list", action="store_true", help="List all saved pipelines")
 
+    # 5. pod
+    pod_parser = subparsers.add_parser("pod", help="AI decomposes a requirement into a set of components")
+    pod_parser.add_argument("desc", help="Feature or system description (AI breaks it into components)")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -66,3 +71,5 @@ def main():
         handle_add(args)
     elif args.command == "compose":
         handle_compose(args)
+    elif args.command == "pod":
+        handle_pod(args)
