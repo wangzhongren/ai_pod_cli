@@ -11,7 +11,23 @@ from ai_pod_cli.security import validate_code
 
 def handle_pod(args):
     """【pod 命令】AI 将一个大需求拆解为一组组件，逐个生成并加入 Bean Pool"""
-    print(f"🧩 [pod] 拆解需求: '{args.desc}'")
+
+    # 读取需求描述：优先 --file，其次 desc
+    desc = ""
+    if args.file:
+        if not os.path.exists(args.file):
+            print(f"❌ 文件不存在: {args.file}")
+            return
+        with open(args.file, "r", encoding="utf-8") as f:
+            desc = f.read().strip()
+        print(f"🧩 [pod] 从文件读取需求: {args.file}")
+    elif args.desc:
+        desc = args.desc
+    else:
+        print("❌ 请提供需求描述或 --file 文件路径。")
+        return
+
+    print(f"📝 [需求] {desc[:200]}{'...' if len(desc) > 200 else ''}")
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("❌ 错误: 请先配置环境变量 OPENAI_API_KEY")
@@ -62,7 +78,7 @@ def handle_pod(args):
     """
 
     try:
-        plan = call_llm(system_prompt, f"需求: {args.desc}", json_mode=True, temperature=0.2)
+        plan = call_llm(system_prompt, f"需求: {desc}", json_mode=True, temperature=0.2)
     except Exception as e:
         print(f"❌ AI 拆解失败: {e}")
         return
