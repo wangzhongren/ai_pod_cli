@@ -93,20 +93,6 @@ def handle_init(args):
     else:
         skipped.append("📦 依赖安装 (跳过，使用 --install-deps 启用)")
 
-    # 7. AI 生成入口文件（如果提供了描述）
-    desc = getattr(args, "desc", "")
-    if desc:
-        from ai_pod_cli.entry_generator import generate_entry
-        entry_info = generate_entry(desc)
-        if entry_info:
-            entry_file, extra_deps = entry_info
-            created.append(f"🚀 入口文件 {entry_file} (AI 生成)")
-            if extra_deps:
-                with open(modules_req, "a", encoding="utf-8") as f:
-                    for dep in extra_deps:
-                        f.write(f"{dep}\n")
-                created.append(f"📦 额外依赖: {', '.join(extra_deps)}")
-
     # 输出汇总
     print("\n🎉 [初始化完成] 项目就绪！\n")
 
@@ -121,8 +107,7 @@ def handle_init(args):
             print(f"      {item}")
 
     print(f"\n   下一步:")
-    print(f"   1. python -m ai_pod_cli create --category entity --name <名称> --desc \"<描述>\"")
-    print(f"   2. python -m ai_pod_cli compose \"<业务指令>\"")
-    if desc:
-        print(f"   3. python {entry_info[0] if entry_info else '<entry>'}  (启动项目)")
+    print(f"   aipod config set OPENAI_API_KEY sk-your-key   (首次使用)")
+    print(f"   aipod pod \"需求描述\"                          (一步生成组件+Pipeline+入口)")
+    print(f"   aipod create --category entity --name X --desc \"...\"  (逐步构建)")
 

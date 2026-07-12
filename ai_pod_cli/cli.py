@@ -7,6 +7,7 @@ from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.commands.add import handle_add
 from ai_pod_cli.commands.compose import handle_compose
 from ai_pod_cli.commands.create import handle_create
+from ai_pod_cli.commands.entry import handle_entry
 from ai_pod_cli.commands.env import handle_config
 from ai_pod_cli.commands.init import handle_init
 from ai_pod_cli.commands.pod import handle_pod
@@ -39,8 +40,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 1. init
-    init_parser = subparsers.add_parser("init", help="Initialize project, AI generates entry point")
-    init_parser.add_argument("desc", nargs="?", default="", help="Project description (AI decides tech stack and generates entry file)")
+    init_parser = subparsers.add_parser("init", help="Initialize project skeleton (no AI)")
     init_parser.add_argument("--install-deps", action="store_true", help="Auto-install Python dependencies")
 
     # 2. create
@@ -74,6 +74,10 @@ def main():
     config_parser.add_argument("key", nargs="?", default="", help="Config key (for set/get/remove)")
     config_parser.add_argument("value", nargs="?", default="", help="Config value (for set)")
 
+    # 7. entry
+    entry_parser = subparsers.add_parser("entry", help="AI generates a project entry point file")
+    entry_parser.add_argument("desc", help="Project description (AI decides tech stack and generates entry file)")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -88,6 +92,8 @@ def main():
         handle_pod(args)
     elif args.command == "config":
         handle_config(args)
+    elif args.command == "entry":
+        handle_entry(args)
 
 
 def _apply_global_env():
