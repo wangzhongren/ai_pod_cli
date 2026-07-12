@@ -30,7 +30,8 @@ def handle_pod(args):
     print(f"📝 [需求] {desc[:200]}{'...' if len(desc) > 200 else ''}")
 
     if not os.environ.get("OPENAI_API_KEY"):
-        print("❌ 错误: 请先配置环境变量 OPENAI_API_KEY")
+        print("❌ OPENAI_API_KEY 未配置。请先设置：")
+        print("   aipod config set OPENAI_API_KEY sk-your-key")
         sys.exit(1)
 
     config = load_config()

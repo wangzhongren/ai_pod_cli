@@ -17,6 +17,11 @@ def generate_entry(desc: str) -> tuple[str, list[str]] | None:
     """
     if not os.environ.get("OPENAI_API_KEY"):
         print("⚠️  OPENAI_API_KEY 未配置，跳过入口文件生成。")
+        print("   请先设置大模型配置（一次设置，所有项目共用）：")
+        print("   aipod config set OPENAI_API_KEY sk-your-key")
+        print("   aipod config set OPENAI_BASE_URL https://api.deepseek.com/v1")
+        print("   aipod config set OPENAI_MODEL deepseek-chat")
+        print("   然后重新运行: aipod init \"描述\"")
         return None
 
     print(f"\n🚀 [入口生成] AI 正在根据描述生成项目入口...")
