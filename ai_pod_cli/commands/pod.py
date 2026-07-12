@@ -321,11 +321,10 @@ def handle_pod(args):
     entry_file = None
     if generated:
         print(f"\n🚀 [生成入口文件]")
-        from ai_pod_cli.commands.init import _generate_entry
-        entry_info = _generate_entry(desc)
+        from ai_pod_cli.entry_generator import generate_entry
+        entry_info = generate_entry(desc)
         if entry_info:
             entry_file, extra_deps = entry_info
-            print(f"   ✅ 入口文件: {entry_file}")
             if extra_deps:
                 modules_req = os.path.join(MODULES_DIR, "requirements.txt")
                 with open(modules_req, "a", encoding="utf-8") as f:
