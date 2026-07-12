@@ -60,6 +60,7 @@ def main():
     # 5. pod
     pod_parser = subparsers.add_parser("pod", help="AI decomposes a requirement into a set of components")
     pod_parser.add_argument("desc", help="Feature or system description (AI breaks it into components)")
+    pod_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation, generate immediately")
 
     args = parser.parse_args()
 

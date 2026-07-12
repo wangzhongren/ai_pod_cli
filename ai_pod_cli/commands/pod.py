@@ -81,7 +81,31 @@ def handle_pod(args):
         deps = comp.get("depends_on", [])
         dep_str = f" ← depends: {', '.join(deps)}" if deps else ""
         print(f"   {i}. {comp['name']} ({comp['category']}){dep_str}")
+        print(f"      {comp.get('description', '')[:80]}")
     print()
+
+    if config_additions:
+        print(f"⚙️  建议新增配置项:")
+        for section, keys in config_additions.items():
+            for key, raw_value in keys.items():
+                if isinstance(raw_value, dict):
+                    val = raw_value.get("value", "")
+                    comment = raw_value.get("comment", "")
+                    print(f"   [{section}] {key} = {val}  # {comment}")
+                else:
+                    print(f"   [{section}] {key} = {raw_value}")
+        print()
+
+    # 用户确认
+    if not args.yes:
+        try:
+            answer = input("确认生成以上组件？[Y/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n已取消。")
+            return
+        if answer and answer not in ("y", "yes"):
+            print("已取消。")
+            return
 
     # 追加配置到 config.toml
     if config_additions:
