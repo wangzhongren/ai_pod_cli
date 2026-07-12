@@ -46,7 +46,7 @@ def handle_pod(args):
     当前 config.toml 中可用的配置段和键名：
     {toml_keys}
 
-    你的任务是：将人类描述的一个大需求，拆解成多个可独立生成的组件。
+    你的任务是：将人类描述的一个大需求，拆解成多个可独立生成的组件，并规划配套的 pipeline。
 
     【拆解规则】：
     1. 每个组件必须有明确的单一职责。
@@ -57,6 +57,11 @@ def handle_pod(args):
     6. 组件数量控制在 2~6 个，不要过度拆解。
     7. 如果新组件需要 config.toml 中的新配置项，在 config_additions 中说明。
 
+    【Pipeline 规划规则】：
+    1. 为每个 entry 类型的组件规划至少一条 pipeline。
+    2. pipeline 的 instruction 应该是具体的业务指令（如 "生成一个用户认证组件"）。
+    3. pipeline 的 name 应该是简短的英文标识（如 create_auth）。
+
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
         "pod_name": "这组组件的简短名称",
@@ -66,6 +71,12 @@ def handle_pod(args):
                 "category": "entry 或 entity",
                 "description": "详细的组件描述，包括方法签名、输入输出、依赖说明",
                 "depends_on": ["依赖的组件ID_1", "依赖的组件ID_2"]
+            }}
+        ],
+        "pipelines": [
+            {{
+                "name": "pipeline 英文标识",
+                "instruction": "自然语言业务指令（AI 据此规划执行链）"
             }}
         ],
         "config_additions": {{
@@ -85,6 +96,7 @@ def handle_pod(args):
 
     pod_name = plan.get("pod_name", "unnamed_pod")
     components = plan.get("components", [])
+    pipelines = plan.get("pipelines", [])
     config_additions = plan.get("config_additions", {})
 
     if not components:
@@ -92,13 +104,23 @@ def handle_pod(args):
         return
 
     # 打印拆解方案
-    print(f"\n📋 [拆解方案] {pod_name} ({len(components)} 个组件)\n")
+    print(f"\n📋 [拆解方案] {pod_name}")
+    print(f"   组件: {len(components)} 个  |  Pipeline: {len(pipelines)} 条\n")
+
+    print(f"   📦 组件:")
     for i, comp in enumerate(components, 1):
         deps = comp.get("depends_on", [])
         dep_str = f" ← depends: {', '.join(deps)}" if deps else ""
-        print(f"   {i}. {comp['name']} ({comp['category']}){dep_str}")
-        print(f"      {comp.get('description', '')[:80]}")
+        print(f"      {i}. {comp['name']} ({comp['category']}){dep_str}")
+        print(f"         {comp.get('description', '')[:80]}")
     print()
+
+    if pipelines:
+        print(f"   🔗 Pipeline:")
+        for i, pipe in enumerate(pipelines, 1):
+            print(f"      {i}. {pipe['name']}")
+            print(f"         → {pipe['instruction']}")
+        print()
 
     if config_additions:
         print(f"⚙️  建议新增配置项:")
@@ -115,7 +137,7 @@ def handle_pod(args):
     # 用户确认
     if not args.yes:
         try:
-            answer = input("确认生成以上组件？[Y/n] ").strip().lower()
+            answer = input(f"确认生成 {len(components)} 个组件 + {len(pipelines)} 条 pipeline？[Y/n] ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             print("\n已取消。")
             return
@@ -260,11 +282,45 @@ def handle_pod(args):
     # 输出汇总
     print(f"\n{'='*50}")
     print(f"🧩 [Pod 生成完毕] {pod_name}")
-    print(f"   ✅ 成功: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")
+    print(f"   ✅ 组件成功: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")
     if failed:
-        print(f"   ❌ 失败: {len(failed)} 个 — {', '.join(failed)}")
+        print(f"   ❌ 组件失败: {len(failed)} 个 — {', '.join(failed)}")
+
+    # 生成 pipelines
+    generated_pipelines = []
+    failed_pipelines = []
+    if pipelines and generated:
+        print(f"\n🔗 [生成 Pipeline] {len(pipelines)} 条")
+        from ai_pod_cli.commands.compose import handle_compose
+
+        for i, pipe in enumerate(pipelines, 1):
+            pipe_name = pipe.get("name", f"pipeline_{i}")
+            instruction = pipe.get("instruction", "")
+            print(f"\n   [{i}/{len(pipelines)}] {pipe_name}: {instruction}")
+
+            # 构造 compose 的 args
+            class ComposeArgs:
+                pass
+            compose_args = ComposeArgs()
+            compose_args.cmd = instruction
+            compose_args.name = pipe_name
+            compose_args.list = False
+
+            try:
+                handle_compose(compose_args)
+                generated_pipelines.append(pipe_name)
+            except Exception as e:
+                print(f"   ❌ Pipeline 生成失败: {e}")
+                failed_pipelines.append(pipe_name)
+
+        print(f"\n   🔗 Pipeline 成功: {len(generated_pipelines)} 条 — {', '.join(generated_pipelines) if generated_pipelines else '(无)'}")
+        if failed_pipelines:
+            print(f"   ❌ Pipeline 失败: {len(failed_pipelines)} 条 — {', '.join(failed_pipelines)}")
 
     if generated:
-        print(f"\n   组件已加入 Bean Pool，可以 compose 了:")
-        print(f"   aipod compose \"<业务指令>\"")
+        print(f"\n   组件已加入 Bean Pool，Pipeline 已注册到 routes.toml")
+        if generated_pipelines:
+            print(f"   运行方式: python <entry> <route_name>")
+        else:
+            print(f"   可以 compose 更多 pipeline: aipod compose \"<业务指令>\"")
     print(f"{'='*50}")
