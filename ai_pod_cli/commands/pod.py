@@ -317,10 +317,38 @@ def handle_pod(args):
         if failed_pipelines:
             print(f"   ❌ Pipeline 失败: {len(failed_pipelines)} 条 — {', '.join(failed_pipelines)}")
 
+    # 生成入口文件
+    entry_file = None
     if generated:
-        print(f"\n   组件已加入 Bean Pool，Pipeline 已注册到 routes.toml")
-        if generated_pipelines:
-            print(f"   运行方式: python <entry> <route_name>")
+        print(f"\n🚀 [生成入口文件]")
+        from ai_pod_cli.commands.init import _generate_entry
+        entry_info = _generate_entry(desc)
+        if entry_info:
+            entry_file, extra_deps = entry_info
+            print(f"   ✅ 入口文件: {entry_file}")
+            if extra_deps:
+                modules_req = os.path.join(MODULES_DIR, "requirements.txt")
+                with open(modules_req, "a", encoding="utf-8") as f:
+                    for dep in extra_deps:
+                        f.write(f"{dep}\n")
+                print(f"   📦 额外依赖: {', '.join(extra_deps)}")
+
+    # 输出汇总
+    print(f"\n{'='*50}")
+    print(f"🧩 [Pod 生成完毕] {pod_name}")
+    print(f"   ✅ 组件: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")
+    if failed:
+        print(f"   ❌ 组件失败: {len(failed)} 个 — {', '.join(failed)}")
+    if pipelines:
+        print(f"   🔗 Pipeline: {len(generated_pipelines)} 条 — {', '.join(generated_pipelines) if generated_pipelines else '(无)'}")
+        if failed_pipelines:
+            print(f"   ❌ Pipeline 失败: {len(failed_pipelines)} 条 — {', '.join(failed_pipelines)}")
+    if entry_file:
+        print(f"   🚀 入口: {entry_file}")
+
+    if generated:
+        if entry_file:
+            print(f"\n   运行: python {entry_file}")
         else:
-            print(f"   可以 compose 更多 pipeline: aipod compose \"<业务指令>\"")
+            print(f"\n   可以手动生成入口: aipod init \"{desc[:50]}\"")
     print(f"{'='*50}")
