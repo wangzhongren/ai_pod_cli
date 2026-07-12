@@ -24,7 +24,69 @@ Compose:  aipod compose "collect sales and write to SQLite"
 
 **The bean pool grows with every `create`. AI sees more components, builds richer pipelines.** This is not a one-shot code generator — it's a system that accumulates capability.
 
-## 5-Minute Workflow
+## Two Ways to Build
+
+### Fast: one-shot with `pod`
+
+Describe an entire system, AI generates everything:
+
+```bash
+# Write requirements to a file
+cat > requirements.md << 'EOF'
+# E-commerce Order System
+1. OrderService - handle orders, validate stock
+2. InventoryManager - depends on SqliteStore, manage stock
+3. PaymentProcessor - depends on ConfigStore, process payments
+4. NotificationSender - depends on SmsSender, send alerts
+EOF
+
+# One command: components + pipelines + entry point
+aipod pod --file requirements.md
+```
+
+```
+📋 [拆解方案] ecommerce_order
+   组件: 4 个  |  Pipeline: 3 条
+
+   📦 组件:
+      1. OrderService (entry) ← depends: InventoryManager, PaymentProcessor
+      2. InventoryManager (entry) ← depends: SqliteStore
+      3. PaymentProcessor (entry) ← depends: ConfigStore
+      4. NotificationSender (entry) ← depends: SmsSender
+
+   🔗 Pipeline:
+      1. create_order → 用户下单，校验库存并处理支付
+      2. check_inventory → 查询商品库存
+      3. send_notification → 发送订单通知
+
+确认生成 4 个组件 + 3 条 pipeline？[Y/n] Y
+
+🤖 [1/4] 生成 OrderService...    ✅
+🤖 [2/4] 生成 InventoryManager... ✅
+🤖 [3/4] 生成 PaymentProcessor... ✅
+🤖 [4/4] 生成 NotificationSender... ✅
+
+🔗 [生成 Pipeline] 3 条
+   [1/3] create_order...    💾 已保存  📋 已注册
+   [2/3] check_inventory... 💾 已保存  📋 已注册
+   [3/3] send_notification... 💾 已保存  📋 已注册
+
+🚀 [入口生成] AI 正在生成项目入口...
+   ✍️  app.py
+
+==================================================
+🧩 [Pod 生成完毕]
+   ✅ 组件: 4 个
+   🔗 Pipeline: 3 条
+   🚀 入口: app.py
+
+   运行: python app.py
+==================================================
+```
+
+### Step-by-step: `init` → `create` → `compose`
+
+For more control, build incrementally:
 
 ```bash
 # 1. Install
@@ -55,15 +117,13 @@ aipod compose "collect sales data and write to SQLite" --name sales_flow
 
 # 5. Run it
 python cli.py sales_flow
-# → PipelineRunner loads routes.toml → finds sales_flow → executes pipeline
-# → DI container injects SqliteStore into DataWriter → pipe chain runs → data flows through ctx
 ```
 
 **What just happened:**
 - You described 3 components in natural language
 - AI generated all the code, wired the dependencies, managed the config
 - AI planned the execution pipeline from your component pool
-- The runtime assembled everything via DI and executed it
+- The runtime assembles everything via DI and executes it
 - **You wrote zero code**
 
 ## Commands
@@ -71,7 +131,9 @@ python cli.py sales_flow
 | Command | What it does |
 |---------|-------------|
 | `aipod init "desc"` | Create project skeleton + AI generates entry point |
-| `aipod create --name X --desc "..."` | AI generates component, adds to pool |
+| `aipod pod "desc"` | **AI decomposes requirement → components + pipelines + entry** |
+| `aipod pod --file req.md` | Same as above, reads full requirements from file |
+| `aipod create --name X --desc "..."` | AI generates one component, adds to pool |
 | `aipod add --name X --class-path Y` | Register hand-written component to pool |
 | `aipod compose "instruction"` | AI picks from pool, generates pipeline |
 | `aipod compose --list` | List saved pipelines |
@@ -160,26 +222,27 @@ config_store.get("database.sqlite_path", "data.db")
 ### Generation → Execution
 
 ```
-┌─────────────────────────┐
-│   You + AI (build time) │
-│                         │
-│  aipod init "desc"      │  → entry point
-│  aipod create ...       │  → components (pool grows)
-│  aipod compose "..."    │  → pipeline + route
-│                         │
-│  You review the code    │
-│  You git commit         │
-└─────────────────────────┘
+┌──────────────────────────┐
+│   You + AI (build time)  │
+│                          │
+│  aipod init "desc"       │  → entry point + skeleton
+│  aipod pod "big req"     │  → components + pipelines + entry
+│  aipod create ...        │  → single component (pool grows)
+│  aipod compose "..."     │  → pipeline + route
+│                          │
+│  You review the code     │
+│  You git commit          │
+└──────────────────────────┘
             ↓
-┌─────────────────────────┐
-│   Runtime (run time)    │
-│                         │
-│  python cli.py route    │
-│  PipelineRunner loads   │
-│  DI container assembles │
-│  Pipeline executes      │
-│  Context flows data     │
-└─────────────────────────┘
+┌──────────────────────────┐
+│   Runtime (run time)     │
+│                          │
+│  python app.py route     │
+│  PipelineRunner loads    │
+│  DI container assembles  │
+│  Pipeline executes       │
+│  Context flows data      │
+└──────────────────────────┘
 ```
 
 **AI never runs your code.** It generates it. You review, commit, and execute when ready.
@@ -197,9 +260,9 @@ config_store.get("database.sqlite_path", "data.db")
 
 ```
 project/
-├── cli.py / app.py          ← AI-generated entry (init decides the type)
+├── app.py / cli.py          ← AI-generated entry (init or pod decides the type)
 ├── config.toml              ← Config (you + AI maintain)
-├── routes.toml              ← Pipeline routes (compose auto-registers)
+├── routes.toml              ← Pipeline routes (compose / pod auto-registers)
 ├── beans_config.json        ← Component pool (AI maintains)
 ├── .env                     ← LLM API config
 ├── modules/                 ← Your component pool
