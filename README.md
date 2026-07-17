@@ -4,6 +4,26 @@
 
 Describe your system in natural language. AI generates reusable components, plans execution pipelines, and the runtime assembles and executes them via dependency injection.
 
+## Why AIPod?
+
+AI coding tools today fall into two camps:
+
+| Tool | What it does | The problem |
+|------|-------------|-------------|
+| Copilot, Cursor | Autocomplete lines as you type | You still write the architecture |
+| v0, Bolt, Lovable | Generate entire projects from a prompt | One-shot, no memory. You take over after generation. |
+
+**Both leave AI out of the system's evolution.** After the initial generation, AI is gone. The codebase grows, but AI doesn't grow with it.
+
+AIPod is different:
+
+- **AI has memory.** Every component you build (hand-written OR AI-generated) joins a shared Bean Pool. AI sees the pool and reuses components in future work.
+- **You and AI share a platform.** The DI container, pipeline DSL, and component contracts are the common language. AI generates code that follows the same rules as your hand-written code.
+- **The system accumulates capability.** Round 1 you create a SqliteStore. Round 3 you compose a pipeline that uses SqliteStore, DataCollector, and a hand-written AnalyticsEngine — seamlessly.
+
+**It's not AI writing code for you. It's AI building the system WITH you, on a shared platform.**
+
+
 ## Quick Start
 
 ```bash
