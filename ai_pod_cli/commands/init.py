@@ -24,14 +24,6 @@ def handle_init(args):
     else:
         skipped.append(f"📁 目录 {MODULES_DIR}/ (已存在)")
 
-    modules_req = os.path.join(MODULES_DIR, "requirements.txt")
-    if not os.path.exists(modules_req):
-        with open(modules_req, "w", encoding="utf-8") as f:
-            f.write("# AI 生成模块的第三方依赖\n# 由 create 命令自动追加，也可手动编辑\n")
-        created.append(f"📄 {modules_req}")
-    else:
-        skipped.append(f"📄 {modules_req} (已存在)")
-
     modules_init = os.path.join(MODULES_DIR, "__init__.py")
     if not os.path.exists(modules_init):
         with open(modules_init, "w", encoding="utf-8") as f:

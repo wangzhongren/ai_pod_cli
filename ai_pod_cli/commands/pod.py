@@ -9,6 +9,46 @@ from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config
 from ai_pod_cli.security import validate_code
 
 
+def _append_deps_to_root_requirements(deps: list[str]):
+    """将第三方依赖写入根 requirements.txt，已存在的跳过。"""
+    req_path = "requirements.txt"
+    existing = set()
+    if os.path.exists(req_path):
+        with open(req_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    existing.add(line)
+
+    with open(req_path, "a", encoding="utf-8") as f:
+        for dep in deps:
+            dep = dep.strip()
+            if dep and dep not in existing:
+                f.write(f"{dep}\n")
+                existing.add(dep)
+
+
+def _load_routes_map() -> dict[str, str]:
+    """读取 routes.toml，返回 {route_name: description} 映射。"""
+    from ai_pod_cli.config import ROUTES_TOML
+
+    routes_map = {}
+    if os.path.exists(ROUTES_TOML):
+        try:
+            import tomlkit
+            with open(ROUTES_TOML, "r", encoding="utf-8") as f:
+                doc = tomlkit.load(f)
+            for name, value in doc.items():
+                if isinstance(value, dict):
+                    desc = value.get("description", "")
+                    routes_map[name] = str(desc) if desc else ""
+                else:
+                    routes_map[name] = ""
+        except Exception:
+            pass
+    return routes_map
+
+
 def handle_pod(args):
     """【pod 命令】AI 将一个大需求拆解为一组组件，逐个生成并加入 Bean Pool"""
 
@@ -322,15 +362,14 @@ def handle_pod(args):
     entry_file = None
     if generated:
         print(f"\n🚀 [生成入口文件]")
+        # 读取当前 routes.toml 中的路由，确保入口文件使用精确路由名
+        routes_map = _load_routes_map()
         from ai_pod_cli.entry_generator import generate_entry
-        entry_info = generate_entry(desc)
+        entry_info = generate_entry(desc, routes_map=routes_map)
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:
-                modules_req = os.path.join(MODULES_DIR, "requirements.txt")
-                with open(modules_req, "a", encoding="utf-8") as f:
-                    for dep in extra_deps:
-                        f.write(f"{dep}\n")
+                _append_deps_to_root_requirements(extra_deps)
                 print(f"   📦 额外依赖: {', '.join(extra_deps)}")
 
     # 输出汇总

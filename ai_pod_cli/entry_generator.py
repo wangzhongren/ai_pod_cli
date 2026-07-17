@@ -6,11 +6,13 @@ from ai_pod_cli.client import call_llm
 from ai_pod_cli.security import validate_code
 
 
-def generate_entry(desc: str) -> tuple[str, list[str]] | None:
+def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple[str, list[str]] | None:
     """Use AI to generate a project entry point based on description.
 
     Args:
         desc: Project description (AI decides tech stack and generates entry file).
+        routes_map: Optional dict of {route_name: description} from routes.toml.
+                    When provided, the AI must use these exact route names.
 
     Returns:
         Tuple of (entry_filename, extra_deps) or None if generation failed.
@@ -27,7 +29,29 @@ def generate_entry(desc: str) -> tuple[str, list[str]] | None:
     print(f"\n🚀 [入口生成] AI 正在根据描述生成项目入口...")
     print(f"📝 [描述] {desc[:200]}{'...' if len(desc) > 200 else ''}")
 
-    system_prompt = """
+    # 构建路由上下文（如果提供）
+    routes_context = ""
+    if routes_map:
+        routes_lines = []
+        for name, desc in routes_map.items():
+            desc_str = f" — {desc}" if desc else ""
+            routes_lines.append(f"     - {name}{desc_str}")
+        if routes_lines:
+            routes_context = f"""
+    当前 routes.toml 中**已注册**的路由（你的入口文件必须使用这些精确名称调用 runner.run()）：
+    {chr(10).join(routes_lines)}
+    同时建议使用 runner.route_names() 动态列出所有路由，避免硬编码导致不一致。
+    """
+        else:
+            routes_context = """
+    建议使用 runner.route_names() 动态列出所有可用路由，避免硬编码路由名。
+    """
+    else:
+        routes_context = """
+    建议使用 runner.route_names() 动态列出所有可用路由，避免硬编码路由名。
+    """
+
+    system_prompt = f"""
     你是一个资深的 Python 架构师。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
     包名为 `ai_pod_cli`，已安装并可 import。
 
@@ -37,7 +61,7 @@ def generate_entry(desc: str) -> tuple[str, list[str]] | None:
     1. 判断项目类型（Flask Web API、FastAPI 微服务、CLI 工具、RabbitMQ 消费者、Kafka 流处理、APScheduler 定时任务、WebSocket 服务等）。
     2. 决定入口文件名（如 app.py、main.py、consumer.py、scheduler.py、server.py 等）。
     3. 生成完整的、可直接运行的入口文件代码。
-
+    {routes_context}
     【核心代码规范】：
     - 必须使用 `from ai_pod_cli.runner import PipelineRunner` 来加载和执行 pipeline。
     - PipelineRunner 的 API：
@@ -51,12 +75,12 @@ def generate_entry(desc: str) -> tuple[str, list[str]] | None:
     - 如果是 CLI，包含参数解析。
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
-    {
+    {{
         "project_type": "你判断的项目类型名称",
         "entry_file": "你决定的入口文件名",
         "code": "完整的入口文件 Python 源代码字符串",
         "extra_deps": ["该项目类型需要的额外 pip 包名列表，不包括 ai_pod_cli 已有的"]
-    }
+    }}
     """
 
     try:

@@ -9,6 +9,25 @@ from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config
 from ai_pod_cli.security import validate_code, SecurityError
 
 
+def _append_deps_to_root_requirements(deps: list[str]):
+    """将第三方依赖写入根 requirements.txt，已存在的跳过。"""
+    req_path = "requirements.txt"
+    existing = set()
+    if os.path.exists(req_path):
+        with open(req_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    existing.add(line)
+
+    with open(req_path, "a", encoding="utf-8") as f:
+        for dep in deps:
+            dep = dep.strip()
+            if dep and dep not in existing:
+                f.write(f"{dep}\n")
+                existing.add(dep)
+
+
 def handle_create(args):
     """【create 命令】大模型解构诉求，自动挑选依赖并生成代码"""
     print(f"🤖 [CLI] 正在启动 AI 为您创造组件: '{args.name}'...")
@@ -120,6 +139,10 @@ def handle_create(args):
     - 如果没有依赖，构造函数只需 `@inject def __init__(self): pass`
     - 禁止在代码中手动实例化任何依赖组件
 
+    【第三方依赖声明】：
+    - 如果生成的代码 import 了标准库和 ai_pod_cli 之外的第三方包（如 requests, redis, pymysql, flask, fastapi, aiohttp 等），必须在 extra_deps 字段中列出这些包名。
+    - 如果只使用标准库和 ai_pod_cli 内部的包，extra_deps 返回空数组。
+
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
         "dependencies": ["选中的依赖ID_1", "选中的依赖ID_2"],
@@ -137,9 +160,11 @@ def handle_create(args):
             "section_name": {{
                 "key_name": {{"value": "实际默认值(字符串加引号/数字不加)", "comment": "中文说明"}}
             }}
-        }}
+        }},
+        "extra_deps": ["包名1", "包名2"]
     }}
     config_additions 用于建议需要新增到 config.toml 的配置项，如果不需要新增则返回空对象 {{}}。
+    extra_deps 是代码中 import 的第三方 pip 包名（不含标准库和 ai_pod_cli），不需要则为空数组 []。
     注意：value 字段必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
     comment 字段是中文注释说明，不要放在 value 里。
     }}
@@ -156,6 +181,7 @@ def handle_create(args):
         inputs = result.get("inputs", {})
         outputs = result.get("outputs", {})
         config_additions = result.get("config_additions", {})
+        extra_deps = result.get("extra_deps", [])
 
         print(f"🔍 [AI 依赖分析成功] 大模型自动挑选了系统依赖: {dependencies}")
         print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
@@ -225,6 +251,11 @@ def handle_create(args):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(generated_code)
         print(f"✍️  [AI 代码生成成功] 模块物理文件已保存至: {file_path}")
+
+        # 将第三方依赖追加到根 requirements.txt（去重）
+        if extra_deps:
+            _append_deps_to_root_requirements(extra_deps)
+            print(f"📦 额外依赖: {', '.join(extra_deps)}")
 
         # 更新账本元数据（含 inputs/outputs 数据契约）
         new_bean = {
