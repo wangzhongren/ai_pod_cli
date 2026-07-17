@@ -24,3 +24,4 @@ pipelines/*.py
 .DS_Store
 Thumbs.db
 cli.py
+test_project/
