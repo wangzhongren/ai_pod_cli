@@ -9,6 +9,23 @@ from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config
 from ai_pod_cli.security import validate_code
 
 
+def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, config_additions: dict):
+    """将拆解方案保存为 JSON 文件，供后续参考。"""
+    from datetime import datetime
+    plan = {
+        "pod_name": pod_name,
+        "requirement": desc,
+        "generated_at": datetime.now().isoformat(),
+        "components": components,
+        "pipelines": pipelines,
+        "config_additions": config_additions,
+    }
+    filename = f"{pod_name}_plan.json"
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(plan, f, indent=2, ensure_ascii=False)
+    print(f"📋 [方案已保存] {filename}\n")
+
+
 def _load_routes_map() -> dict[str, str]:
     """读取 routes.toml，返回 {route_name: description} 映射。"""
     from ai_pod_cli.config import ROUTES_TOML
@@ -169,6 +186,9 @@ def handle_pod(args):
         if answer and answer not in ("y", "yes"):
             print("已取消。")
             return
+
+    # 保存拆解方案到本地
+    _save_pod_plan(pod_name, desc, components, pipelines, config_additions)
 
     # 追加配置到 config.toml
     if config_additions:
