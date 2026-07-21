@@ -66,6 +66,92 @@ def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, 
     print(f"📋 [方案已保存] {filename}\n")
 
 
+def _generate_pod_entry(desc: str, generated: list[str], pipe_names: list[str]) -> tuple[str, list[str]] | None:
+    """Pod 自己生成入口 prompt，包含本次生成的组件和管线的完整上下文。"""
+    from ai_pod_cli.client import call_llm
+    from ai_pod_cli.security import validate_code
+
+    routes_map = _load_routes_map()
+
+    # 构建本次生成的上下文
+    comp_summary = "\n".join(f"   - {name}" for name in generated) if generated else "   (无)"
+    pipe_summary = "\n".join(f"   - {name}" for name in pipe_names) if pipe_names else "   (无)"
+    route_lines = "\n".join(f"   - {name}: {desc}" for name, desc in routes_map.items()) if routes_map else "   (无)"
+
+    system_prompt = f"""
+    你是一个资深的 Python 入口文件生成器。以下上下文来自 aipod pod 命令：
+
+    用户需求: {desc}
+
+    本次 Pod 生成的组件：
+    {comp_summary}
+
+    本次 Pod 规划的管线：
+    {pipe_summary}
+
+    routes.toml 中已注册的路由（必须使用这些精确名称调用 runner.run()）：
+    {route_lines}
+
+    你的任务：根据上述上下文，生成一个可直接运行的 Python 入口文件。
+
+    【你必须自主决策】：
+    1. 判断项目类型（CLI 工具、FastAPI Web 服务、定时任务等）
+    2. 决定入口文件名
+    3. 生成完整代码
+
+    【代码规范】：
+    - 入口通过容器获取一切：
+      from ai_pod_cli.config import load_config
+      from ai_pod_cli.container import build_container
+      config = load_config()
+      container = build_container(config)
+    - PipelineRunner 通过容器获取：
+      runner = container.get(PipelineRunner)
+      runner.route_names()  — 列出所有路由
+      runner.run("路由名", {{"key": "value"}})  — 执行管线
+    - 禁止手动 new PipelineRunner()
+    - 入口不 import 任何 modules/ 下的底层 Bean
+    - 建议用 runner.route_names() 动态发现路由
+
+    返回标准 JSON（不要 Markdown 块标记）：
+    {{
+        "project_type": "项目类型",
+        "entry_file": "入口文件名",
+        "code": "完整 Python 源代码",
+        "extra_deps": ["额外 pip 包名"]
+    }}
+    """
+
+    try:
+        result = call_llm(system_prompt, f"生成入口: {desc}", json_mode=True, temperature=0.2)
+    except Exception as e:
+        print(f"   ❌ 入口生成失败: {e}")
+        return None
+
+    entry_file = result.get("entry_file", "main.py")
+    generated_code = result.get("code", "")
+    extra_deps = result.get("extra_deps", [])
+
+    if not generated_code:
+        print("   ❌ AI 未返回入口代码")
+        return None
+
+    violations = validate_code(generated_code, allow_file_io=True)
+    if violations:
+        print(f"   🛡️  入口安全检查 ({len(violations)} 处违规)，跳过")
+        return None
+
+    if os.path.exists(entry_file):
+        print(f"   ⚠️  {entry_file} 已存在，跳过写入。")
+        return entry_file, extra_deps
+
+    with open(entry_file, "w", encoding="utf-8") as f:
+        f.write(generated_code)
+    print(f"   ✍️  [入口生成成功] {entry_file}")
+
+    return entry_file, extra_deps
+
+
 def _load_routes_map() -> dict[str, str]:
     """读取 routes.toml，返回 {route_name: description} 映射。"""
     from ai_pod_cli.config import ROUTES_TOML
@@ -428,15 +514,7 @@ def handle_pod(args):
     entry_file = None
     if generated:
         print(f"\n🚀 [生成入口文件]")
-        # 读取当前 routes.toml 中的路由，确保入口文件使用精确路由名
-        routes_map = _load_routes_map()
-        from ai_pod_cli.entry_generator import generate_entry
-        # 传入 pod 拆解方案，让 AI 了解完整上下文
-        pod_context = {
-            "components": components,
-            "pipelines": pipelines,
-        }
-        entry_info = generate_entry(desc, routes_map=routes_map, pod_context=pod_context)
+        entry_info = _generate_pod_entry(desc, generated, generated_pipelines)
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:
