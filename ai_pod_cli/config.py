@@ -138,17 +138,33 @@ def init_config_if_not_exists():
 
 
 def load_beans_summary() -> str:
-    """Return a categorized summary of all beans for AI prompts."""
+    """Return a categorized summary of all beans with method signatures for AI prompts."""
     config = load_config()
     providers = []
     services = []
     for b in config.get("beans", []):
+        desc = b.get("description", "")[:100]
         if b.get("category") == "provider":
-            providers.append(f"  - {b['id']}: {b.get('description', '')[:80]}")
+            entry = f"  - {b['id']}: {desc}"
+            methods = b.get("methods", {})
+            if methods:
+                for m_name, m_info in methods.items():
+                    m_inputs = m_info.get("inputs", {})
+                    m_outputs = m_info.get("outputs", "")
+                    sig = ", ".join(f"{k}: {v}" for k, v in m_inputs.items())
+                    entry += f"\n      .{m_name}({sig}) -> {m_outputs}"
+            providers.append(entry)
         else:
-            services.append(f"  - {b['id']}: {b.get('description', '')[:80]}")
+            entry = f"  - {b['id']}: {desc}"
+            inputs = b.get("inputs", {})
+            outputs = b.get("outputs", {})
+            if inputs:
+                entry += f"\n      输入: { {k: v for k, v in list(inputs.items())[:5]} }"
+            if outputs:
+                entry += f"\n      输出: { {k: v for k, v in list(outputs.items())[:5]} }"
+            services.append(entry)
 
-    lines = ["当前组件池：", "", "  【provider（可注入的依赖）】"]
+    lines = ["当前组件池：", "", "  【provider（可注入的依赖，附方法签名）】"]
     lines.extend(providers if providers else ["  (无)"])
     lines.append("")
     lines.append("  【service（有 execute，可放入管线）】")
