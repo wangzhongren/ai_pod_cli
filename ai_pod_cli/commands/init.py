@@ -24,6 +24,15 @@ def handle_init(args):
     else:
         skipped.append(f"📁 目录 {MODULES_DIR}/ (已存在)")
 
+    # 创建根 requirements.txt
+    req_file = "requirements.txt"
+    if not os.path.exists(req_file):
+        with open(req_file, "w", encoding="utf-8") as f:
+            f.write("# AIPod 项目依赖\n# 基础依赖已随 aipodcli 安装，此处列出 AI 生成组件引入的第三方包\n")
+        created.append(f"📄 {req_file}")
+    else:
+        skipped.append(f"📄 {req_file} (已存在)")
+
     modules_init = os.path.join(MODULES_DIR, "__init__.py")
     if not os.path.exists(modules_init):
         with open(modules_init, "w", encoding="utf-8") as f:
