@@ -116,6 +116,48 @@ def load_config_toml_text() -> str:
     return "(config.toml 为空)"
 
 
+def load_config_toml_safe() -> str:
+    """Parse config.toml and return sections, keys, and values (redact sensitive keys)."""
+    if not os.path.exists(CONFIG_TOML):
+        return "(config.toml 为空，暂无配置项)"
+
+    try:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+
+        with open(CONFIG_TOML, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return "(config.toml 解析失败)"
+
+    if not data:
+        return "(config.toml 为空，暂无配置项。你可以添加 [section] 和 key，组件通过 ConfigStore 读取)"
+
+    SENSITIVE = {"key", "secret", "password", "token", "passwd", "api_key", "apikey"}
+
+    def is_sensitive(k: str) -> bool:
+        lower = k.lower().replace("_", "")
+        return any(s in lower for s in SENSITIVE)
+
+    lines = []
+    for section, values in data.items():
+        if isinstance(values, dict):
+            lines.append(f"  [{section}]")
+            for k, v in values.items():
+                if is_sensitive(k):
+                    lines.append(f"    {k} = ***")
+                else:
+                    lines.append(f"    {k} = {v}")
+        else:
+            if is_sensitive(section):
+                lines.append(f"  {section} = ***")
+            else:
+                lines.append(f"  {section} = {values}")
+    return "\n".join(lines)
+
+
 def load_config_toml_keys() -> str:
     """Parse config.toml and return a summary of available sections and keys (no values)."""
     if not os.path.exists(CONFIG_TOML):

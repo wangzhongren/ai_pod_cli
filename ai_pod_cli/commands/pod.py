@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_keys, append_deps_to_requirements
+from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements
 from ai_pod_cli.security import validate_code
 
 
@@ -60,7 +60,7 @@ def handle_pod(args):
 
     config = load_config()
     existing_beans = json.dumps(config["beans"], indent=2, ensure_ascii=False)
-    toml_keys = load_config_toml_keys()
+    toml_keys = load_config_toml_safe()
 
     system_prompt = f"""
     你是一个资深的软件架构师。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
@@ -68,7 +68,7 @@ def handle_pod(args):
     目前系统中已有的组件池（Bean Pool）：
     {existing_beans}
 
-    当前 config.toml 中可用的配置段和键名：
+    当前 config.toml 中的配置项（敏感值已隐藏）：
     {toml_keys}
 
     你的任务是：将人类描述的一个大需求，拆解成多个可独立生成的组件，并规划配套的 pipeline。
@@ -219,13 +219,13 @@ def handle_pod(args):
         # 重新加载配置（因为每轮生成后 bean pool 会更新）
         config = load_config()
         beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
-        toml_keys = load_config_toml_keys()
+        toml_keys = load_config_toml_safe()
 
         create_prompt = f"""
         你是一个资深的 Python 代码生成器。当前系统组件池：
         {beans_context}
 
-        当前 config.toml 中可用的配置段和键名（通过 ConfigStore.get("section.key") 读取）：
+        当前 config.toml 中的配置项（敏感值已隐藏）：
         {toml_keys}
 
         请为以下组件生成完整的 Python 代码：

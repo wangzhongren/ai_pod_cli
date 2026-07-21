@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_keys, save_config, append_deps_to_requirements
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_safe, save_config, append_deps_to_requirements
 from ai_pod_cli.security import validate_code, SecurityError
 
 
@@ -23,7 +23,7 @@ def handle_create(args):
 
     config = load_config()
     existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
-    toml_keys = load_config_toml_keys()
+    toml_keys = load_config_toml_safe()
 
     # 构造强约束的 System Prompt
     system_prompt = f"""
@@ -33,7 +33,7 @@ def handle_create(args):
     目前系统中已经注册了以下可用的依赖组件池（Bean Pool）：
     {existing_beans_context}
 
-    当前 config.toml 中可用的配置段和键名（组件通过注入 ConfigStore，用 config_store.get("section.key", default) 读取）：
+    当前 config.toml 中的配置项（敏感值已隐藏，组件通过 ConfigStore 读取）：
     {toml_keys}
     如果组件需要的配置项还不存在，请在返回的 JSON 中通过 config_additions 字段建议新增（格式如 {{"section": {{"key": "说明"}}}}），系统会自动追加到 config.toml。
 

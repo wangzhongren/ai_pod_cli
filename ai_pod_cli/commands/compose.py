@@ -7,7 +7,7 @@ from datetime import datetime
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
-    load_config, load_config_toml_keys, PIPELINES_DIR, register_route,
+    load_config, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
 from ai_pod_cli.security import validate_code
 
@@ -95,7 +95,7 @@ def handle_compose(args):
 
     config = load_config()
     existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
-    toml_keys = load_config_toml_keys()
+    toml_keys = load_config_toml_safe()
 
     # 收集所有组件的 class_path 用于生成 import
     component_imports = {}
@@ -117,7 +117,7 @@ def handle_compose(args):
     各组件的 import 路径：
     {imports_hint}
 
-    当前 config.toml 中可用的配置段和键名：
+    当前 config.toml 中的配置项（敏感值已隐藏）：
     {toml_keys}
     组件通过注入 ConfigStore（from ai_pod_cli.config_store import ConfigStore）并用 config_store.get("section.key", default) 读取配置。
 
