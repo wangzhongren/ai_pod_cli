@@ -367,49 +367,57 @@ def handle_pod(args):
         beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
         toml_keys = load_config_toml_safe()
 
-        create_prompt = f"""
-        你是一个资深的 Python 代码生成器。当前系统组件池：
+        common = f"""
+        当前系统组件池：
         {beans_context}
 
         当前 config.toml 中的配置项（敏感值已隐藏）：
         {toml_keys}
 
-        请为以下组件生成完整的 Python 代码：
-        - 名称: {name}
-        - 分类: {category}
-        - 描述: {description}
+        请生成: {name} ({category}) — {description}
 
-        【代码规范】：
-        - 必须 from ai_pod_cli.context import PipelineContext
-        - 必须 from injector import inject
+        【通用规范】：
+        - 必须 from injector import inject，构造函数加 @inject
         - 类名必须与 {name} 完全一致
-        - @inject 构造函数只能放组件类型依赖，不能放 str/int 等原始类型
-        - 配置值通过注入 ConfigStore 读取：from ai_pod_cli.config_store import ConfigStore
-        - service 类型必须实现 execute(self, ctx: PipelineContext) -> dict
-        - provider 类型不需要 execute，提供描述中的业务方法
-        - 从 ctx.params 或 ctx.get() 读输入，ctx.set() 写输出
-        - **禁止创建纯 ConfigStore 包装类**：如果组件只读配置没有业务逻辑，直接删掉这个组件。
-        - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！**
-        - import 路径：ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
-                       ai_pod_cli.entities.XXX → from ai_pod_cli.entities import XXX
-                       modules.providers.xxx.XXX → from modules.providers.xxx import XXX
-                       modules.services.xxx.XXX → from modules.services.xxx import XXX
+        - 构造函数只放组件类型依赖，不放 str/int/bool
+        - 配置通过 ConfigStore 读取：from ai_pod_cli.config_store import ConfigStore
+        - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
+        - 禁止创建纯 ConfigStore 包装类
         - 无依赖时：@inject def __init__(self): pass
+        - 第三方包必须在 extra_deps 中列出
+        - import 路径：modules.providers.xxx → from modules.providers.xxx / modules.services.xxx → from modules.services.xxx
+        """
 
-        【第三方依赖声明】：
-        - 如果生成的代码 import 了标准库和 ai_pod_cli 之外的第三方包（如 requests, redis, pymysql 等），必须在 extra_deps 中列出这些包名。
-        - 如果只使用标准库和 ai_pod_cli 内部的包，extra_deps 返回空数组。
+        if category == "provider":
+            create_prompt = common + f"""
+        【provider 规范】：
+        - 不需要 execute 方法，只提供业务方法（每个方法有明确入参和返回值）
+        - 不涉及 PipelineContext
 
-        请严格以标准 JSON 格式返回：
+        返回 JSON：
         {{
-            "dependencies": ["依赖ID_1"],
-            "inputs": {{"参数名": "类型 — 说明"}}, "outputs": {{"输出键": "类型 — 说明"}},
+            "dependencies": ["依赖ID"],
             "methods": {{"method_name": {{"inputs": {{...}}, "outputs": "返回值 — 说明"}}}},
-            "ai_spec": "技术规格描述",
             "code": "完整 Python 源代码",
-            "extra_deps": ["第三方包名1", "第三方包名2"]
+            "extra_deps": ["包名"]
         }}
-        如果是 service：必须填 inputs/outputs。如果是 provider：必须填 methods，inputs/outputs 可留空。
+        """
+        else:
+            create_prompt = common + f"""
+        【service 规范】：
+        - 必须 from ai_pod_cli.context import PipelineContext
+        - 必须实现 execute(self, ctx: PipelineContext) -> dict
+        - 从 ctx.params / ctx.get() 读输入，ctx.set() 写输出
+
+        返回 JSON：
+        {{
+            "dependencies": ["依赖ID"],
+            "inputs": {{"参数名": "类型 — 说明"}},
+            "outputs": {{"输出键": "类型 — 说明"}},
+            "ai_spec": "对 execute 方法的技术规格描述",
+            "code": "完整 Python 源代码",
+            "extra_deps": ["包名"]
+        }}
         """
 
         try:

@@ -25,10 +25,9 @@ def handle_create(args):
     existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
     toml_keys = load_config_toml_safe()
 
-    # 构造强约束的 System Prompt
-    system_prompt = f"""
-    你是一个资深的软件架构专家和代码生成器。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台，
-    使用 PipelineContext 作为组件间数据流转的共享上下文。
+    # 构造分类别的 System Prompt
+    common_context = f"""
+    当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
 
     目前系统中已经注册了以下可用的依赖组件池（Bean Pool）：
     {existing_beans_context}
@@ -37,77 +36,42 @@ def handle_create(args):
     {toml_keys}
     如果组件需要的配置项还不存在，请在返回的 JSON 中通过 config_additions 字段建议新增（格式如 {{"section": {{"key": "说明"}}}}），系统会自动追加到 config.toml。
 
-    你的任务是：根据人类传入的新组件名称、分类和诉求描述，完成以下三件事：
-    1. 从已有的组件池中挑选出这个新组件真正需要的外部依赖（只返回 id 数组，不要生造）。
-    2. 为该组件生成完整的 Python 源代码。
-    3. 定义该组件的数据契约（inputs/outputs），供后续 AI 编排使用。
+    【通用规范】：
+    - 必须从 `injector` 引入 `inject`，构造函数加 `@inject` 装饰器。
+    - 构造函数参数**只能声明组件类型依赖**（Bean Pool 中的类），禁止 str/int/bool 等原始类型。
+    - 配置通过注入 ConfigStore 读取：`from ai_pod_cli.config_store import ConfigStore`，用 `config_store.get("section.key", default)` 读取。
+    - **禁止创建纯 ConfigStore 包装类**：ConfigStore 已可注入，不要生成只转发 get() 的组件。
+    - 没有依赖时写 `@inject def __init__(self): pass`。
+    - 禁止手动实例化任何依赖组件，全部通过 DI 注入。
 
-    【核心代码生成规范】：
-    - 必须 `from ai_pod_cli.context import PipelineContext`。
-    - 必须从 `injector` 中引入 `inject`。
-    - 类的名称必须与人类指定的名称完全一致！
-    - 构造函数 `__init__` 必须加上 `@inject` 装饰器。
-    - 构造函数的参数**只能声明组件类型的依赖**（即 Bean Pool 中其他组件的类），禁止声明 str、int、bool 等原始类型参数。
-    - **配置值通过注入 ConfigStore 读取**：`from ai_pod_cli.config_store import ConfigStore`，然后在构造函数中声明 `config_store: ConfigStore` 参数，在代码中用 `config_store.get("section.key", default)` 读取。这是首选方式。
-    - **禁止创建纯 ConfigStore 包装类**：ConfigStore 本身已是可注入的 Bean，不要生成一个只有 getter 方法、内部只是转发 config_store.get() 的组件。如果一个组件只读配置没有业务逻辑，说明它不应该存在。真正的业务组件在自己内部直接读 ConfigStore，不需要加一层包装。
-    - 如果没有组件依赖（包括不需要 ConfigStore），构造函数写 `@inject def __init__(self): pass`。
-    - 禁止自己初始化任何外部工具，全部通过 DI 注入。
-    - 必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
-    - 从 `ctx.params` 或 `ctx.get(key)` 读取输入数据。
-    - 通过 `ctx.set(key, value)` 写入输出数据供下游组件使用。
-    - execute 方法的返回值也应为 dict。
-    - 如果组件分类为 provider（基础设施提供者），可以不提供 execute 方法，只需提供其业务方法（如 query、send 等）。
+    【import 路径规则（严格遵守）】：
+    - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
+    - ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
+    - modules.providers.xxx.XXX → from modules.providers.xxx import XXX
+    - modules.services.xxx.XXX → from modules.services.xxx import XXX
 
-    【代码模板示例】（假设类名为 StockChecker，依赖 ConfigStore 读取配置和 API key）：
-    ```python
-    from injector import inject
-    from ai_pod_cli.context import PipelineContext
-    from ai_pod_cli.config_store import ConfigStore
+    【第三方依赖声明】：
+    - 如果代码 import 了标准库和 ai_pod_cli 之外的第三方包，必须在 extra_deps 中列出。
+    - 不需要则返回空数组。
+    """
 
+    if args.category == "provider":
+        system_prompt = common_context + f"""
+    你的任务：生成一个 **provider（基础设施提供者）** 组件。
 
-    class StockChecker:
-        \"\"\"库存检查组件\"\"\"
+    【provider 规范】：
+    - provider 是基础设施组件（如 DB、缓存、HTTP 客户端、邮件发送器等），不需要 execute 方法。
+    - 只需要提供业务方法（如 query、send、get、set 等），每个方法有明确的入参和返回值。
+    - 组件名称: {args.name}，类名必须与此一致。
 
-        @inject
-        def __init__(self, config_store: ConfigStore):
-            self.config_store = config_store
-            # 通过 ConfigStore 读取配置
-            self.api_url = config_store.get("stock.api_url", "https://api.example.com/stock")
-
-        def execute(self, ctx: PipelineContext) -> dict:
-            \"\"\"业务执行入口\"\"\"
-            # 1. 从上下文读取输入参数
-            sku_id = ctx.params.get("sku_id", ctx.get("sku_id"))
-
-            # 2. 通过注入的依赖执行业务逻辑
-            import requests
-            resp = requests.get(f"{{self.api_url}}/{{sku_id}}")
-            stock_info = resp.json()
-
-            # 3. 将中间结果写入上下文供下游组件使用
-            ctx.set("stock", stock_info["stock"])
-            ctx.set("sku_id", sku_id)
-
-            # 4. 业务判断与副作用
-            if stock_info["stock"] <= 0:
-                ctx.set("alert_sent", True)
-                return {{"status": "failed", "reason": "out_of_stock"}}
-
-            return {{"status": "success", "stock": stock_info["stock"]}}
-    ```
-
-    【provider 模板示例】（假设类名为 RedisStore，依赖 ConfigStore 读取配置）：
+    【provider 模板】（RedisStore，依赖 ConfigStore 读取配置）：
     ```python
     from injector import inject
     from ai_pod_cli.config_store import ConfigStore
-
 
     class RedisStore:
-        \"\"\"Redis 存储实体\"\"\"
-
         @inject
         def __init__(self, config_store: ConfigStore):
-            # 通过 ConfigStore 读取 config.toml 中的配置
             host = config_store.get("redis.host", "localhost")
             port = config_store.get("redis.port", 6379)
             self.client = SomeRedisLib(host, port)
@@ -119,41 +83,70 @@ def handle_create(args):
             self.client.set(key, value)
     ```
 
-    【import 路径规则（严格遵守，不允许捏造）】：
-    - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入：`from ai_pod_cli.config_store import ConfigStore`**
-    - **禁止从 modules.config_store 导入 ConfigStore，modules 下没有这个文件！**
-    - class_path 为 `ai_pod_cli.entities.XXX` → `from ai_pod_cli.entities import XXX`
-    - class_path 为 `ai_pod_cli.config_store.ConfigStore` → `from ai_pod_cli.config_store import ConfigStore`
-    - class_path 为 `modules.providers.xxx.XXX` → `from modules.providers.xxx import XXX`
-    - class_path 为 `modules.services.xxx.XXX` → `from modules.services.xxx import XXX`
-    - 如果没有依赖，构造函数只需 `@inject def __init__(self): pass`
-    - 禁止在代码中手动实例化任何依赖组件
-
-    【第三方依赖声明】：
-    - 如果生成的代码 import 了标准库和 ai_pod_cli 之外的第三方包（如 requests, redis, pymysql, flask, fastapi, aiohttp 等），必须在 extra_deps 字段中列出这些包名。
-    - 如果只使用标准库和 ai_pod_cli 内部的包，extra_deps 返回空数组。
-
-    请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
+    返回 JSON（不要 Markdown 块标记）：
     {{
-        "dependencies": ["选中的依赖ID_1", "选中的依赖ID_2"],
-        "inputs": {{"参数名": "类型 — 说明"}}, "outputs": {{"输出键": "类型 — 说明"}},
-        "ai_spec": "对 execute 方法的技术规格描述",
+        "dependencies": ["依赖ID"],
         "methods": {{
             "method_name": {{
-                "inputs": {{"参数名": "类型 — 说明"}},
+                "inputs": {{"参数名": "类型"}},
                 "outputs": "返回值类型 — 说明"
             }}
         }},
-        "code": "完整的 Python 源代码字符串",
-        "config_additions": {{"section": {{"key": {{"value": "默认值", "comment": "说明"}}}}}},
-        "extra_deps": ["包名1", "包名2"]
+        "code": "完整 Python 源代码",
+        "config_additions": {{"section": {{"key": {{"value": "", "comment": ""}}}}}},
+        "extra_deps": ["包名"]
     }}
-    如果是 service 类型：必须填 inputs/outputs（描述 execute 方法的数据契约）。
-    如果是 provider 类型：必须填 methods（描述组件的业务方法签名），inputs/outputs 可留空。
-    config_additions 和 extra_deps 不需要则返回空对象/空数组。注意：value 必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
-    注意：value 字段必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
-    comment 字段是中文注释说明，不要放在 value 里。
+    inputs/outputs 和 ai_spec 不适用于 provider，留空即可。
+    """
+    else:
+        system_prompt = common_context + f"""
+    你的任务：生成一个 **service（业务服务）** 组件。
+
+    【service 规范】：
+    - service 是业务组件，必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
+    - 从 `ctx.params` 或 `ctx.get(key)` 读取输入，通过 `ctx.set(key, value)` 写入输出。
+    - 必须 `from ai_pod_cli.context import PipelineContext`。
+    - 组件名称: {args.name}，类名必须与此一致。
+
+    【service 模板】（StockChecker，依赖 ConfigStore）：
+    ```python
+    from injector import inject
+    from ai_pod_cli.context import PipelineContext
+    from ai_pod_cli.config_store import ConfigStore
+
+    class StockChecker:
+        @inject
+        def __init__(self, config_store: ConfigStore):
+            self.api_url = config_store.get("stock.api_url", "https://api.example.com")
+
+        def execute(self, ctx: PipelineContext) -> dict:
+            sku_id = ctx.params.get("sku_id", ctx.get("sku_id"))
+
+            import requests
+            resp = requests.get(f"{{{{self.api_url}}}}/{{{{sku_id}}}}")
+            stock_info = resp.json()
+
+            ctx.set("stock", stock_info["stock"])
+            ctx.set("sku_id", sku_id)
+
+            if stock_info["stock"] <= 0:
+                ctx.set("alert_sent", True)
+                return {{{{"status": "failed", "reason": "out_of_stock"}}}}
+
+            return {{{{"status": "success", "stock": stock_info["stock"]}}}}
+    ```
+
+    返回 JSON（不要 Markdown 块标记）：
+    {{
+        "dependencies": ["依赖ID"],
+        "inputs": {{"参数名": "类型 — 说明"}},
+        "outputs": {{"输出键": "类型 — 说明"}},
+        "ai_spec": "对 execute 方法的技术规格描述",
+        "code": "完整 Python 源代码",
+        "config_additions": {{"section": {{"key": {{"value": "", "comment": ""}}}}}},
+        "extra_deps": ["包名"]
     }}
+    methods 不适用于 service，留空即可。
     """
 
     user_content = f"新组件名称: {args.name}\n组件分类: {args.category}\n人类诉求描述: {args.desc}"
