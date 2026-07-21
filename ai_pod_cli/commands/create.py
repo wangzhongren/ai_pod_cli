@@ -49,6 +49,7 @@ def handle_create(args):
     - 构造函数 `__init__` 必须加上 `@inject` 装饰器。
     - 构造函数的参数**只能声明组件类型的依赖**（即 Bean Pool 中其他组件的类），禁止声明 str、int、bool 等原始类型参数。
     - **配置值通过注入 ConfigStore 读取**：`from ai_pod_cli.config_store import ConfigStore`，然后在构造函数中声明 `config_store: ConfigStore` 参数，在代码中用 `config_store.get("section.key", default)` 读取。这是首选方式。
+    - **禁止创建纯 ConfigStore 包装类**：ConfigStore 本身已是可注入的 Bean，不要生成一个只有 getter 方法、内部只是转发 config_store.get() 的组件。如果一个组件只读配置没有业务逻辑，说明它不应该存在。真正的业务组件在自己内部直接读 ConfigStore，不需要加一层包装。
     - 如果没有组件依赖（包括不需要 ConfigStore），构造函数写 `@inject def __init__(self): pass`。
     - 禁止自己初始化任何外部工具，全部通过 DI 注入。
     - 必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
@@ -134,25 +135,21 @@ def handle_create(args):
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
         "dependencies": ["选中的依赖ID_1", "选中的依赖ID_2"],
-        "inputs": {{
-            "参数名1": "类型 — 说明",
-            "参数名2": "类型 — 说明"
-        }},
-        "outputs": {{
-            "输出键1": "类型 — 说明",
-            "输出键2": "类型 — 说明"
-        }},
+        "inputs": {{"参数名": "类型 — 说明"}}, "outputs": {{"输出键": "类型 — 说明"}},
         "ai_spec": "对 execute 方法的技术规格描述",
-        "code": "完整的 Python 源代码字符串",
-        "config_additions": {{
-            "section_name": {{
-                "key_name": {{"value": "实际默认值(字符串加引号/数字不加)", "comment": "中文说明"}}
+        "methods": {{
+            "method_name": {{
+                "inputs": {{"参数名": "类型 — 说明"}},
+                "outputs": "返回值类型 — 说明"
             }}
         }},
+        "code": "完整的 Python 源代码字符串",
+        "config_additions": {{"section": {{"key": {{"value": "默认值", "comment": "说明"}}}}}},
         "extra_deps": ["包名1", "包名2"]
     }}
-    config_additions 用于建议需要新增到 config.toml 的配置项，如果不需要新增则返回空对象 {{}}。
-    extra_deps 是代码中 import 的第三方 pip 包名（不含标准库和 ai_pod_cli），不需要则为空数组 []。
+    如果是 entry 类型：必须填 inputs/outputs（描述 execute 方法的数据契约）。
+    如果是 entity 类型：必须填 methods（描述组件的业务方法签名），inputs/outputs 可留空。
+    config_additions 和 extra_deps 不需要则返回空对象/空数组。注意：value 必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
     注意：value 字段必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
     comment 字段是中文注释说明，不要放在 value 里。
     }}
@@ -168,11 +165,15 @@ def handle_create(args):
         generated_code = result.get("code", "")
         inputs = result.get("inputs", {})
         outputs = result.get("outputs", {})
+        methods = result.get("methods", {})
         config_additions = result.get("config_additions", {})
         extra_deps = result.get("extra_deps", [])
 
         print(f"🔍 [AI 依赖分析成功] 大模型自动挑选了系统依赖: {dependencies}")
-        print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
+        if args.category == "entry":
+            print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
+        else:
+            print(f"📋 [方法签名] {list(methods.keys())}")
 
         # 将 AI 建议的新配置追加到 config.toml（使用 tomlkit 保留格式和注释）
         if config_additions:
@@ -254,6 +255,7 @@ def handle_create(args):
             "dependencies": dependencies,
             "inputs": inputs,
             "outputs": outputs,
+            "methods": methods,
             "description": f"人类诉求: {args.desc}。技术规格: {ai_spec}",
         }
 

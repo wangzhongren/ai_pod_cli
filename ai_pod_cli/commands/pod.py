@@ -302,6 +302,7 @@ def handle_pod(args):
         - entry 类型必须实现 execute(self, ctx: PipelineContext) -> dict
         - entity 类型不需要 execute，提供描述中的业务方法
         - 从 ctx.params 或 ctx.get() 读输入，ctx.set() 写输出
+        - **禁止创建纯 ConfigStore 包装类**：如果组件只读配置没有业务逻辑，直接删掉这个组件。
         - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！**
         - import 路径：ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
                        ai_pod_cli.entities.XXX → from ai_pod_cli.entities import XXX
@@ -315,12 +316,13 @@ def handle_pod(args):
         请严格以标准 JSON 格式返回：
         {{
             "dependencies": ["依赖ID_1"],
-            "inputs": {{"参数名": "类型 — 说明"}},
-            "outputs": {{"输出键": "类型 — 说明"}},
+            "inputs": {{"参数名": "类型 — 说明"}}, "outputs": {{"输出键": "类型 — 说明"}},
+            "methods": {{"method_name": {{"inputs": {{...}}, "outputs": "返回值 — 说明"}}}},
             "ai_spec": "技术规格描述",
             "code": "完整 Python 源代码",
             "extra_deps": ["第三方包名1", "第三方包名2"]
         }}
+        如果是 entry：必须填 inputs/outputs。如果是 entity：必须填 methods，inputs/outputs 可留空。
         """
 
         try:
@@ -330,6 +332,7 @@ def handle_pod(args):
             dependencies = result.get("dependencies", [])
             inputs = result.get("inputs", {})
             outputs = result.get("outputs", {})
+            methods = result.get("methods", {})
             ai_spec = result.get("ai_spec", "")
             extra_deps = result.get("extra_deps", [])
 
@@ -367,6 +370,7 @@ def handle_pod(args):
                 "dependencies": dependencies,
                 "inputs": inputs,
                 "outputs": outputs,
+                "methods": methods,
                 "description": f"{description}。技术规格: {ai_spec}",
             }
             config["beans"] = [b for b in config["beans"] if b["id"] != name]
