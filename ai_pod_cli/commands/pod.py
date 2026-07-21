@@ -10,19 +10,59 @@ from ai_pod_cli.security import validate_code
 
 
 def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, config_additions: dict):
-    """将拆解方案保存为 JSON 文件，供后续参考。"""
+    """将拆解方案保存为 Markdown 文件，方便人阅读和后续 AI 参考。"""
     from datetime import datetime
-    plan = {
-        "pod_name": pod_name,
-        "requirement": desc,
-        "generated_at": datetime.now().isoformat(),
-        "components": components,
-        "pipelines": pipelines,
-        "config_additions": config_additions,
-    }
-    filename = f"{pod_name}_plan.json"
+
+    lines = [
+        f"# Pod Plan: {pod_name}",
+        "",
+        f"> 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## 需求描述",
+        "",
+        desc,
+        "",
+        "## 组件拆解",
+        "",
+        f"共 {len(components)} 个组件：",
+        "",
+    ]
+
+    for i, comp in enumerate(components, 1):
+        deps = comp.get("depends_on", [])
+        dep_str = f" ← depends: {', '.join(deps)}" if deps else ""
+        lines.append(f"### {i}. {comp['name']} ({comp['category']}){dep_str}")
+        lines.append("")
+        lines.append(comp.get("description", ""))
+        lines.append("")
+
+    if pipelines:
+        lines.append("## Pipeline 规划")
+        lines.append("")
+        for i, pipe in enumerate(pipelines, 1):
+            lines.append(f"### {i}. {pipe.get('name', '')}")
+            lines.append(f"> {pipe.get('instruction', '')}")
+            lines.append("")
+
+    if config_additions:
+        lines.append("## 建议新增配置")
+        lines.append("")
+        lines.append("```toml")
+        for section, keys in config_additions.items():
+            lines.append(f"[{section}]")
+            for key, raw_value in keys.items():
+                if isinstance(raw_value, dict):
+                    val = raw_value.get("value", "")
+                    comment = raw_value.get("comment", "")
+                    lines.append(f"{key} = {val}  # {comment}")
+                else:
+                    lines.append(f"{key} = {raw_value}")
+        lines.append("```")
+        lines.append("")
+
+    filename = f"{pod_name}_plan.md"
     with open(filename, "w", encoding="utf-8") as f:
-        json.dump(plan, f, indent=2, ensure_ascii=False)
+        f.write("\n".join(lines))
     print(f"📋 [方案已保存] {filename}\n")
 
 
