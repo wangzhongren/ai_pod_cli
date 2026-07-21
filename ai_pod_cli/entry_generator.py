@@ -80,7 +80,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
       from ai_pod_cli.container import build_container
       config = load_config()
       container = build_container(config)
-    - PipelineRunner 已注册为容器 Bean，通过容器获取：
+    - PipelineRunner 已注册为容器 Bean（import: from ai_pod_cli.runner import PipelineRunner）：
       runner = container.get(PipelineRunner)
       runner.route_names()  — 列出所有路由
       runner.run("route_name", {{"key": "value"}})  — 执行管线

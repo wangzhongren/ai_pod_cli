@@ -105,7 +105,7 @@ def _generate_pod_entry(desc: str, generated: list[str], pipe_names: list[str]) 
       from ai_pod_cli.container import build_container
       config = load_config()
       container = build_container(config)
-    - PipelineRunner 通过容器获取：
+    - PipelineRunner 通过容器获取（import: from ai_pod_cli.runner import PipelineRunner）：
       runner = container.get(PipelineRunner)
       runner.route_names()  — 列出所有路由
       runner.run("路由名", {{"key": "value"}})  — 执行管线
