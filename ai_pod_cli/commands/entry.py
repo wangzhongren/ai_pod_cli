@@ -14,6 +14,8 @@ def handle_entry(args):
         print("   用法: aipod entry \"一个 Flask REST API\"")
         return
 
+    append_deps_to_requirements([])
+
     entry_info = generate_entry(desc)
     if entry_info:
         entry_file, extra_deps = entry_info

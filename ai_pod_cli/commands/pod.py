@@ -55,6 +55,9 @@ def handle_pod(args):
         print("   aipod config set OPENAI_API_KEY sk-your-key")
         sys.exit(1)
 
+    # 确保 requirements.txt 存在（空依赖触发 header 写入）
+    append_deps_to_requirements([])
+
     config = load_config()
     existing_beans = json.dumps(config["beans"], indent=2, ensure_ascii=False)
     toml_keys = load_config_toml_keys()
