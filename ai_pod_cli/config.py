@@ -96,6 +96,23 @@ def init_config_if_not_exists():
                     },
                     "description": "集中式配置组件。从 config.toml 读取配置，通过 get('section.key') 访问。其他组件应注入 ConfigStore 来获取配置值，而非直接读环境变量。",
                 },
+                {
+                    "id": "PipelineRunner",
+                    "category": "entity",
+                    "type": "human_added",
+                    "class_path": "ai_pod_cli.runner.PipelineRunner",
+                    "methods": {
+                        "run": {
+                            "inputs": {"route_name": "str — routes.toml 中的路由名", "params": "dict — 入口参数"},
+                            "outputs": "dict — 执行摘要",
+                        },
+                        "route_names": {
+                            "inputs": {},
+                            "outputs": "list[str] — 所有已注册路由名",
+                        },
+                    },
+                    "description": "管线运行器。从 routes.toml 加载并执行 pipeline。入口文件通过容器注入此组件来运行管线，无需直接依赖底层 Bean。",
+                },
             ]
         }
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:

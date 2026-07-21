@@ -63,19 +63,17 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
     3. 生成完整的、可直接运行的入口文件代码。
     {routes_context}
     【核心代码规范】：
-    - 必须使用 `from ai_pod_cli.runner import PipelineRunner` 来加载和执行 pipeline。
-    - PipelineRunner 的 API：
-      - runner = PipelineRunner()  — 自动读取 routes.toml
-      - runner.route_names()  — 返回所有路由名称列表
-      - runner.run(route_name, params_dict)  — 执行指定路由的 pipeline，返回结果 dict
-    - 入口文件也支持依赖注入，直接获取容器中的组件：
+    - 入口文件通过容器获取一切，不要手动 new 任何组件：
       from ai_pod_cli.config import load_config
-      from ai_pod_cli.container import build_container, Pod
+      from ai_pod_cli.container import build_container
       config = load_config()
       container = build_container(config)
-      S = Pod(container)
-      db = container.get(SqliteStore)  — 直接获取任意已注册 Bean，无需自己 new
-    - 任何时候需要组件实例，通过 container.get() 获取，不要手动实例化。
+    - PipelineRunner 已注册为容器 Bean，通过容器获取：
+      runner = container.get(PipelineRunner)
+      runner.route_names()  — 列出所有路由
+      runner.run("route_name", {"key": "value"})  — 执行管线
+    - 禁止手动 new PipelineRunner()，必须通过 container.get() 获取。
+    - 入口文件不需要 import 任何 modules/ 下的底层 Bean，只通过管线完成业务。
     - 生成的代码必须是完整可运行的，包含所有必要的 import。
     - 加上清晰的中文注释。
     - 如果是 Web 框架，包含路由示例。

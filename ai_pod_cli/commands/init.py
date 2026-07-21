@@ -66,7 +66,7 @@ def handle_init(args):
         skipped.append(f"📄 {ROUTES_TOML} (已存在)")
 
     if not beans_exists:
-        created.append(f"📄 {CONFIG_FILE} (含 ConfigStore)")
+        created.append(f"📄 {CONFIG_FILE} (含 ConfigStore, PipelineRunner)")
     else:
         skipped.append(f"📄 {CONFIG_FILE} (已存在)")
 
