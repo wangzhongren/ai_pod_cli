@@ -7,7 +7,7 @@ from datetime import datetime
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
-    load_config, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
+    load_beans, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
 from ai_pod_cli.security import validate_code
 
