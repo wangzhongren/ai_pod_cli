@@ -132,7 +132,7 @@ def handle_pod(args):
 
     【拆解规则】：
     1. 每个组件必须有明确的单一职责。
-    2. 分类只有两种：entry（业务组件，有 execute 方法）和 entity（基础设施实体，有自定义方法）。
+    2. 分类只有两种：service（业务组件，有 execute 方法）和 provider（基础设施提供者，如 DB、缓存、HTTP 客户端等）。
     3. 依赖只能从已有的 Bean Pool 中选择，或者选择本次拆解中排在它前面的组件。
     4. 不要重复已有组件的功能。如果 Bean Pool 里已有合适的组件，直接引用它。
     5. 每个组件的 description 要足够详细，让后续 AI 生成时能写出完整代码。
@@ -140,7 +140,7 @@ def handle_pod(args):
     7. 如果新组件需要 config.toml 中的新配置项，在 config_additions 中说明。
 
     【Pipeline 规划规则】：
-    1. 为每个 entry 类型的组件规划至少一条 pipeline。
+    1. 为每个 service 类型的组件规划至少一条 pipeline。
     2. pipeline 的 instruction 应该是具体的业务指令（如 "生成一个用户认证组件"）。
     3. pipeline 的 name 应该是简短的英文标识（如 create_auth）。
 
@@ -150,7 +150,7 @@ def handle_pod(args):
         "components": [
             {{
                 "name": "组件类名（PascalCase）",
-                "category": "entry 或 entity",
+                "category": "service 或 provider",
                 "description": "详细的组件描述，包括方法签名、输入输出、依赖说明",
                 "depends_on": ["依赖的组件ID_1", "依赖的组件ID_2"]
             }}
@@ -299,8 +299,8 @@ def handle_pod(args):
         - 类名必须与 {name} 完全一致
         - @inject 构造函数只能放组件类型依赖，不能放 str/int 等原始类型
         - 配置值通过注入 ConfigStore 读取：from ai_pod_cli.config_store import ConfigStore
-        - entry 类型必须实现 execute(self, ctx: PipelineContext) -> dict
-        - entity 类型不需要 execute，提供描述中的业务方法
+        - service 类型必须实现 execute(self, ctx: PipelineContext) -> dict
+        - provider 类型不需要 execute，提供描述中的业务方法
         - 从 ctx.params 或 ctx.get() 读输入，ctx.set() 写输出
         - **禁止创建纯 ConfigStore 包装类**：如果组件只读配置没有业务逻辑，直接删掉这个组件。
         - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！**
@@ -322,7 +322,7 @@ def handle_pod(args):
             "code": "完整 Python 源代码",
             "extra_deps": ["第三方包名1", "第三方包名2"]
         }}
-        如果是 entry：必须填 inputs/outputs。如果是 entity：必须填 methods，inputs/outputs 可留空。
+        如果是 service：必须填 inputs/outputs。如果是 provider：必须填 methods，inputs/outputs 可留空。
         """
 
         try:

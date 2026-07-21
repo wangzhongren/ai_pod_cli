@@ -73,7 +73,7 @@ def init_config_if_not_exists():
             "beans": [
                 {
                     "id": "ConfigStore",
-                    "category": "entity",
+                    "category": "provider",
                     "type": "human_added",
                     "class_path": "ai_pod_cli.config_store.ConfigStore",
                     "methods": {
@@ -98,7 +98,7 @@ def init_config_if_not_exists():
                 },
                 {
                     "id": "PipelineRunner",
-                    "category": "entity",
+                    "category": "provider",
                     "type": "human_added",
                     "class_path": "ai_pod_cli.runner.PipelineRunner",
                     "methods": {

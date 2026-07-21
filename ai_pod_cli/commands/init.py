@@ -109,5 +109,5 @@ def handle_init(args):
     print(f"\n   下一步:")
     print(f"   aipod config set OPENAI_API_KEY sk-your-key   (首次使用)")
     print(f"   aipod pod \"需求描述\"                          (一步生成组件+Pipeline+入口)")
-    print(f"   aipod create --category entity --name X --desc \"...\"  (逐步构建)")
+    print(f"   aipod create --category provider --name X --desc \"...\"  (逐步构建)")
 

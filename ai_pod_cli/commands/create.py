@@ -56,7 +56,7 @@ def handle_create(args):
     - 从 `ctx.params` 或 `ctx.get(key)` 读取输入数据。
     - 通过 `ctx.set(key, value)` 写入输出数据供下游组件使用。
     - execute 方法的返回值也应为 dict。
-    - 如果组件分类为 entity（基础设施实体），可以不提供 execute 方法，只需提供其业务方法（如 query、send 等）。
+    - 如果组件分类为 provider（基础设施提供者），可以不提供 execute 方法，只需提供其业务方法（如 query、send 等）。
 
     【代码模板示例】（假设类名为 StockChecker，依赖 ConfigStore 读取配置和 API key）：
     ```python
@@ -96,7 +96,7 @@ def handle_create(args):
             return {{"status": "success", "stock": stock_info["stock"]}}
     ```
 
-    【entity 实体模板示例】（假设类名为 RedisStore，依赖 ConfigStore 读取配置）：
+    【provider 模板示例】（假设类名为 RedisStore，依赖 ConfigStore 读取配置）：
     ```python
     from injector import inject
     from ai_pod_cli.config_store import ConfigStore
@@ -147,8 +147,8 @@ def handle_create(args):
         "config_additions": {{"section": {{"key": {{"value": "默认值", "comment": "说明"}}}}}},
         "extra_deps": ["包名1", "包名2"]
     }}
-    如果是 entry 类型：必须填 inputs/outputs（描述 execute 方法的数据契约）。
-    如果是 entity 类型：必须填 methods（描述组件的业务方法签名），inputs/outputs 可留空。
+    如果是 service 类型：必须填 inputs/outputs（描述 execute 方法的数据契约）。
+    如果是 provider 类型：必须填 methods（描述组件的业务方法签名），inputs/outputs 可留空。
     config_additions 和 extra_deps 不需要则返回空对象/空数组。注意：value 必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
     注意：value 字段必须是合法的 TOML 值——字符串加双引号如 "data.db"，数字不加引号如 6379，布尔值用 true/false。
     comment 字段是中文注释说明，不要放在 value 里。
@@ -170,7 +170,7 @@ def handle_create(args):
         extra_deps = result.get("extra_deps", [])
 
         print(f"🔍 [AI 依赖分析成功] 大模型自动挑选了系统依赖: {dependencies}")
-        if args.category == "entry":
+        if args.category == "service":
             print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
         else:
             print(f"📋 [方法签名] {list(methods.keys())}")
