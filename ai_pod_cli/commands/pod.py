@@ -216,10 +216,14 @@ def handle_pod(args):
         # 重新加载配置（因为每轮生成后 bean pool 会更新）
         config = load_config()
         beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
+        toml_keys = load_config_toml_keys()
 
         create_prompt = f"""
         你是一个资深的 Python 代码生成器。当前系统组件池：
         {beans_context}
+
+        当前 config.toml 中可用的配置段和键名（通过 ConfigStore.get("section.key") 读取）：
+        {toml_keys}
 
         请为以下组件生成完整的 Python 代码：
         - 名称: {name}
