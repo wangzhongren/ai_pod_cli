@@ -97,7 +97,7 @@ def handle_create(args):
 
             # 2. 通过注入的依赖执行业务逻辑
             import requests
-            resp = requests.get(f"{self.api_url}/{sku_id}")
+            resp = requests.get(f"{{self.api_url}}/{{sku_id}}")
             stock_info = resp.json()
 
             # 3. 将中间结果写入上下文供下游组件使用
