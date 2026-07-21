@@ -5,27 +5,8 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_keys
+from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_keys, append_deps_to_requirements
 from ai_pod_cli.security import validate_code
-
-
-def _append_deps_to_root_requirements(deps: list[str]):
-    """将第三方依赖写入根 requirements.txt，已存在的跳过。"""
-    req_path = "requirements.txt"
-    existing = set()
-    if os.path.exists(req_path):
-        with open(req_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    existing.add(line)
-
-    with open(req_path, "a", encoding="utf-8") as f:
-        for dep in deps:
-            dep = dep.strip()
-            if dep and dep not in existing:
-                f.write(f"{dep}\n")
-                existing.add(dep)
 
 
 def _load_routes_map() -> dict[str, str]:
@@ -306,7 +287,7 @@ def handle_pod(args):
 
             # 将第三方依赖写入根 requirements.txt
             if extra_deps:
-                _append_deps_to_root_requirements(extra_deps)
+                append_deps_to_requirements(extra_deps)
                 print(f"   📦 额外依赖: {', '.join(extra_deps)}")
 
             # 注册到 bean pool
@@ -380,7 +361,7 @@ def handle_pod(args):
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:
-                _append_deps_to_root_requirements(extra_deps)
+                append_deps_to_requirements(extra_deps)
                 print(f"   📦 额外依赖: {', '.join(extra_deps)}")
 
     # 输出汇总

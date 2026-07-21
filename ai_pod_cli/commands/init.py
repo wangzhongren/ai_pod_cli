@@ -8,6 +8,7 @@ import sys
 from ai_pod_cli.config import (
     CONFIG_FILE, CONFIG_TOML, ROUTES_TOML,
     MODULES_DIR, PIPELINES_DIR, init_config_if_not_exists,
+    append_deps_to_requirements, REQUIREMENTS_FILE,
 )
 
 
@@ -24,14 +25,12 @@ def handle_init(args):
     else:
         skipped.append(f"📁 目录 {MODULES_DIR}/ (已存在)")
 
-    # 创建根 requirements.txt
-    req_file = "requirements.txt"
-    if not os.path.exists(req_file):
-        with open(req_file, "w", encoding="utf-8") as f:
-            f.write("# AIPod 项目依赖\n# 基础依赖已随 aipodcli 安装，此处列出 AI 生成组件引入的第三方包\n")
-        created.append(f"📄 {req_file}")
+    # 创建根 requirements.txt（空依赖触发 header 写入）
+    if not os.path.exists(REQUIREMENTS_FILE):
+        append_deps_to_requirements([])
+        created.append(f"📄 {REQUIREMENTS_FILE}")
     else:
-        skipped.append(f"📄 {req_file} (已存在)")
+        skipped.append(f"📄 {REQUIREMENTS_FILE} (已存在)")
 
     modules_init = os.path.join(MODULES_DIR, "__init__.py")
     if not os.path.exists(modules_init):

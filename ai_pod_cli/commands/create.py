@@ -5,27 +5,8 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_keys, save_config
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_keys, save_config, append_deps_to_requirements
 from ai_pod_cli.security import validate_code, SecurityError
-
-
-def _append_deps_to_root_requirements(deps: list[str]):
-    """将第三方依赖写入根 requirements.txt，已存在的跳过。"""
-    req_path = "requirements.txt"
-    existing = set()
-    if os.path.exists(req_path):
-        with open(req_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    existing.add(line)
-
-    with open(req_path, "a", encoding="utf-8") as f:
-        for dep in deps:
-            dep = dep.strip()
-            if dep and dep not in existing:
-                f.write(f"{dep}\n")
-                existing.add(dep)
 
 
 def handle_create(args):
@@ -256,7 +237,7 @@ def handle_create(args):
 
         # 将第三方依赖追加到根 requirements.txt（去重）
         if extra_deps:
-            _append_deps_to_root_requirements(extra_deps)
+            append_deps_to_requirements(extra_deps)
             print(f"📦 额外依赖: {', '.join(extra_deps)}")
 
         # 更新账本元数据（含 inputs/outputs 数据契约）

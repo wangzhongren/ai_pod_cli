@@ -27,6 +27,35 @@ DEFAULT_ROUTES_TOML = """\
 """
 
 
+REQUIREMENTS_FILE = "requirements.txt"
+REQUIREMENTS_HEADER = """\
+# AIPod 项目依赖
+# 基础依赖已随 aipodcli 安装，此处列出 AI 生成组件引入的第三方包
+"""
+
+
+def append_deps_to_requirements(deps: list[str]):
+    """将第三方依赖追加写入根 requirements.txt，已存在的跳过，文件不存在时自动创建。"""
+    existing = set()
+    if os.path.exists(REQUIREMENTS_FILE):
+        with open(REQUIREMENTS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    existing.add(line)
+    else:
+        # 新创建，写入 header
+        with open(REQUIREMENTS_FILE, "w", encoding="utf-8") as f:
+            f.write(REQUIREMENTS_HEADER)
+
+    with open(REQUIREMENTS_FILE, "a", encoding="utf-8") as f:
+        for dep in deps:
+            dep = dep.strip()
+            if dep and dep not in existing:
+                f.write(f"{dep}\n")
+                existing.add(dep)
+
+
 def init_config_if_not_exists():
     """初始化配置中心，预置基础设施组件"""
     # 创建 config.toml
