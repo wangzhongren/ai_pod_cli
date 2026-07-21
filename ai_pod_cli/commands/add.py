@@ -1,13 +1,13 @@
 """`add` command — register a hand-written component into the bean config."""
 
-from ai_pod_cli.config import load_config, save_config
+from ai_pod_cli.config import load_beans, save_config
 
 
 def handle_add(args):
     """【add 命令】将人工编写的组件注册到配置中心"""
     print(f"📦 [CLI] 正在注册人工组件: '{args.name}'...")
 
-    config = load_config()
+    beans = load_beans()
 
     # 检查是否已存在同名组件，存在则覆盖
     config["beans"] = [b for b in config["beans"] if b["id"] != args.name]

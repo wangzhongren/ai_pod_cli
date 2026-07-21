@@ -89,8 +89,8 @@ class Pod:
 
     Usage in generated pipelines:
 
-        config = load_config()
-        container = build_container(config)
+        beans = load_beans()
+        container = build_container(beans)
         S = Pod(container)
 
         # Pipe syntax: execute StockChecker, then StockNotifier in sequence

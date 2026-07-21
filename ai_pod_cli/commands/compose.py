@@ -93,13 +93,13 @@ def handle_compose(args):
 
     print(f"🎬 [compose] 人类宏观指令: '{args.cmd}'")
 
-    config = load_config()
+    beans = load_beans()
     existing_beans_context = load_beans_summary()
     toml_keys = load_config_toml_safe()
 
     # 收集所有组件的 class_path 用于生成 import
     component_imports = {}
-    for bean in config["beans"]:
+    for bean in beans["beans"]:
         cid = bean["id"]
         cpath = bean["class_path"]
         module_path, class_name = cpath.rsplit(".", 1)
@@ -107,7 +107,7 @@ def handle_compose(args):
 
     imports_hint = "\n".join(
         f"    - {cid} ({bean['category']}): from {info['module']} import {info['class']}"
-        for cid, info in component_imports.items() if (bean := next((b for b in config["beans"] if b["id"] == cid), {}))
+        for cid, info in component_imports.items() if (bean := next((b for b in beans["beans"] if b["id"] == cid), {}))
     )
 
     system_prompt = f"""
@@ -126,13 +126,13 @@ def handle_compose(args):
     【生成的代码规范】：
     1. 必须定义一个 `run(ctx)` 函数作为入口，ctx 是 PipelineContext 类型。
     2. 在 run 函数内部：
-       - from ai_pod_cli.config import load_config  ← 仅用于 build_container()！
-         load_config() 加载的是 beans_config.json（bean 注册表），不是用户配置！
+       - from ai_pod_cli.config import load_beans  ← 仅用于 build_container()！
+         load_beans() 加载的是 beans_config.json（bean 注册表），不是用户配置！
        - from ai_pod_cli.container import build_container, Pod
-       - config = load_config(); container = build_container(config)
+       - beans = load_beans(); container = build_container(beans)
        - S = Pod(container)
     3. **管线中禁止直接读取配置值！配置通过 ConfigStore 在组件内部读取，不在管线中读。**
-       load_config() 只用于构建容器，不要用它的返回值读配置！
+       load_beans() 只用于构建容器，不要用它的返回值读配置！
     4. 使用管道符 | 串联 **service** 组件（有 execute 方法的）：
        (S(组件A) | S(组件B)).execute_all(ctx)
        这会自动依次执行各组件并记录轨迹。
@@ -157,15 +157,15 @@ def handle_compose(args):
     【代码模板示例】：
     ```python
     from ai_pod_cli.context import PipelineContext
-    from ai_pod_cli.config import load_config
+    from ai_pod_cli.config import load_beans
     from ai_pod_cli.container import build_container, Pod
     from modules.services.stockchecker import StockChecker
     from modules.services.stocknotifier import StockNotifier
 
 
     def run(ctx: PipelineContext):
-        config = load_config()
-        container = build_container(config)
+        beans = load_beans()
+        container = build_container(beans)
         S = Pod(container)
 
         # 步骤 1: 检查库存

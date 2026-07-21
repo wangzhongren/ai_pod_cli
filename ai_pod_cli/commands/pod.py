@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import load_config, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
+from ai_pod_cli.config import load_beans, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code
 
 
@@ -101,10 +101,10 @@ def _generate_pod_entry(desc: str, generated: list[str], pipe_names: list[str]) 
 
     【代码规范】：
     - 入口通过容器获取一切：
-      from ai_pod_cli.config import load_config
+      from ai_pod_cli.config import load_beans
       from ai_pod_cli.container import build_container
-      config = load_config()
-      container = build_container(config)
+      beans = load_beans()
+      container = build_container(beans)
     - PipelineRunner 通过容器获取（import: from ai_pod_cli.runner import PipelineRunner）：
       runner = container.get(PipelineRunner)
       runner.route_names()  — 列出所有路由
@@ -201,7 +201,7 @@ def handle_pod(args):
     # 确保 requirements.txt 存在（空依赖触发 header 写入）
     append_deps_to_requirements([])
 
-    config = load_config()
+    beans = load_beans()
     existing_beans = load_beans_summary()
     toml_keys = load_config_toml_safe()
 
@@ -363,7 +363,7 @@ def handle_pod(args):
         print(f"🤖 [{i}/{len(components)}] 生成 {name} ({category})...")
 
         # 重新加载配置（因为每轮生成后 bean pool 会更新）
-        config = load_config()
+        beans = load_beans()
         beans_context = load_beans_summary()
         toml_keys = load_config_toml_safe()
 

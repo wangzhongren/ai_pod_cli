@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code, SecurityError
 
 
@@ -21,7 +21,7 @@ def handle_create(args):
 
     append_deps_to_requirements([])
 
-    config = load_config()
+    beans = load_beans()
     beans_summary = load_beans_summary()
     toml_keys = load_config_toml_safe()
 

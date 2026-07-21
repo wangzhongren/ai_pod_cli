@@ -139,7 +139,7 @@ def init_config_if_not_exists():
 
 def load_beans_summary() -> str:
     """Return a categorized summary of all beans with method signatures for AI prompts."""
-    config = load_config()
+    config = load_beans()
     providers = []
     services = []
     for b in config.get("beans", []):
@@ -172,8 +172,8 @@ def load_beans_summary() -> str:
     return "\n".join(lines)
 
 
-def load_config() -> dict:
-    """Load the bean configuration from disk."""
+def load_beans() -> dict:
+    """Load the bean registry (beans_config.json) from disk."""
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 

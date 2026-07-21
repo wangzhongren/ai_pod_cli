@@ -76,10 +76,10 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
     3. 生成完整的、可直接运行的入口文件代码。
     【核心代码规范】：
     - 入口文件通过容器获取一切，不要手动 new 任何组件：
-      from ai_pod_cli.config import load_config
+      from ai_pod_cli.config import load_beans
       from ai_pod_cli.container import build_container
-      config = load_config()
-      container = build_container(config)
+      beans = load_beans()
+      container = build_container(beans)
     - PipelineRunner 已注册为容器 Bean（import: from ai_pod_cli.runner import PipelineRunner）：
       runner = container.get(PipelineRunner)
       runner.route_names()  — 列出所有路由
