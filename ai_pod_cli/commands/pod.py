@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements
+from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code
 
 
@@ -306,7 +306,8 @@ def handle_pod(args):
         - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！**
         - import 路径：ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
                        ai_pod_cli.entities.XXX → from ai_pod_cli.entities import XXX
-                       modules.xxx.XXX → from modules.xxx import XXX
+                       modules.providers.xxx.XXX → from modules.providers.xxx import XXX
+                       modules.services.xxx.XXX → from modules.services.xxx import XXX
         - 无依赖时：@inject def __init__(self): pass
 
         【第三方依赖声明】：
@@ -350,9 +351,10 @@ def handle_pod(args):
                 failed.append(name)
                 continue
 
-            # 写入文件
-            os.makedirs(MODULES_DIR, exist_ok=True)
-            file_path = os.path.join(MODULES_DIR, f"{name.lower()}.py")
+            # 写入文件（按分类写入不同子目录）
+            module_dir, class_path = get_module_path(category, name)
+            os.makedirs(module_dir, exist_ok=True)
+            file_path = os.path.join(module_dir, f"{name.lower()}.py")
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(code)
 
@@ -366,7 +368,7 @@ def handle_pod(args):
                 "id": name,
                 "category": category,
                 "type": "ai_created",
-                "class_path": f"{MODULES_DIR}.{name.lower()}.{name}",
+                "class_path": class_path,
                 "dependencies": dependencies,
                 "inputs": inputs,
                 "outputs": outputs,

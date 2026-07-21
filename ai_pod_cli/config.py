@@ -7,6 +7,24 @@ CONFIG_FILE = "beans_config.json"
 CONFIG_TOML = "config.toml"
 ROUTES_TOML = "routes.toml"
 MODULES_DIR = "modules"
+PROVIDERS_DIR = "modules/providers"
+SERVICES_DIR = "modules/services"
+
+CATEGORY_DIR = {
+    "provider": PROVIDERS_DIR,
+    "service": SERVICES_DIR,
+}
+
+
+def get_module_path(category: str, name: str) -> tuple[str, str]:
+    """Return (directory, class_path) for a component based on its category.
+
+    Example: ('modules/providers', 'modules.providers.sqlitestore.SqliteStore')
+    """
+    dir_name = CATEGORY_DIR.get(category, MODULES_DIR)
+    file_stem = name.lower()
+    class_path = f"{dir_name.replace('/', '.')}.{file_stem}.{name}"
+    return dir_name, class_path
 PIPELINES_DIR = "pipelines"
 
 

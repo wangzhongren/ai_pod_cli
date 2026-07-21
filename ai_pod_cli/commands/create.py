@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_safe, save_config, append_deps_to_requirements
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code, SecurityError
 
 
@@ -124,7 +124,8 @@ def handle_create(args):
     - **禁止从 modules.config_store 导入 ConfigStore，modules 下没有这个文件！**
     - class_path 为 `ai_pod_cli.entities.XXX` → `from ai_pod_cli.entities import XXX`
     - class_path 为 `ai_pod_cli.config_store.ConfigStore` → `from ai_pod_cli.config_store import ConfigStore`
-    - class_path 为 `modules.xxx.XXX` → `from modules.xxx import XXX`
+    - class_path 为 `modules.providers.xxx.XXX` → `from modules.providers.xxx import XXX`
+    - class_path 为 `modules.services.xxx.XXX` → `from modules.services.xxx import XXX`
     - 如果没有依赖，构造函数只需 `@inject def __init__(self): pass`
     - 禁止在代码中手动实例化任何依赖组件
 
@@ -234,9 +235,10 @@ def handle_create(args):
             return
         print(f"🛡️  [安全检查通过] 代码未发现危险操作")
 
-        # 物理写入文件
-        os.makedirs(MODULES_DIR, exist_ok=True)
-        file_path = os.path.join(MODULES_DIR, f"{args.name.lower()}.py")
+        # 物理写入文件（按分类写入不同子目录）
+        module_dir, class_path = get_module_path(args.category, args.name)
+        os.makedirs(module_dir, exist_ok=True)
+        file_path = os.path.join(module_dir, f"{args.name.lower()}.py")
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(generated_code)
         print(f"✍️  [AI 代码生成成功] 模块物理文件已保存至: {file_path}")
@@ -251,7 +253,7 @@ def handle_create(args):
             "id": args.name,
             "category": args.category,
             "type": "ai_created",
-            "class_path": f"{MODULES_DIR}.{args.name.lower()}.{args.name}",
+            "class_path": class_path,
             "dependencies": dependencies,
             "inputs": inputs,
             "outputs": outputs,

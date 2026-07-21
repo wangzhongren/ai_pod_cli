@@ -11,8 +11,10 @@ data.db
 beans_config.json
 config.toml
 routes.toml
-modules/*.py
-!modules/__init__.py
+modules/providers/*.py
+!modules/providers/__init__.py
+modules/services/*.py
+!modules/services/__init__.py
 pipelines/*.py
 
 # IDE

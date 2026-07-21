@@ -7,7 +7,8 @@ import sys
 
 from ai_pod_cli.config import (
     CONFIG_FILE, CONFIG_TOML, ROUTES_TOML,
-    MODULES_DIR, PIPELINES_DIR, init_config_if_not_exists,
+    MODULES_DIR, PROVIDERS_DIR, SERVICES_DIR,
+    PIPELINES_DIR, init_config_if_not_exists,
     append_deps_to_requirements, REQUIREMENTS_FILE,
 )
 
@@ -18,12 +19,21 @@ def handle_init(args):
     created = []
     skipped = []
 
-    # 1. 创建 modules/ 目录 + 配套文件
-    if not os.path.exists(MODULES_DIR):
-        os.makedirs(MODULES_DIR)
-        created.append(f"📁 目录 {MODULES_DIR}/")
-    else:
-        skipped.append(f"📁 目录 {MODULES_DIR}/ (已存在)")
+    # 1. 创建 modules/ 子目录：providers/ 和 services/
+    for sub_dir, desc in [(PROVIDERS_DIR, "基础设施提供者"), (SERVICES_DIR, "业务服务")]:
+        if not os.path.exists(sub_dir):
+            os.makedirs(sub_dir)
+            created.append(f"📁 目录 {sub_dir}/")
+        else:
+            skipped.append(f"📁 目录 {sub_dir}/ (已存在)")
+
+        init_file = os.path.join(sub_dir, "__init__.py")
+        if not os.path.exists(init_file):
+            with open(init_file, "w", encoding="utf-8") as f:
+                f.write(f'"""AI-generated {desc} components."""\n')
+            created.append(f"📄 {init_file}")
+        else:
+            skipped.append(f"📄 {init_file} (已存在)")
 
     # 创建根 requirements.txt（空依赖触发 header 写入）
     if not os.path.exists(REQUIREMENTS_FILE):
@@ -31,14 +41,6 @@ def handle_init(args):
         created.append(f"📄 {REQUIREMENTS_FILE}")
     else:
         skipped.append(f"📄 {REQUIREMENTS_FILE} (已存在)")
-
-    modules_init = os.path.join(MODULES_DIR, "__init__.py")
-    if not os.path.exists(modules_init):
-        with open(modules_init, "w", encoding="utf-8") as f:
-            f.write('"""AI-generated components live here."""\n')
-        created.append(f"📄 {modules_init}")
-    else:
-        skipped.append(f"📄 {modules_init} (已存在)")
 
     # 2. 创建 pipelines/ 目录
     if not os.path.exists(PIPELINES_DIR):
