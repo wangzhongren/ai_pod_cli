@@ -68,6 +68,14 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
       - runner = PipelineRunner()  — 自动读取 routes.toml
       - runner.route_names()  — 返回所有路由名称列表
       - runner.run(route_name, params_dict)  — 执行指定路由的 pipeline，返回结果 dict
+    - 入口文件也支持依赖注入，直接获取容器中的组件：
+      from ai_pod_cli.config import load_config
+      from ai_pod_cli.container import build_container, Pod
+      config = load_config()
+      container = build_container(config)
+      S = Pod(container)
+      db = container.get(SqliteStore)  — 直接获取任意已注册 Bean，无需自己 new
+    - 任何时候需要组件实例，通过 container.get() 获取，不要手动实例化。
     - 生成的代码必须是完整可运行的，包含所有必要的 import。
     - 加上清晰的中文注释。
     - 如果是 Web 框架，包含路由示例。
