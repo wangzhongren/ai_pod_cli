@@ -126,20 +126,22 @@ def handle_compose(args):
     【生成的代码规范】：
     1. 必须定义一个 `run(ctx)` 函数作为入口，ctx 是 PipelineContext 类型。
     2. 在 run 函数内部：
-       - 从 ai_pod_cli.config import load_config
-       - 从 ai_pod_cli.container import build_container, Pod
-       - 用 build_container(config) 构建 DI 容器
-       - 用 S = Pod(container) 创建管道包装器
-       - 用 S(ComponentClass) 获取可管道串联的组件引用
-    3. 使用管道符 | 串联 **service** 组件（有 execute 方法的）：
+       - from ai_pod_cli.config import load_config  ← 仅用于 build_container()！
+         load_config() 加载的是 beans_config.json（bean 注册表），不是用户配置！
+       - from ai_pod_cli.container import build_container, Pod
+       - config = load_config(); container = build_container(config)
+       - S = Pod(container)
+    3. **管线中禁止直接读取配置值！配置通过 ConfigStore 在组件内部读取，不在管线中读。**
+       load_config() 只用于构建容器，不要用它的返回值读配置！
+    4. 使用管道符 | 串联 **service** 组件（有 execute 方法的）：
        (S(组件A) | S(组件B)).execute_all(ctx)
        这会自动依次执行各组件并记录轨迹。
        **重要**：只有 service 类型组件可以放入管道链！provider 类型组件（如 ConfigStore、SqliteStore 等）
        没有 execute 方法，只能作为依赖注入到 service 中，绝对不能放进 S() 管道链里！
-    4. 从 ctx.params 读取入口参数，通过 ctx.set() 传递数据。
-    5. 需要条件分支时，用 if/else 分别串联不同的管道。
-    6. 最后 return ctx.summary()。
-    7. 加上清晰的中文注释。
+    5. 从 ctx.params 读取入口参数，通过 ctx.set() 传递数据。
+    6. 需要条件分支时，用 if/else 分别串联不同的管道。
+    7. 最后 return ctx.summary()。
+    8. 加上清晰的中文注释。
 
     【PipelineContext 的 API】：
     - ctx.params: dict — 入口参数
