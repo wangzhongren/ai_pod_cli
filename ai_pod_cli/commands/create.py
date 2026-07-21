@@ -74,20 +74,21 @@ def handle_create(args):
     - execute 方法的返回值也应为 dict。
     - 如果组件分类为 entity（基础设施实体），可以不提供 execute 方法，只需提供其业务方法（如 query、send 等）。
 
-    【代码模板示例】（假设类名为 StockChecker，依赖 DbClient 和 SmsSender）：
+    【代码模板示例】（假设类名为 StockChecker，依赖 ConfigStore 读取配置和 API key）：
     ```python
     from injector import inject
     from ai_pod_cli.context import PipelineContext
-    from ai_pod_cli.entities import DbClient, SmsSender
+    from ai_pod_cli.config_store import ConfigStore
 
 
     class StockChecker:
         \"\"\"库存检查组件\"\"\"
 
         @inject
-        def __init__(self, db_client: DbClient, sms_sender: SmsSender):
-            self.db_client = db_client
-            self.sms_sender = sms_sender
+        def __init__(self, config_store: ConfigStore):
+            self.config_store = config_store
+            # 通过 ConfigStore 读取配置
+            self.api_url = config_store.get("stock.api_url", "https://api.example.com/stock")
 
         def execute(self, ctx: PipelineContext) -> dict:
             \"\"\"业务执行入口\"\"\"
@@ -95,7 +96,9 @@ def handle_create(args):
             sku_id = ctx.params.get("sku_id", ctx.get("sku_id"))
 
             # 2. 通过注入的依赖执行业务逻辑
-            stock_info = self.db_client.query(f"SELECT stock FROM products WHERE id = {{sku_id}}")
+            import requests
+            resp = requests.get(f"{self.api_url}/{sku_id}")
+            stock_info = resp.json()
 
             # 3. 将中间结果写入上下文供下游组件使用
             ctx.set("stock", stock_info["stock"])
@@ -103,7 +106,6 @@ def handle_create(args):
 
             # 4. 业务判断与副作用
             if stock_info["stock"] <= 0:
-                self.sms_sender.send("13800000000", f"商品 {{sku_id}} 库存不足！")
                 ctx.set("alert_sent", True)
                 return {{"status": "failed", "reason": "out_of_stock"}}
 

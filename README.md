@@ -67,7 +67,7 @@ Every component you create makes the system smarter:
 
 ```
 Round 1:  aipod create --name SqliteStore --desc "SQLite storage"
-          → Bean Pool: [ConfigStore, DbClient, SmsSender, SqliteStore]
+          → Bean Pool: [ConfigStore, SqliteStore]
 
 Round 2:  aipod create --name DataCollector --desc "generates sales data"
           → Bean Pool: [..., DataCollector]

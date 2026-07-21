@@ -67,32 +67,6 @@ def init_config_if_not_exists():
                     },
                     "description": "集中式配置组件。从 config.toml 读取配置，通过 get('section.key') 访问。其他组件应注入 ConfigStore 来获取配置值，而非直接读环境变量。",
                 },
-                {
-                    "id": "DbClient",
-                    "category": "entity",
-                    "type": "human_added",
-                    "class_path": "ai_pod_cli.entities.DbClient",
-                    "methods": {
-                        "query": {
-                            "inputs": {"sql": "str — SQL 查询语句"},
-                            "outputs": {"stock": "int — 当前库存"},
-                        }
-                    },
-                    "description": "基础数据库服务。提供 query(sql: str) 方法，返回包含库存的字典。",
-                },
-                {
-                    "id": "SmsSender",
-                    "category": "entity",
-                    "type": "human_added",
-                    "class_path": "ai_pod_cli.entities.SmsSender",
-                    "methods": {
-                        "send": {
-                            "inputs": {"phone": "str — 手机号码", "msg": "str — 短信内容"},
-                            "outputs": "无返回值",
-                        }
-                    },
-                    "description": "短信发送服务。提供 send(phone: str, msg: str) 方法，无返回值。",
-                },
             ]
         }
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
