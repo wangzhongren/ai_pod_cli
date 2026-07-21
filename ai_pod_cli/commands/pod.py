@@ -471,9 +471,9 @@ def handle_pod(args):
                 "methods": methods,
                 "description": f"{description}。技术规格: {ai_spec}",
             }
-            config["beans"] = [b for b in config["beans"] if b["id"] != name]
-            config["beans"].append(new_bean)
-            save_config(config)
+            beans["beans"] = [b for b in beans["beans"] if b["id"] != name]
+            beans["beans"].append(new_bean)
+            save_config(beans)
 
             generated.append(name)
             print(f"   ✅ {name} → {file_path}")

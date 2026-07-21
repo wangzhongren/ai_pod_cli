@@ -10,7 +10,7 @@ def handle_add(args):
     beans = load_beans()
 
     # 检查是否已存在同名组件，存在则覆盖
-    config["beans"] = [b for b in config["beans"] if b["id"] != args.name]
+    beans["beans"] = [b for b in beans["beans"] if b["id"] != args.name]
 
     new_bean = {
         "id": args.name,
@@ -20,8 +20,8 @@ def handle_add(args):
         "description": args.desc,
     }
 
-    config["beans"].append(new_bean)
-    save_config(config)
+    beans["beans"].append(new_bean)
+    save_config(beans)
 
     print(f"💾 [注册成功] 组件 '{args.name}' 已写入配置中心 (class_path: {args.class_path})")
     print(f"   分类: {args.category}")

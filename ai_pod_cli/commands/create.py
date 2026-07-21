@@ -276,9 +276,9 @@ def handle_create(args):
             "description": f"人类诉求: {args.desc}。技术规格: {ai_spec}",
         }
 
-        config["beans"] = [b for b in config["beans"] if b["id"] != args.name]
-        config["beans"].append(new_bean)
-        save_config(config)
+        beans["beans"] = [b for b in beans["beans"] if b["id"] != args.name]
+        beans["beans"].append(new_bean)
+        save_config(beans)
         print(f"💾 [元数据入库成功] 账本配置中心更新完毕！\n")
 
     except Exception as e:
