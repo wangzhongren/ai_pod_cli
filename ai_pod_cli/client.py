@@ -74,6 +74,7 @@ def call_llm(
             {"role": "user", "content": user_content},
         ],
         "temperature": temperature,
+        "max_tokens": 8192,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
