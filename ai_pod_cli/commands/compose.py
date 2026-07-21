@@ -151,7 +151,7 @@ def handle_compose(args):
     - ctx.summary(): 返回执行摘要 dict
 
     【import 规则（严格遵守）】：
-    - 每个组件的 import 路径见上方列表，从 modules.providers.xxx 或 modules.services.xxx 导入。
+    - 每个组件的 import 路径见上方列表，文件名必须**原样复制**，一个字不改！
     - **禁止** `from modules import X`，必须写完整路径！
 
     【代码模板示例】：

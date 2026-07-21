@@ -47,6 +47,7 @@ def handle_create(args):
     - 禁止手动实例化任何依赖组件，全部通过 DI 注入。
 
     【import 路径规则（严格遵守，错了代码跑不起来）】：
+    - 每个组件的 import 路径见上方组件池，文件名（括号里的 .py 文件）必须**原样使用**！
     - **禁止 `from modules import X`！禁止 `from modules import X, Y, Z`！** 每个组件必须从自己的子目录导入。
     - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
     - ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
@@ -269,6 +270,7 @@ def handle_create(args):
             "category": args.category,
             "type": "ai_created",
             "class_path": class_path,
+            "file": f"{args.name.lower()}.py",
             "dependencies": dependencies,
             "inputs": inputs,
             "outputs": outputs,

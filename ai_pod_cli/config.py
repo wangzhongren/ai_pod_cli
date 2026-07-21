@@ -94,6 +94,7 @@ def init_config_if_not_exists():
                     "category": "provider",
                     "type": "human_added",
                     "class_path": "ai_pod_cli.config_store.ConfigStore",
+                    "file": "config_store.py",
                     "methods": {
                         "get": {
                             "inputs": {"key": "str — dot-notation 键路径，如 database.sqlite_path", "default": "any — 默认值"},
@@ -119,6 +120,7 @@ def init_config_if_not_exists():
                     "category": "provider",
                     "type": "human_added",
                     "class_path": "ai_pod_cli.runner.PipelineRunner",
+                    "file": "runner.py",
                     "methods": {
                         "run": {
                             "inputs": {"route_name": "str — routes.toml 中的路由名", "params": "dict — 入口参数"},
@@ -145,7 +147,7 @@ def load_beans_summary() -> str:
     for b in config.get("beans", []):
         desc = b.get("description", "")[:100]
         if b.get("category") == "provider":
-            entry = f"  - {b['id']}: {desc}"
+            entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
             methods = b.get("methods", {})
             if methods:
                 for m_name, m_info in methods.items():
@@ -155,7 +157,7 @@ def load_beans_summary() -> str:
                     entry += f"\n      .{m_name}({sig}) -> {m_outputs}"
             providers.append(entry)
         else:
-            entry = f"  - {b['id']}: {desc}"
+            entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
             inputs = b.get("inputs", {})
             outputs = b.get("outputs", {})
             if inputs:

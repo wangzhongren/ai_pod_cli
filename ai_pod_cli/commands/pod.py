@@ -387,6 +387,7 @@ def handle_pod(args):
         - 无依赖时：@inject def __init__(self): pass
         - 第三方包必须在 extra_deps 中列出
         - **禁止 `from modules import X`！每个组件必须从自己的子目录单独导入**
+        - 每个组件的文件名见上方组件池，必须**原样使用**，不要自己编文件名！
         - import 路径：modules.providers.xxx → from modules.providers.xxx / modules.services.xxx → from modules.services.xxx
         """
 
@@ -465,6 +466,7 @@ def handle_pod(args):
                 "category": category,
                 "type": "ai_created",
                 "class_path": class_path,
+                "file": f"{name.lower()}.py",
                 "dependencies": dependencies,
                 "inputs": inputs,
                 "outputs": outputs,
