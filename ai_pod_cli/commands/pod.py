@@ -259,13 +259,18 @@ def handle_pod(args):
                        ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
         - 无依赖时：@inject def __init__(self): pass
 
+        【第三方依赖声明】：
+        - 如果生成的代码 import 了标准库和 ai_pod_cli 之外的第三方包（如 requests, redis, pymysql 等），必须在 extra_deps 中列出这些包名。
+        - 如果只使用标准库和 ai_pod_cli 内部的包，extra_deps 返回空数组。
+
         请严格以标准 JSON 格式返回：
         {{
             "dependencies": ["依赖ID_1"],
             "inputs": {{"参数名": "类型 — 说明"}},
             "outputs": {{"输出键": "类型 — 说明"}},
             "ai_spec": "技术规格描述",
-            "code": "完整 Python 源代码"
+            "code": "完整 Python 源代码",
+            "extra_deps": ["第三方包名1", "第三方包名2"]
         }}
         """
 
@@ -277,6 +282,7 @@ def handle_pod(args):
             inputs = result.get("inputs", {})
             outputs = result.get("outputs", {})
             ai_spec = result.get("ai_spec", "")
+            extra_deps = result.get("extra_deps", [])
 
             if not code:
                 print(f"   ❌ AI 未返回代码，跳过。")
@@ -297,6 +303,11 @@ def handle_pod(args):
             file_path = os.path.join(MODULES_DIR, f"{name.lower()}.py")
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(code)
+
+            # 将第三方依赖写入根 requirements.txt
+            if extra_deps:
+                _append_deps_to_root_requirements(extra_deps)
+                print(f"   📦 额外依赖: {', '.join(extra_deps)}")
 
             # 注册到 bean pool
             new_bean = {
