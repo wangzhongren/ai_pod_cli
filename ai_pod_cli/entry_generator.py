@@ -6,13 +6,14 @@ from ai_pod_cli.client import call_llm
 from ai_pod_cli.security import validate_code
 
 
-def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple[str, list[str]] | None:
+def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_context: dict | None = None) -> tuple[str, list[str]] | None:
     """Use AI to generate a project entry point based on description.
 
     Args:
         desc: Project description (AI decides tech stack and generates entry file).
         routes_map: Optional dict of {route_name: description} from routes.toml.
-                    When provided, the AI must use these exact route names.
+        pod_context: Optional dict with 'components' and 'pipelines' lists
+                     from pod decomposition, giving AI full context.
 
     Returns:
         Tuple of (entry_filename, extra_deps) or None if generation failed.
@@ -29,7 +30,24 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
     print(f"\n🚀 [入口生成] AI 正在根据描述生成项目入口...")
     print(f"📝 [描述] {desc[:200]}{'...' if len(desc) > 200 else ''}")
 
-    # 构建路由上下文（如果提供）
+    # 构建 Pod 上下文（来自 pod 拆解方案）
+    pod_context_str = ""
+    if pod_context:
+        parts = []
+        components = pod_context.get("components", [])
+        pipelines = pod_context.get("pipelines", [])
+        if components:
+            parts.append("   本次 Pod 生成的组件：")
+            for c in components:
+                parts.append(f"     - {c['name']} ({c.get('category', '')}): {c.get('description', '')[:120]}")
+        if pipelines:
+            parts.append("   本次 Pod 规划的管线：")
+            for p in pipelines:
+                parts.append(f"     - {p.get('name', '')}: {p.get('instruction', '')[:120]}")
+        if parts:
+            pod_context_str = "\n".join(parts)
+
+    # 构建路由上下文
     routes_context = ""
     if routes_map:
         routes_lines = []
@@ -39,17 +57,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
         if routes_lines:
             routes_context = f"""
     当前 routes.toml 中**已注册**的路由（你的入口文件必须使用这些精确名称调用 runner.run()）：
-    {chr(10).join(routes_lines)}
-    同时建议使用 runner.route_names() 动态列出所有路由，避免硬编码导致不一致。
-    """
-        else:
-            routes_context = """
-    建议使用 runner.route_names() 动态列出所有可用路由，避免硬编码路由名。
-    """
-    else:
-        routes_context = """
-    建议使用 runner.route_names() 动态列出所有可用路由，避免硬编码路由名。
-    """
+    {chr(10).join(routes_lines)}"""
 
     system_prompt = f"""
     你是一个资深的 Python 架构师。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
@@ -57,11 +65,15 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
 
     你的任务是：根据人类的项目描述，自主完成以下决策和代码生成：
 
+    当前项目需求: {desc}
+    {pod_context_str}
+    {routes_context}
+    建议使用 runner.route_names() 动态列出所有路由，避免硬编码路由名。
+
     【你需要自主决定的事项】：
     1. 判断项目类型（Flask Web API、FastAPI 微服务、CLI 工具、RabbitMQ 消费者、Kafka 流处理、APScheduler 定时任务、WebSocket 服务等）。
     2. 决定入口文件名（如 app.py、main.py、consumer.py、scheduler.py、server.py 等）。
     3. 生成完整的、可直接运行的入口文件代码。
-    {routes_context}
     【核心代码规范】：
     - 入口文件通过容器获取一切，不要手动 new 任何组件：
       from ai_pod_cli.config import load_config

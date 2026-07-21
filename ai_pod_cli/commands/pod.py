@@ -431,7 +431,12 @@ def handle_pod(args):
         # 读取当前 routes.toml 中的路由，确保入口文件使用精确路由名
         routes_map = _load_routes_map()
         from ai_pod_cli.entry_generator import generate_entry
-        entry_info = generate_entry(desc, routes_map=routes_map)
+        # 传入 pod 拆解方案，让 AI 了解完整上下文
+        pod_context = {
+            "components": components,
+            "pipelines": pipelines,
+        }
+        entry_info = generate_entry(desc, routes_map=routes_map, pod_context=pod_context)
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:
