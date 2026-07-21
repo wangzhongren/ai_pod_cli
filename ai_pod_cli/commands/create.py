@@ -118,8 +118,11 @@ def handle_create(args):
             self.client.set(key, value)
     ```
 
-    【import 路径规则】：
+    【import 路径规则（严格遵守，不允许捏造）】：
+    - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入：`from ai_pod_cli.config_store import ConfigStore`**
+    - **禁止从 modules.config_store 导入 ConfigStore，modules 下没有这个文件！**
     - class_path 为 `ai_pod_cli.entities.XXX` → `from ai_pod_cli.entities import XXX`
+    - class_path 为 `ai_pod_cli.config_store.ConfigStore` → `from ai_pod_cli.config_store import ConfigStore`
     - class_path 为 `modules.xxx.XXX` → `from modules.xxx import XXX`
     - 如果没有依赖，构造函数只需 `@inject def __init__(self): pass`
     - 禁止在代码中手动实例化任何依赖组件

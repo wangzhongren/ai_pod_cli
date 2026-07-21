@@ -242,9 +242,10 @@ def handle_pod(args):
         - entry 类型必须实现 execute(self, ctx: PipelineContext) -> dict
         - entity 类型不需要 execute，提供描述中的业务方法
         - 从 ctx.params 或 ctx.get() 读输入，ctx.set() 写输出
-        - import 路径：ai_pod_cli.entities.XXX → from ai_pod_cli.entities import XXX
+        - **ConfigStore 是框架内置组件，必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！**
+        - import 路径：ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
+                       ai_pod_cli.entities.XXX → from ai_pod_cli.entities import XXX
                        modules.xxx.XXX → from modules.xxx import XXX
-                       ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
         - 无依赖时：@inject def __init__(self): pass
 
         【第三方依赖声明】：
