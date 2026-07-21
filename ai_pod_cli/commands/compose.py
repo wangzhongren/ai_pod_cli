@@ -148,13 +148,17 @@ def handle_compose(args):
     - ctx.record_step(component_id, result): 记录执行步骤
     - ctx.summary(): 返回执行摘要 dict
 
+    【import 规则（严格遵守）】：
+    - 每个组件的 import 路径见上方列表，从 modules.providers.xxx 或 modules.services.xxx 导入。
+    - **禁止** `from modules import X`，必须写完整路径！
+
     【代码模板示例】：
     ```python
     from ai_pod_cli.context import PipelineContext
     from ai_pod_cli.config import load_config
     from ai_pod_cli.container import build_container, Pod
-    from modules.stockchecker import StockChecker
-    from modules.stocknotifier import StockNotifier
+    from modules.services.stockchecker import StockChecker
+    from modules.services.stocknotifier import StockNotifier
 
 
     def run(ctx: PipelineContext):
