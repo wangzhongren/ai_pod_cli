@@ -183,21 +183,30 @@ def handle_compose(args):
     }}
     """
 
-    try:
-        result = call_llm(system_prompt, f"指令: {args.cmd}", json_mode=True, temperature=0.1)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = call_llm(system_prompt, f"指令: {args.cmd}", json_mode=True, temperature=0.1)
 
-        pipeline_ids = result.get("pipeline_ids", [])
-        generated_code = result.get("code", "")
+            pipeline_ids = result.get("pipeline_ids", [])
+            generated_code = result.get("code", "")
 
-        print(f"🔗 [AI 编排] 执行链: {' → '.join(pipeline_ids) if pipeline_ids else '(空)'}")
+            print(f"🔗 [AI 编排] 执行链: {' → '.join(pipeline_ids) if pipeline_ids else '(空)'}")
 
-        if not generated_code:
-            print("❌ AI 未返回有效代码。")
+            if not generated_code:
+                if attempt < max_retries:
+                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_retries} 次重试...")
+                    continue
+                print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
+                return
+            break
+
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"   ⚠️  第 {attempt}/{max_retries} 次失败 ({e})，重试...")
+                continue
+            print(f"❌ AI 编排失败: {e}")
             return
-
-    except Exception as e:
-        print(f"❌ AI 编排失败: {e}")
-        return
 
     # 安全检查
     violations = validate_code(generated_code, for_pipeline=True)

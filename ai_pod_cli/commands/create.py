@@ -151,18 +151,36 @@ def handle_create(args):
 
     user_content = f"新组件名称: {args.name}\n组件分类: {args.category}\n人类诉求描述: {args.desc}"
 
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = call_llm(system_prompt, user_content, json_mode=True, temperature=0.1)
+
+            dependencies = result.get("dependencies", [])
+            ai_spec = result.get("ai_spec", "")
+            generated_code = result.get("code", "")
+            inputs = result.get("inputs", {})
+            outputs = result.get("outputs", {})
+            methods = result.get("methods", {})
+            config_additions = result.get("config_additions", {})
+            extra_deps = result.get("extra_deps", [])
+
+            if not generated_code:
+                if attempt < max_retries:
+                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_retries} 次重试...")
+                    continue
+                print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
+                return
+            break
+
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"   ⚠️  第 {attempt}/{max_retries} 次失败 ({e})，重试...")
+                continue
+            print(f"❌ 大模型调用或解析失败，原因为: {e}")
+            return
+
     try:
-        result = call_llm(system_prompt, user_content, json_mode=True, temperature=0.1)
-
-        dependencies = result.get("dependencies", [])
-        ai_spec = result.get("ai_spec", "")
-        generated_code = result.get("code", "")
-        inputs = result.get("inputs", {})
-        outputs = result.get("outputs", {})
-        methods = result.get("methods", {})
-        config_additions = result.get("config_additions", {})
-        extra_deps = result.get("extra_deps", [])
-
         print(f"🔍 [AI 依赖分析成功] 大模型自动挑选了系统依赖: {dependencies}")
         if args.category == "service":
             print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
@@ -260,4 +278,4 @@ def handle_create(args):
         print(f"💾 [元数据入库成功] 账本配置中心更新完毕！\n")
 
     except Exception as e:
-        print(f"❌ 大模型调用或解析失败，原因为: {e}")
+        print(f"❌ 组件生成失败，原因为: {e}")
