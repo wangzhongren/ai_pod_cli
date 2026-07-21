@@ -7,7 +7,7 @@ from datetime import datetime
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
-    load_config, load_config_toml_safe, PIPELINES_DIR, register_route,
+    load_config, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
 from ai_pod_cli.security import validate_code
 
@@ -94,7 +94,7 @@ def handle_compose(args):
     print(f"🎬 [compose] 人类宏观指令: '{args.cmd}'")
 
     config = load_config()
-    existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
+    existing_beans_context = load_beans_summary()
     toml_keys = load_config_toml_safe()
 
     # 收集所有组件的 class_path 用于生成 import

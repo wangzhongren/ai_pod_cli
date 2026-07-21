@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import load_config, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
+from ai_pod_cli.config import load_config, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code
 
 
@@ -202,7 +202,7 @@ def handle_pod(args):
     append_deps_to_requirements([])
 
     config = load_config()
-    existing_beans = json.dumps(config["beans"], indent=2, ensure_ascii=False)
+    existing_beans = load_beans_summary()
     toml_keys = load_config_toml_safe()
 
     system_prompt = f"""
@@ -364,7 +364,7 @@ def handle_pod(args):
 
         # 重新加载配置（因为每轮生成后 bean pool 会更新）
         config = load_config()
-        beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
+        beans_context = load_beans_summary()
         toml_keys = load_config_toml_safe()
 
         common = f"""

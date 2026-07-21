@@ -137,6 +137,25 @@ def init_config_if_not_exists():
             json.dump(initial_data, f, indent=2, ensure_ascii=False)
 
 
+def load_beans_summary() -> str:
+    """Return a categorized summary of all beans for AI prompts."""
+    config = load_config()
+    providers = []
+    services = []
+    for b in config.get("beans", []):
+        if b.get("category") == "provider":
+            providers.append(f"  - {b['id']}: {b.get('description', '')[:80]}")
+        else:
+            services.append(f"  - {b['id']}: {b.get('description', '')[:80]}")
+
+    lines = ["当前组件池：", "", "  【provider（可注入的依赖）】"]
+    lines.extend(providers if providers else ["  (无)"])
+    lines.append("")
+    lines.append("  【service（有 execute，可放入管线）】")
+    lines.extend(services if services else ["  (无)"])
+    return "\n".join(lines)
+
+
 def load_config() -> dict:
     """Load the bean configuration from disk."""
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:

@@ -5,7 +5,7 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_config, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code, SecurityError
 
 
@@ -22,7 +22,7 @@ def handle_create(args):
     append_deps_to_requirements([])
 
     config = load_config()
-    existing_beans_context = json.dumps(config["beans"], indent=2, ensure_ascii=False)
+    beans_summary = load_beans_summary()
     toml_keys = load_config_toml_safe()
 
     # 构造分类别的 System Prompt
@@ -30,7 +30,7 @@ def handle_create(args):
     当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
 
     目前系统中已经注册了以下可用的依赖组件池（Bean Pool）：
-    {existing_beans_context}
+    {beans_summary}
 
     当前 config.toml 中的配置项（敏感值已隐藏，组件通过 ConfigStore 读取）：
     {toml_keys}
