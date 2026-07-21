@@ -4,17 +4,42 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "AIPodCli"
-version = "0.4.1"
+version = "0.4.2"
 description = "AI-native application framework where AI builds software and a DI runtime executes it"
 readme = "README.md"
-requires-python = ">=3.9"
-license = "MIT"
-dependencies = [
-    "openai",
-    "injector",
-    "python-dotenv",
-    "tomlkit",
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "wangzhongren", email = "wangzhongren@users.noreply.github.com"},
 ]
+keywords = [
+    "ai",
+    "code-generation",
+    "dependency-injection",
+    "ioc",
+    "pipeline",
+    "cli",
+    "low-code",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[project.urls]
+Homepage = "https://github.com/wangzhongren/ai_pod_cli"
+Repository = "https://github.com/wangzhongren/ai_pod_cli.git"
+Issues = "https://github.com/wangzhongren/ai_pod_cli/issues"
 
 [project.scripts]
 aipod = "ai_pod_cli.cli:main"
