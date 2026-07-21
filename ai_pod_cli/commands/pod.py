@@ -385,6 +385,7 @@ def handle_pod(args):
         - 禁止创建纯 ConfigStore 包装类
         - 无依赖时：@inject def __init__(self): pass
         - 第三方包必须在 extra_deps 中列出
+        - **禁止 `from modules import X`！每个组件必须从自己的子目录单独导入**
         - import 路径：modules.providers.xxx → from modules.providers.xxx / modules.services.xxx → from modules.services.xxx
         """
 

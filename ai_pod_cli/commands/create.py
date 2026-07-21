@@ -44,7 +44,8 @@ def handle_create(args):
     - 没有依赖时写 `@inject def __init__(self): pass`。
     - 禁止手动实例化任何依赖组件，全部通过 DI 注入。
 
-    【import 路径规则（严格遵守）】：
+    【import 路径规则（严格遵守，错了代码跑不起来）】：
+    - **禁止 `from modules import X`！禁止 `from modules import X, Y, Z`！** 每个组件必须从自己的子目录导入。
     - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
     - ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
     - modules.providers.xxx.XXX → from modules.providers.xxx import XXX
@@ -103,6 +104,7 @@ def handle_create(args):
     你的任务：生成一个 **service（业务服务）** 组件。
 
     【service 规范】：
+    - 你只生成**一个 Python 类**，不是 pipeline 脚本！不要写 run() 函数，不要用 S()/Pod()/build_container。
     - service 是业务组件，必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
     - 从 `ctx.params` 或 `ctx.get(key)` 读取输入，通过 `ctx.set(key, value)` 写入输出。
     - 必须 `from ai_pod_cli.context import PipelineContext`。
