@@ -106,8 +106,8 @@ def handle_compose(args):
         component_imports[cid] = {"module": module_path, "class": class_name}
 
     imports_hint = "\n".join(
-        f"    - {cid}: from {info['module']} import {info['class']}"
-        for cid, info in component_imports.items()
+        f"    - {cid} ({bean['category']}): from {info['module']} import {info['class']}"
+        for cid, info in component_imports.items() if (bean := next((b for b in config["beans"] if b["id"] == cid), {}))
     )
 
     system_prompt = f"""
@@ -131,9 +131,11 @@ def handle_compose(args):
        - 用 build_container(config) 构建 DI 容器
        - 用 S = Pod(container) 创建管道包装器
        - 用 S(ComponentClass) 获取可管道串联的组件引用
-    3. 使用管道符 | 串联组件：
+    3. 使用管道符 | 串联 **service** 组件（有 execute 方法的）：
        (S(组件A) | S(组件B)).execute_all(ctx)
        这会自动依次执行各组件并记录轨迹。
+       **重要**：只有 service 类型组件可以放入管道链！provider 类型组件（如 ConfigStore、SqliteStore 等）
+       没有 execute 方法，只能作为依赖注入到 service 中，绝对不能放进 S() 管道链里！
     4. 从 ctx.params 读取入口参数，通过 ctx.set() 传递数据。
     5. 需要条件分支时，用 if/else 分别串联不同的管道。
     6. 最后 return ctx.summary()。
