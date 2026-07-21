@@ -39,6 +39,8 @@ def handle_create(args):
     【通用规范】：
     - 必须从 `injector` 引入 `inject`，构造函数加 `@inject` 装饰器。
     - 构造函数参数**只能声明组件类型依赖**（Bean Pool 中的类），禁止 str/int/bool 等原始类型。
+    - **依赖的方法必须来自上方组件池中列出的方法签名！禁止调用不存在的方法！**
+      比如 SqliteStore 只有 .insert() 和 .query()，就不能调用 .connect() 或 .execute()。
     - 配置通过注入 ConfigStore 读取：`from ai_pod_cli.config_store import ConfigStore`，用 `config_store.get("section.key", default)` 读取。
     - **禁止创建纯 ConfigStore 包装类**：ConfigStore 已可注入，不要生成只转发 get() 的组件。
     - 没有依赖时写 `@inject def __init__(self): pass`。

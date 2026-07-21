@@ -380,6 +380,7 @@ def handle_pod(args):
         - 必须 from injector import inject，构造函数加 @inject
         - 类名必须与 {name} 完全一致
         - 构造函数只放组件类型依赖，不放 str/int/bool
+        - **依赖的方法必须来自上方组件池中的方法签名！禁止调用不存在的方法！**
         - 配置通过 ConfigStore 读取：from ai_pod_cli.config_store import ConfigStore
         - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
         - 禁止创建纯 ConfigStore 包装类
