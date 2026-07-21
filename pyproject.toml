@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "AIPodCli"
-version = "0.4.7"
+version = "0.4.8"
 description = "AI-native application framework where AI builds software and a DI runtime executes it"
 readme = "README.md"
 requires-python = ">=3.10"
