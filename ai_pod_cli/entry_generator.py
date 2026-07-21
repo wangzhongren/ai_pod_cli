@@ -71,7 +71,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None) -> tuple
     - PipelineRunner 已注册为容器 Bean，通过容器获取：
       runner = container.get(PipelineRunner)
       runner.route_names()  — 列出所有路由
-      runner.run("route_name", {"key": "value"})  — 执行管线
+      runner.run("route_name", {{"key": "value"}})  — 执行管线
     - 禁止手动 new PipelineRunner()，必须通过 container.get() 获取。
     - 入口文件不需要 import 任何 modules/ 下的底层 Bean，只通过管线完成业务。
     - 生成的代码必须是完整可运行的，包含所有必要的 import。
