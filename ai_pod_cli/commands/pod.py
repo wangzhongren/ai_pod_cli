@@ -7,6 +7,7 @@ import sys
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import load_beans, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
 from ai_pod_cli.security import validate_code
+from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
 
 
 def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, config_additions: dict):
@@ -424,27 +425,43 @@ def handle_pod(args):
         """
 
         try:
-            result = call_llm(create_prompt, f"生成组件: {name}", json_mode=True, temperature=0.1)
+            max_attempts = 3
+            feedback = ""
+            generated_valid = False
+            for attempt in range(1, max_attempts + 1):
+                result = call_llm(
+                    create_prompt,
+                    f"生成组件: {name}{feedback}",
+                    json_mode=True,
+                    temperature=0.1,
+                )
 
-            code = result.get("code", "")
-            dependencies = result.get("dependencies", [])
-            inputs = result.get("inputs", {})
-            outputs = result.get("outputs", {})
-            methods = result.get("methods", {})
-            ai_spec = result.get("ai_spec", "")
-            extra_deps = result.get("extra_deps", [])
+                code = result.get("code", "")
+                dependencies = result.get("dependencies", [])
+                inputs = result.get("inputs", {})
+                outputs = result.get("outputs", {})
+                methods = result.get("methods", {})
+                ai_spec = result.get("ai_spec", "")
+                extra_deps = result.get("extra_deps", [])
 
-            if not code:
-                print(f"   ❌ AI 未返回代码，跳过。")
-                failed.append(name)
-                continue
+                if not code:
+                    if attempt < max_attempts:
+                        print(f"   ⚠️  AI 未返回代码，第 {attempt}/{max_attempts} 次重试...")
+                        continue
+                    print("   ❌ AI 未返回代码，跳过。")
+                    break
 
-            # 安全检查
-            violations = validate_code(code)
-            if violations:
-                print(f"   🛡️  安全检查失败 ({len(violations)} 处违规)，跳过。")
-                for v in violations:
-                    print(f"      ❌ {v}")
+                violations = validate_component_contract(code, name, category)
+                if violations:
+                    if request_repair(violations, attempt, max_attempts):
+                        feedback = repair_feedback(violations)
+                        continue
+                    break
+
+                generated_valid = True
+                break
+
+            if not generated_valid:
                 failed.append(name)
                 continue
 

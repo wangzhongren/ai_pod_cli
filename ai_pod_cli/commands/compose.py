@@ -9,7 +9,7 @@ from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
     load_beans, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
-from ai_pod_cli.security import validate_code
+from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipeline_contract
 
 
 def _slugify(text: str) -> str:
@@ -191,10 +191,11 @@ def handle_compose(args):
     }}
     """
 
-    max_retries = 3
-    for attempt in range(1, max_retries + 1):
+    max_attempts = 3
+    feedback = ""
+    for attempt in range(1, max_attempts + 1):
         try:
-            result = call_llm(system_prompt, f"指令: {args.cmd}", json_mode=True, temperature=0.1)
+            result = call_llm(system_prompt, f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1)
 
             pipeline_ids = result.get("pipeline_ids", [])
             generated_code = result.get("code", "")
@@ -202,29 +203,28 @@ def handle_compose(args):
             print(f"🔗 [AI 编排] 执行链: {' → '.join(pipeline_ids) if pipeline_ids else '(空)'}")
 
             if not generated_code:
-                if attempt < max_retries:
-                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_retries} 次重试...")
+                if attempt < max_attempts:
+                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_attempts} 次重试...")
                     continue
                 print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
                 return
+
+            violations = validate_pipeline_contract(generated_code)
+            if violations:
+                if not request_repair(violations, attempt, max_attempts):
+                    return
+                feedback = repair_feedback(violations)
+                continue
             break
 
         except Exception as e:
-            if attempt < max_retries:
-                print(f"   ⚠️  第 {attempt}/{max_retries} 次失败 ({e})，重试...")
+            if attempt < max_attempts:
+                print(f"   ⚠️  第 {attempt}/{max_attempts} 次失败 ({e})，重试...")
                 continue
             print(f"❌ AI 编排失败: {e}")
             return
 
-    # 安全检查
-    violations = validate_code(generated_code, for_pipeline=True)
-    if violations:
-        print(f"🛡️  [安全检查失败] Pipeline 代码包含 {len(violations)} 处违规:")
-        for v in violations:
-            print(f"   ❌ {v}")
-        print(f"\n   Pipeline 未保存。请调整描述重试。")
-        return
-    print(f"🛡️  [安全检查通过]")
+    print("🛡️  [生成预检通过] 代码语法、基础安全规则和 Pipeline 契约均有效")
 
     # 保存 pipeline 文件
     name = args.name or _slugify(args.cmd)

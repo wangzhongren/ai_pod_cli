@@ -11,8 +11,8 @@ AI generates **reusable components** (not one-off scripts) and **execution pipel
 ## Installation
 
 ```bash
-# Python 3.10+; install the runtime dependencies explicitly for now.
-pip install aipodcli openai injector python-dotenv tomlkit
+# Python 3.10+
+pip install aipodcli
 ```
 
 CLI entry point: `aipod`
@@ -28,6 +28,7 @@ Register hand-written component         → aipod add --name X --class-path Y --
 Generate a pipeline (no execution)      → aipod compose "instruction" --name X
 List generated pipelines               → aipod compose --list
 Run a pipeline                          → User runs their entry point (e.g. python app.py route_name)
+Inspect components and pipelines        → aipod visualize [--open]
 ```
 
 ## Commands
@@ -45,6 +46,7 @@ Run a pipeline                          → User runs their entry point (e.g. py
 - AI auto-selects dependencies from bean pool
 - AI auto-suggests config.toml entries via `config_additions`
 - AST security check before writing
+- When generation fails local validation, AIPod displays the errors and asks before retrying with that feedback (maximum three attempts)
 - Generated to `modules/<name>.py`, registered in `beans_config.json`
 
 ### `aipod add --name ClassName --class-path package.module.ClassName --desc "description"`
@@ -61,6 +63,12 @@ Run a pipeline                          → User runs their entry point (e.g. py
 ### `aipod compose --list`
 
 - List all saved pipelines
+
+### `aipod visualize [--output FILE] [--open]`
+
+- Generates a standalone interactive HTML graph of providers, services, DI dependencies, routes, and statically detected `S(Service)` pipeline calls
+- Click nodes to inspect their contracts and source paths
+- Reads metadata and pipeline source only; it never imports or executes generated components
 
 ## Code Templates
 

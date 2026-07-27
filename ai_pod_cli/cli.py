@@ -11,6 +11,7 @@ from ai_pod_cli.commands.entry import handle_entry
 from ai_pod_cli.commands.env import handle_config
 from ai_pod_cli.commands.init import handle_init
 from ai_pod_cli.commands.pod import handle_pod
+from ai_pod_cli.commands.visualize import handle_visualize
 
 
 def main():
@@ -78,6 +79,11 @@ def main():
     entry_parser = subparsers.add_parser("entry", help="AI generates a project entry point file")
     entry_parser.add_argument("desc", help="Project description (AI decides tech stack and generates entry file)")
 
+    # 8. visualize
+    visualize_parser = subparsers.add_parser("visualize", help="Generate an interactive project graph")
+    visualize_parser.add_argument("--output", "-o", default="aipod-graph.html", help="Output HTML file path")
+    visualize_parser.add_argument("--open", action="store_true", help="Open the graph in the default browser")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -94,6 +100,8 @@ def main():
         handle_config(args)
     elif args.command == "entry":
         handle_entry(args)
+    elif args.command == "visualize":
+        handle_visualize(args)
 
 
 def _apply_global_env():

@@ -8,6 +8,13 @@ version = "0.6.2"
 description = "AI-native application framework where AI builds software and a DI runtime executes it"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "injector>=0.21",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+    "tomlkit>=0.12",
+    "tomli>=2.0; python_version < '3.11'",
+]
 license = {text = "MIT"}
 authors = [
     {name = "wangzhongren", email = "wangzhongren@users.noreply.github.com"},

@@ -28,8 +28,7 @@ AIPod is different:
 
 ```bash
 # 1. Install (Python 3.10+)
-# Runtime dependencies are installed explicitly for now.
-pip install aipodcli openai injector python-dotenv tomlkit
+pip install aipodcli
 
 # 2. Configure once (global, shared across all projects)
 aipod config set OPENAI_API_KEY sk-your-key
@@ -47,6 +46,10 @@ python main.py list
 ```
 
 That's it. **Zero code written by you.**
+
+Want to inspect the runtime before connecting an LLM? Run the checked-in
+[Todo CLI example](examples/todo_cli/README.md); it uses the same Bean Pool,
+DI container, and PipelineRunner without making an API call.
 
 ## What Just Happened
 
@@ -91,6 +94,7 @@ Compose:  aipod compose "collect sales and write to SQLite"
 | `aipod config set KEY VALUE` | Set global config (once, shared everywhere) | ❌ |
 | `aipod config list` | Show global config | ❌ |
 | `aipod entry "desc"` | AI generates entry point file | ✅ |
+| `aipod visualize` | Generate an interactive component and Pipeline graph | ❌ |
 | `aipod create --name X --desc "..."` | AI generates one component | ✅ |
 | `aipod add --name X --class-path Y` | Register hand-written component | ❌ |
 | `aipod compose "instruction"` | AI generates pipeline | ✅ |
@@ -281,14 +285,32 @@ project/
 
 ## Security
 
-AST validation on all AI-generated code:
+All AI-generated code receives static validation before it is written or registered:
 - Blocks: `eval()`, `exec()`, `compile()`, `__import__()`, dunder chain access
-- Does NOT restrict imports — this runs locally, you own the code
+- Checks syntax plus the required component/Pipeline entry-point contract
+- If validation fails, shows the exact errors and asks before sending them to the LLM for a correction attempt (at most three attempts)
+- Does NOT sandbox imports, filesystem access, networking, or process execution. Review generated code before running it locally.
+
+## Visualize Your System
+
+Generate a standalone interactive graph of the current Bean Pool, dependency
+edges, routes, and statically detected Pipeline service chains:
+
+```bash
+aipod visualize
+# writes aipod-graph.html
+
+aipod visualize --open
+```
+
+Click a component to inspect its class path, contract, dependencies, and
+description. The command only reads project metadata and Python source; it never
+imports or executes generated components.
 
 ## Install
 
 ```bash
-pip install aipodcli openai injector python-dotenv tomlkit
+pip install aipodcli
 ```
 
 ## Roadmap

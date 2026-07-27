@@ -6,7 +6,7 @@ import sys
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
-from ai_pod_cli.security import validate_code, SecurityError
+from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
 
 
 def handle_create(args):
@@ -156,10 +156,11 @@ def handle_create(args):
 
     user_content = f"新组件名称: {args.name}\n组件分类: {args.category}\n人类诉求描述: {args.desc}"
 
-    max_retries = 3
-    for attempt in range(1, max_retries + 1):
+    max_attempts = 3
+    feedback = ""
+    for attempt in range(1, max_attempts + 1):
         try:
-            result = call_llm(system_prompt, user_content, json_mode=True, temperature=0.1)
+            result = call_llm(system_prompt, user_content + feedback, json_mode=True, temperature=0.1)
 
             dependencies = result.get("dependencies", [])
             ai_spec = result.get("ai_spec", "")
@@ -171,16 +172,23 @@ def handle_create(args):
             extra_deps = result.get("extra_deps", [])
 
             if not generated_code:
-                if attempt < max_retries:
-                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_retries} 次重试...")
+                if attempt < max_attempts:
+                    print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_attempts} 次重试...")
                     continue
                 print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
                 return
+
+            violations = validate_component_contract(generated_code, args.name, args.category)
+            if violations:
+                if not request_repair(violations, attempt, max_attempts):
+                    return
+                feedback = repair_feedback(violations)
+                continue
             break
 
         except Exception as e:
-            if attempt < max_retries:
-                print(f"   ⚠️  第 {attempt}/{max_retries} 次失败 ({e})，重试...")
+            if attempt < max_attempts:
+                print(f"   ⚠️  第 {attempt}/{max_attempts} 次失败 ({e})，重试...")
                 continue
             print(f"❌ 大模型调用或解析失败，原因为: {e}")
             return
@@ -241,15 +249,7 @@ def handle_create(args):
 
             print(f"⚙️  [配置追加] 已将 {added_count} 个新配置项写入 {CONFIG_TOML}")
 
-        # 安全检查：AST 扫描生成代码中的危险操作
-        violations = validate_code(generated_code)
-        if violations:
-            print(f"🛡️  [安全检查失败] AI 生成的代码包含 {len(violations)} 处违规:")
-            for v in violations:
-                print(f"   ❌ {v}")
-            print(f"\n   组件未写入。请使用更明确的描述重试，或手动编辑后使用 add 命令注册。")
-            return
-        print(f"🛡️  [安全检查通过] 代码未发现危险操作")
+        print("🛡️  [生成预检通过] 代码语法、基础安全规则和组件契约均有效")
 
         # 物理写入文件（按分类写入不同子目录）
         module_dir, class_path = get_module_path(args.category, args.name)
