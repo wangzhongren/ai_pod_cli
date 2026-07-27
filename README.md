@@ -27,8 +27,9 @@ AIPod is different:
 ## Quick Start
 
 ```bash
-# 1. Install
-pip install aipodcli
+# 1. Install (Python 3.10+)
+# Runtime dependencies are installed explicitly for now.
+pip install aipodcli openai injector python-dotenv tomlkit
 
 # 2. Configure once (global, shared across all projects)
 aipod config set OPENAI_API_KEY sk-your-key
@@ -114,13 +115,13 @@ AI generates everything: components, pipelines, entry point, config.
 aipod init
 
 # Build component pool incrementally
-aipod create --category entity --name SqliteStore \
+aipod create --category provider --name SqliteStore \
     --desc "SQLite storage, reads database.sqlite_path from ConfigStore"
 
-aipod create --category entry --name DataCollector \
+aipod create --category service --name DataCollector \
     --desc "generates random sales records"
 
-aipod create --category entry --name DataWriter \
+aipod create --category service --name DataWriter \
     --desc "depends on SqliteStore, writes records to database"
 
 # Compose pipelines from the pool
@@ -170,16 +171,25 @@ class DataWriter:
         return {"status": "success"}
 ```
 
-- **entry** — business logic, has `execute(ctx)` method
-- **entity** — infrastructure (DB, cache, HTTP client), has custom methods
+- **service** — business logic, has `execute(ctx)` and can be placed in a pipeline
+- **provider** — infrastructure (DB, cache, HTTP client), exposes custom methods and is injected into services
 
 ### Pipelines
 
 AI generates pipeline files using pipe syntax:
 
 ```python
+from ai_pod_cli.context import PipelineContext
+from ai_pod_cli.config import load_beans
+from ai_pod_cli.container import build_container, Pod
+from modules.services.datacollector import DataCollector
+from modules.services.datacleaner import DataCleaner
+from modules.services.datawriter import DataWriter
+from modules.services.notifier import Notifier
+
 def run(ctx: PipelineContext):
-    S = Pod(build_container(load_config()))
+    beans = load_beans()
+    S = Pod(build_container(beans))
 
     # Chain: DataCollector → DataCleaner → DataWriter
     (S(DataCollector) | S(DataCleaner) | S(DataWriter)).execute_all(ctx)
@@ -260,9 +270,11 @@ project/
 ├── routes.toml              ← Pipeline routes (compose/pod auto-registers)
 ├── beans_config.json        ← Component pool (AI maintains)
 ├── modules/                 ← Your component pool
-│   ├── sqlitestore.py
-│   ├── datacollector.py
-│   └── datawriter.py
+│   ├── providers/
+│   │   └── sqlitestore.py
+│   └── services/
+│       ├── datacollector.py
+│       └── datawriter.py
 └── pipelines/               ← AI-composed pipelines
     └── sales_flow.py
 ```
@@ -276,7 +288,7 @@ AST validation on all AI-generated code:
 ## Install
 
 ```bash
-pip install aipodcli
+pip install aipodcli openai injector python-dotenv tomlkit
 ```
 
 ## Roadmap
