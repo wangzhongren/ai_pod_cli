@@ -30,6 +30,7 @@ List generated pipelines               → aipod compose --list
 Run a pipeline                          → User runs their entry point (e.g. python app.py route_name)
 Inspect components and pipelines visually → aipod visualize [--open]
 Read project state for planning         → aipod inspect [scope] --json
+Run a pipeline and inspect its outcome  → aipod run route --params '{}' --json
 ```
 
 ## Commands
@@ -71,12 +72,18 @@ Read project state for planning         → aipod inspect [scope] --json
 - Click nodes to inspect their contracts and source paths
 - Reads metadata and pipeline source only; it never imports or executes generated components
 
-### `aipod inspect [project|components|pipelines|component|pipeline] [name] --json`
+### `aipod inspect [project|components|pipelines|component|pipeline|runs|run] [name] --json`
 
 - Primary machine interface for AI agents; outputs the stable Agent Project Model
 - `aipod inspect --summary --json` returns compact counts and validation state for context-limited planning
-- `component` and `pipeline` scopes require a name, for example `aipod inspect component SqliteStore --json`
+- `component`, `pipeline`, and `run` scopes require a name, for example `aipod inspect component SqliteStore --json`
 - Reports missing dependencies and missing pipeline files without importing or executing generated code
+
+### `aipod run route --params '{"key": "value"}' --json`
+
+- Executes a route through `PipelineRunner` and persists a redacted trace in `.aipod/runs/`
+- Returns structured success or failure data, including total duration and per-component durations
+- Inspect recorded executions with `aipod inspect runs --json` or `aipod inspect run RUN_ID --json`
 
 ## Code Templates
 

@@ -3,6 +3,7 @@
 import importlib
 import os
 import sys
+from time import perf_counter
 
 from injector import Injector, Module, singleton
 
@@ -53,8 +54,9 @@ class _ComponentRef:
 
     def execute_all(self, ctx: PipelineContext) -> dict:
         """Execute this single component and record the step (same API as _PipeChain)."""
+        started = perf_counter()
         result = self.execute(ctx)
-        ctx.record_step(self._id, result)
+        ctx.record_step(self._id, result, (perf_counter() - started) * 1000)
         return result
 
 
@@ -79,8 +81,9 @@ class _PipeChain:
         """Execute all components in order, recording each step."""
         result = None
         for ref in self._refs:
+            started = perf_counter()
             result = ref.execute(ctx)
-            ctx.record_step(ref._id, result)
+            ctx.record_step(ref._id, result, (perf_counter() - started) * 1000)
         return result
 
 

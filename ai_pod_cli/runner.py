@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import sys
 
 import tomlkit
 
@@ -52,8 +53,16 @@ class PipelineRunner:
             KeyError: If the route name is not found.
             FileNotFoundError: If the pipeline file does not exist.
         """
-        from ai_pod_cli.context import PipelineContext
+        result, _ctx = self.run_with_context(route_name, params)
+        return result
 
+    def run_with_context(self, route_name: str, params: dict | None = None) -> tuple[dict, object]:
+        """Run a route and return both its result and PipelineContext.
+
+        On failure, the raised exception carries ``aipod_context`` so callers can
+        persist partial execution traces without changing application semantics.
+        """
+        from ai_pod_cli.context import PipelineContext
         route = self._routes.get(route_name)
         if route is None:
             raise KeyError(
@@ -67,6 +76,9 @@ class PipelineRunner:
 
         # Load the pipeline module
         abs_path = os.path.abspath(pipeline_path)
+        project_root = os.getcwd()
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
         module_name = os.path.splitext(os.path.basename(abs_path))[0]
 
         spec = importlib.util.spec_from_file_location(
@@ -82,5 +94,9 @@ class PipelineRunner:
 
         # Execute run(ctx)
         ctx = PipelineContext(params=params or {})
-        result = module.run(ctx)
-        return result or ctx.summary()
+        try:
+            result = module.run(ctx)
+        except Exception as error:
+            error.aipod_context = ctx
+            raise
+        return result or ctx.summary(), ctx

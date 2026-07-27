@@ -7,7 +7,7 @@ from ai_pod_cli.project_model import ProjectModelError, inspect_project
 
 def handle_inspect(args) -> None:
     """Print a machine-readable view of the current AIPod project."""
-    if args.target in {"component", "pipeline"} and not args.name:
+    if args.target in {"component", "pipeline", "run"} and not args.name:
         _print_error(args.json, "missing_name", f"inspect {args.target} 需要提供名称")
         return
     try:

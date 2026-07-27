@@ -8,6 +8,7 @@ from pathlib import Path
 import tomlkit
 
 from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
+from ai_pod_cli.run_store import get_run_trace, list_run_traces
 
 
 SCHEMA_VERSION = "1.0"
@@ -135,4 +136,11 @@ def inspect_project(target: str = "project", name: str = "", summary_only: bool 
         if pipeline is None:
             raise ProjectModelError(f"未找到 Pipeline: {name}")
         return {**base, "pipeline": pipeline}
+    if target == "runs":
+        return {**base, "runs": list_run_traces()}
+    if target == "run":
+        trace = get_run_trace(name)
+        if trace is None:
+            raise ProjectModelError(f"未找到运行 Trace: {name}")
+        return {**base, "run": trace}
     raise ProjectModelError(f"不支持的查看范围: {target}")

@@ -16,6 +16,7 @@ modules/providers/*.py
 modules/services/*.py
 !modules/services/__init__.py
 pipelines/*.py
+.aipod/
 
 # IDE
 .vscode/

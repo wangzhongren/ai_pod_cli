@@ -76,7 +76,7 @@ def handle_init(args):
     gitignore = ".gitignore"
     if not os.path.exists(gitignore):
         with open(gitignore, "w", encoding="utf-8") as f:
-            f.write("# OS\n.DS_Store\nThumbs.db\n\n# IDE\n.vscode/\n.idea/\n\n# Python\n__pycache__/\n*.pyc\n")
+            f.write("# OS\n.DS_Store\nThumbs.db\n\n# IDE\n.vscode/\n.idea/\n\n# Python\n__pycache__/\n*.pyc\n\n# AIPod runtime traces\n.aipod/\n")
         created.append(f"📄 {gitignore}")
     else:
         skipped.append(f"📄 {gitignore} (已存在)")
@@ -112,4 +112,3 @@ def handle_init(args):
     print(f"   aipod config set OPENAI_API_KEY sk-your-key   (首次使用)")
     print(f"   aipod pod \"需求描述\"                          (一步生成组件+Pipeline+入口)")
     print(f"   aipod create --category provider --name X --desc \"...\"  (逐步构建)")
-

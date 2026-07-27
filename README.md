@@ -96,6 +96,7 @@ Compose:  aipod compose "collect sales and write to SQLite"
 | `aipod entry "desc"` | AI generates entry point file | ✅ |
 | `aipod visualize` | Generate an interactive component and Pipeline graph | ❌ |
 | `aipod inspect --json` | Read the Agent Project Model (components, pipelines, validation) | ❌ |
+| `aipod run ROUTE --params JSON --json` | Run a route and persist a structured execution trace | ❌ |
 | `aipod create --name X --desc "..."` | AI generates one component | ✅ |
 | `aipod add --name X --class-path Y` | Register hand-written component | ❌ |
 | `aipod compose "instruction"` | AI generates pipeline | ✅ |
@@ -319,12 +320,30 @@ aipod inspect --json
 aipod inspect components --json
 aipod inspect component SqliteStore --json
 aipod inspect pipeline sales_flow --json
+aipod inspect runs --json
+aipod inspect run RUN_ID --json
 aipod inspect --summary --json
 ```
 
 The stable JSON model includes component contracts, DI dependencies, statically
 parsed Pipeline service chains, and validation issues such as missing
 dependencies or pipeline files. `visualize` renders the same model for humans.
+
+## Agent Run and Trace
+
+Run a registered route without depending on an AI-generated entry file. Every
+attempt, including failures, is persisted as a redacted JSON trace under
+`.aipod/runs/`:
+
+```bash
+aipod run sales_flow --params '{"month":"2026-07"}' --json
+aipod inspect runs --json
+aipod inspect run run_20260727T120000Z_abcdef12 --json
+```
+
+Traces include the route, parameters, result or error, total duration, and
+per-component durations recorded by the Pipeline runtime. Fields whose names
+look like secrets, passwords, or tokens are redacted before persistence.
 
 ## Install
 

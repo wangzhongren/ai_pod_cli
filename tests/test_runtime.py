@@ -12,6 +12,7 @@ from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
+from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
 from ai_pod_cli.validation import (
     repair_feedback,
     request_repair,
@@ -61,6 +62,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
                 result = PipelineRunner().run("increment", {"value": 41})
                 self.assertEqual(result["data"]["value"], 42)
                 self.assertEqual(result["steps"][0]["component"], "Increment")
+                self.assertIn("duration_ms", result["steps"][0])
             finally:
                 os.chdir(previous_cwd)
                 sys.path[:] = previous_path
@@ -122,6 +124,30 @@ class AgentProjectModelTests(unittest.TestCase):
         self.assertEqual(summary["schema_version"], "1.0")
         self.assertEqual(summary["summary"]["component_count"], 2)
         self.assertTrue(summary["validation"]["valid"])
+
+
+class RunTraceTests(unittest.TestCase):
+    def test_trace_is_persisted_and_redacts_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                trace = write_run_trace(
+                    "demo",
+                    {"api_key": "secret-value", "count": 2},
+                    {"data": {"token": "result-secret", "ok": True}},
+                    None,
+                    12.3456,
+                    "2026-07-27T00:00:00+00:00",
+                )
+                loaded = get_run_trace(trace["run_id"])
+                listed = list_run_traces()
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(trace["params"]["api_key"], "***")
+        self.assertEqual(loaded["result"]["data"]["token"], "***")
+        self.assertEqual(listed[0]["run_id"], trace["run_id"])
 
 
 if __name__ == "__main__":

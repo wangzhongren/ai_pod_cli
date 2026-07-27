@@ -23,12 +23,15 @@ class PipelineContext:
         """从数据池读取一个值。"""
         return self.data.get(key, default)
 
-    def record_step(self, component_id: str, result) -> None:
+    def record_step(self, component_id: str, result, duration_ms: float | None = None) -> None:
         """记录一个执行步骤。"""
-        self.steps.append({
+        step = {
             "component": component_id,
             "result": result,
-        })
+        }
+        if duration_ms is not None:
+            step["duration_ms"] = round(duration_ms, 3)
+        self.steps.append(step)
 
     def summary(self) -> dict:
         """返回执行摘要。"""
@@ -36,7 +39,11 @@ class PipelineContext:
             "params": self.params,
             "data": self.data,
             "steps": [
-                {"component": s["component"], "result_preview": str(s["result"])[:200]}
+                {
+                    "component": s["component"],
+                    "result_preview": str(s["result"])[:200],
+                    **({"duration_ms": s["duration_ms"]} if "duration_ms" in s else {}),
+                }
                 for s in self.steps
             ],
         }
