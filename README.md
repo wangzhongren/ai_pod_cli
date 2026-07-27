@@ -1,27 +1,50 @@
 # AIPod
 
-**AI-native application framework where AI builds software and a dependency-injected runtime executes it.**
+**A human-governed operating framework for AI software agents.**
 
-Describe your system in natural language. AI generates reusable components, plans execution pipelines, and the runtime assembles and executes them via dependency injection.
+Humans define the architecture, component contracts, execution boundaries, and
+review requirements. AIPod encodes those decisions as a project protocol so AI
+agents can inspect, build, validate, run, and report on software without freely
+operating on an unstructured codebase.
+
+> **Human defines governance. AIPod encodes it. AI operates within it.**
 
 ## Why AIPod?
 
-AI coding tools today fall into two camps:
+Most AI coding tools give an agent broad freedom to edit a repository. AIPod
+gives it a durable operating model instead:
 
-| Tool | What it does | The problem |
-|------|-------------|-------------|
-| Copilot, Cursor | Autocomplete lines as you type | You still write the architecture |
-| v0, Bolt, Lovable | Generate entire projects from a prompt | One-shot, no memory. You take over after generation. |
+```text
+Human
+  → defines architecture, permissions, and review rules
+AIPod
+  → encodes component contracts, project memory, pipelines, validation, and traces
+AI Agent
+  → inspects → builds → validates → runs → reports
+```
 
-**Both leave AI out of the system's evolution.** After the initial generation, AI is gone. The codebase grows, but AI doesn't grow with it.
+AIPod is not a prompt that tells an AI how to code. It is the framework the
+project adopts. Its Bean Pool, component contracts, deterministic Pipeline
+runtime, JSON Agent Project Model, and execution traces are the shared facts an
+AI agent must work with.
 
-AIPod is different:
+## What AIPod Governs
 
-- **AI has memory.** Every component you build (hand-written OR AI-generated) joins a shared Bean Pool. AI sees the pool and reuses components in future work.
-- **You and AI share a platform.** The DI container, pipeline DSL, and component contracts are the common language. AI generates code that follows the same rules as your hand-written code.
-- **The system accumulates capability.** Round 1 you create a SqliteStore. Round 3 you compose a pipeline that uses SqliteStore, DataCollector, and a hand-written AnalyticsEngine — seamlessly.
+- **Component boundaries.** Everything is a `provider` or `service`, with an
+  explicit dependency and data contract.
+- **Reusable project memory.** Human-written and AI-generated components join
+  the Bean Pool, which agents inspect before creating new capability.
+- **Deterministic orchestration.** Pipelines compose `service` components; the
+  DI runtime, not the AI, assembles and executes them.
+- **Validation and recovery.** Generated code is checked before registration;
+  invalid output is never silently added to the system.
+- **Observable execution.** Every `aipod run` attempt writes a redacted trace
+  that humans and agents can inspect.
+- **Machine-readable governance.** Agents use JSON contracts, state, changes,
+  and diagnostics rather than inferring intent from terminal prose.
 
-**It's not AI writing code for you. It's AI building the system WITH you, on a shared platform.**
+This lets a system accumulate capability without allowing an agent to improvise
+its architecture on every task.
 
 
 ## Quick Start
@@ -45,7 +68,9 @@ python main.py add "Buy groceries"
 python main.py list
 ```
 
-That's it. **Zero code written by you.**
+Review the generated code and authorize execution when it is appropriate for
+your project. AIPod keeps the resulting components, routes, and execution
+evidence inspectable for later work.
 
 Want to inspect the runtime before connecting an LLM? Run the checked-in
 [Todo CLI example](examples/todo_cli/README.md); it uses the same Bean Pool,
@@ -84,7 +109,9 @@ Compose:  aipod compose "collect sales and write to SQLite"
           → Generates pipeline: (S(DataCollector) | S(DataWriter)).execute_all(ctx)
 ```
 
-**The bean pool grows with every `create`. AI sees more components, builds richer pipelines.** This is not a one-shot code generator — it's a system that accumulates capability.
+**The Bean Pool grows with every `create`.** Agents see more approved
+components, reuse them in richer pipelines, and work from a shared project
+model rather than a one-shot prompt.
 
 ## Commands
 
@@ -97,7 +124,7 @@ Compose:  aipod compose "collect sales and write to SQLite"
 | `aipod visualize` | Generate an interactive component and Pipeline graph | ❌ |
 | `aipod inspect --json` | Read the Agent Project Model (components, pipelines, validation) | ❌ |
 | `aipod run ROUTE --params JSON --json` | Run a route and persist a structured execution trace | ❌ |
-| `aipod create --name X --desc "..."` | AI generates one component | ✅ |
+| `aipod create --category service\|provider --name X --desc "..."` | AI generates one component | ✅ |
 | `aipod add --name X --class-path Y` | Register hand-written component | ❌ |
 | `aipod compose "instruction"` | AI generates pipeline | ✅ |
 | `aipod pod "requirement"` | **AI generates components + pipelines + entry** | ✅ |
@@ -232,31 +259,34 @@ config_store.get("database.sqlite_path", "data.db")
 
 ```
 ┌──────────────────────────┐
-│   You + AI (build time)  │
+│ Human governance + agent │
 │                          │
 │  aipod init              │  → project skeleton
+│  aipod inspect --json    │  → machine-readable project state
 │  aipod config set ...    │  → global config
 │  aipod pod "big req"     │  → components + pipelines + entry
 │  aipod create ...        │  → single component (pool grows)
 │  aipod compose "..."     │  → pipeline + route
 │  aipod entry "desc"      │  → entry point file
 │                          │
-│  You review the code     │
-│  You git commit          │
+│  Human reviews & authorizes │
+│  Agent receives JSON state │
 └──────────────────────────┘
             ↓
 ┌──────────────────────────┐
 │   Runtime (run time)     │
 │                          │
-│  python main.py cmd      │
+│  aipod run ROUTE --json  │  → explicit, traceable execution
 │  PipelineRunner loads    │
 │  DI container assembles  │
 │  Pipeline executes       │
 │  Context flows data      │
+│  inspect runs --json     │  → result and execution trace
 └──────────────────────────┘
 ```
 
-**AI never runs your code.** It generates it. You review, commit, and execute when ready.
+**Execution is explicit and observable.** Humans decide when an agent may run a
+route; AIPod records the result as a redacted trace for later review.
 
 ## Key APIs
 
