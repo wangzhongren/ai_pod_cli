@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
+from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
 from ai_pod_cli.validation import (
     repair_feedback,
@@ -105,6 +106,22 @@ class VisualizationTests(unittest.TestCase):
         self.assertIn("AIPod 项目图谱", page)
         self.assertIn("run_work", page)
         self.assertIn("Worker", page)
+
+
+class AgentProjectModelTests(unittest.TestCase):
+    def test_inspect_returns_compact_machine_readable_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                init_config_if_not_exists()
+                summary = inspect_project(summary_only=True)
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(summary["schema_version"], "1.0")
+        self.assertEqual(summary["summary"]["component_count"], 2)
+        self.assertTrue(summary["validation"]["valid"])
 
 
 if __name__ == "__main__":

@@ -95,6 +95,7 @@ Compose:  aipod compose "collect sales and write to SQLite"
 | `aipod config list` | Show global config | ❌ |
 | `aipod entry "desc"` | AI generates entry point file | ✅ |
 | `aipod visualize` | Generate an interactive component and Pipeline graph | ❌ |
+| `aipod inspect --json` | Read the Agent Project Model (components, pipelines, validation) | ❌ |
 | `aipod create --name X --desc "..."` | AI generates one component | ✅ |
 | `aipod add --name X --class-path Y` | Register hand-written component | ❌ |
 | `aipod compose "instruction"` | AI generates pipeline | ✅ |
@@ -306,6 +307,24 @@ aipod visualize --open
 Click a component to inspect its class path, contract, dependencies, and
 description. The command only reads project metadata and Python source; it never
 imports or executes generated components.
+
+## Agent Project Model
+
+`SKILL.md` tells an AI agent how to operate AIPod. `inspect --json` tells it
+what currently exists in the project, without requiring it to parse terminal
+text, HTML, or source files:
+
+```bash
+aipod inspect --json
+aipod inspect components --json
+aipod inspect component SqliteStore --json
+aipod inspect pipeline sales_flow --json
+aipod inspect --summary --json
+```
+
+The stable JSON model includes component contracts, DI dependencies, statically
+parsed Pipeline service chains, and validation issues such as missing
+dependencies or pipeline files. `visualize` renders the same model for humans.
 
 ## Install
 

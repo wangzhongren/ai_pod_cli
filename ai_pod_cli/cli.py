@@ -10,6 +10,7 @@ from ai_pod_cli.commands.create import handle_create
 from ai_pod_cli.commands.entry import handle_entry
 from ai_pod_cli.commands.env import handle_config
 from ai_pod_cli.commands.init import handle_init
+from ai_pod_cli.commands.inspect import handle_inspect
 from ai_pod_cli.commands.pod import handle_pod
 from ai_pod_cli.commands.visualize import handle_visualize
 
@@ -79,7 +80,14 @@ def main():
     entry_parser = subparsers.add_parser("entry", help="AI generates a project entry point file")
     entry_parser.add_argument("desc", help="Project description (AI decides tech stack and generates entry file)")
 
-    # 8. visualize
+    # 8. inspect
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect the project for AI agents")
+    inspect_parser.add_argument("target", nargs="?", default="project", choices=["project", "components", "pipelines", "component", "pipeline"], help="Project view to inspect")
+    inspect_parser.add_argument("name", nargs="?", default="", help="Component or pipeline name")
+    inspect_parser.add_argument("--json", action="store_true", help="Print the stable Agent Project Model as JSON")
+    inspect_parser.add_argument("--summary", action="store_true", help="Return only compact project counts and validation")
+
+    # 9. visualize
     visualize_parser = subparsers.add_parser("visualize", help="Generate an interactive project graph")
     visualize_parser.add_argument("--output", "-o", default="aipod-graph.html", help="Output HTML file path")
     visualize_parser.add_argument("--open", action="store_true", help="Open the graph in the default browser")
@@ -100,6 +108,8 @@ def main():
         handle_config(args)
     elif args.command == "entry":
         handle_entry(args)
+    elif args.command == "inspect":
+        handle_inspect(args)
     elif args.command == "visualize":
         handle_visualize(args)
 

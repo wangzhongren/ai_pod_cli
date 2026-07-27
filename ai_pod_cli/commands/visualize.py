@@ -1,70 +1,18 @@
 """Generate an offline, interactive graph of an AIPod project."""
 
-import ast
 import html
 import json
-import os
 import webbrowser
 from pathlib import Path
 
-import tomlkit
-from tomlkit.exceptions import TOMLKitError
-
-from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
+from ai_pod_cli.project_model import (
+    ProjectModelError,
+    extract_pipeline_services as _extract_pipeline_services,
+    load_project_graph as _load_project_graph,
+)
 
 
 DEFAULT_OUTPUT = "aipod-graph.html"
-
-
-def _load_project_graph() -> tuple[list[dict], list[dict]]:
-    """Read the component registry and route files from the current project."""
-    if not os.path.exists(CONFIG_FILE):
-        raise FileNotFoundError(f"未找到 {CONFIG_FILE}。请先运行 aipod init。")
-
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        beans = json.load(f).get("beans", [])
-
-    class_to_id = {
-        bean.get("class_path", "").rsplit(".", 1)[-1]: bean["id"]
-        for bean in beans
-        if bean.get("id") and bean.get("class_path")
-    }
-    routes = []
-    if os.path.exists(ROUTES_TOML):
-        with open(ROUTES_TOML, "r", encoding="utf-8") as f:
-            route_doc = tomlkit.load(f)
-        for name, route in route_doc.items():
-            if isinstance(route, dict) and route.get("pipeline"):
-                pipeline_path = str(route["pipeline"])
-                routes.append({
-                    "name": str(name),
-                    "pipeline": pipeline_path,
-                    "description": str(route.get("description", "")),
-                    "services": _extract_pipeline_services(pipeline_path, class_to_id),
-                })
-    return beans, routes
-
-
-def _extract_pipeline_services(pipeline_path: str, class_to_id: dict[str, str]) -> list[str]:
-    """Read ordered ``S(Service)`` calls from a generated pipeline without executing it."""
-    path = Path(pipeline_path)
-    if not path.exists():
-        return []
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
-        return []
-
-    services = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "S":
-            continue
-        if not node.args or not isinstance(node.args[0], ast.Name):
-            continue
-        component_id = class_to_id.get(node.args[0].id)
-        if component_id and component_id not in services:
-            services.append(component_id)
-    return services
 
 
 def _graph_html(beans: list[dict], routes: list[dict]) -> str:
@@ -146,7 +94,7 @@ def handle_visualize(args) -> None:
     """Generate the graph file and optionally open it in the default browser."""
     try:
         beans, routes = _load_project_graph()
-    except (OSError, json.JSONDecodeError, TOMLKitError) as error:
+    except ProjectModelError as error:
         print(f"❌ 无法生成可视化: {error}")
         return
 

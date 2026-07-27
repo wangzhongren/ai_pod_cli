@@ -28,7 +28,8 @@ Register hand-written component         → aipod add --name X --class-path Y --
 Generate a pipeline (no execution)      → aipod compose "instruction" --name X
 List generated pipelines               → aipod compose --list
 Run a pipeline                          → User runs their entry point (e.g. python app.py route_name)
-Inspect components and pipelines        → aipod visualize [--open]
+Inspect components and pipelines visually → aipod visualize [--open]
+Read project state for planning         → aipod inspect [scope] --json
 ```
 
 ## Commands
@@ -69,6 +70,13 @@ Inspect components and pipelines        → aipod visualize [--open]
 - Generates a standalone interactive HTML graph of providers, services, DI dependencies, routes, and statically detected `S(Service)` pipeline calls
 - Click nodes to inspect their contracts and source paths
 - Reads metadata and pipeline source only; it never imports or executes generated components
+
+### `aipod inspect [project|components|pipelines|component|pipeline] [name] --json`
+
+- Primary machine interface for AI agents; outputs the stable Agent Project Model
+- `aipod inspect --summary --json` returns compact counts and validation state for context-limited planning
+- `component` and `pipeline` scopes require a name, for example `aipod inspect component SqliteStore --json`
+- Reports missing dependencies and missing pipeline files without importing or executing generated code
 
 ## Code Templates
 
