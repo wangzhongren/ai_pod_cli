@@ -50,6 +50,7 @@ Run a pipeline and inspect its outcome  → aipod run route --params '{}' --json
 - AST security check before writing
 - When generation fails local validation, AIPod displays the errors and asks before retrying with that feedback (maximum three attempts)
 - Generated to `modules/<name>.py`, registered in `beans_config.json`
+- Add `--json` for AI Agent use: stdout becomes one JSON envelope with `status`, `changes`, `project`, `error`, and `diagnostics`
 
 ### `aipod add --name ClassName --class-path package.module.ClassName --desc "description"`
 
@@ -65,6 +66,10 @@ Run a pipeline and inspect its outcome  → aipod run route --params '{}' --json
 ### `aipod compose --list`
 
 - List all saved pipelines
+
+`aipod compose "instruction" --name flow --json` returns the same machine-readable command envelope.
+
+`aipod pod "requirement" --yes --json` is the non-interactive Agent form of Pod generation. Always pass `--yes` with `--json` so the command does not pause for confirmation.
 
 ### `aipod visualize [--output FILE] [--open]`
 

@@ -1,15 +1,18 @@
 """End-to-end tests for the deterministic AIPod runtime."""
 
 import json
+import io
 import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
+from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
@@ -124,6 +127,26 @@ class AgentProjectModelTests(unittest.TestCase):
         self.assertEqual(summary["schema_version"], "1.0")
         self.assertEqual(summary["summary"]["component_count"], 2)
         self.assertTrue(summary["validation"]["valid"])
+
+    def test_json_command_envelope_reports_real_project_changes(self):
+        class Args:
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                init_config_if_not_exists()
+                args = Args()
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    execute_json_command("test", lambda _args: None, args)
+            finally:
+                os.chdir(previous_cwd)
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["status"], "no_change")
+        self.assertEqual(payload["changes"]["components"]["added"], [])
 
 
 class RunTraceTests(unittest.TestCase):

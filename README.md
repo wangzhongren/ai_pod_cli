@@ -329,6 +329,17 @@ The stable JSON model includes component contracts, DI dependencies, statically
 parsed Pipeline service chains, and validation issues such as missing
 dependencies or pipeline files. `visualize` renders the same model for humans.
 
+For mutating Agent operations, use `--json`. AIPod emits one JSON envelope with
+the command status, exit code, structured project changes, and diagnostics; an
+Agent never needs to parse terminal decorations. A mutating command that makes
+no state change returns `status: "no_change"`:
+
+```bash
+aipod create --category service --name ImportOrders --desc "..." --json
+aipod compose "import orders" --name import_orders --json
+aipod pod "an order import CLI" --yes --json
+```
+
 ## Agent Run and Trace
 
 Run a registered route without depending on an AI-generated entry file. Every

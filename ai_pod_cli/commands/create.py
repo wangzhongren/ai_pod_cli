@@ -180,7 +180,7 @@ def handle_create(args):
 
             violations = validate_component_contract(generated_code, args.name, args.category)
             if violations:
-                if not request_repair(violations, attempt, max_attempts):
+                if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return
                 feedback = repair_feedback(violations)
                 continue

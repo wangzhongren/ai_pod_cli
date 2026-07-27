@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from ai_pod_cli.config import init_config_if_not_exists
+from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.commands.add import handle_add
 from ai_pod_cli.commands.compose import handle_compose
 from ai_pod_cli.commands.create import handle_create
@@ -51,6 +52,7 @@ def main():
     create_parser.add_argument("--category", choices=["service", "provider"], required=True, help="Component category")
     create_parser.add_argument("--name", required=True, help="Component name (must match class name)")
     create_parser.add_argument("--desc", required=True, help="Component description for AI")
+    create_parser.add_argument("--json", action="store_true", help="Emit a machine-readable command result")
 
     # 3. add
     add_parser = subparsers.add_parser("add", help="Register a hand-written component")
@@ -64,12 +66,14 @@ def main():
     compose_parser.add_argument("cmd", nargs="?", default="", help="Natural language instruction (AI plans the execution chain)")
     compose_parser.add_argument("--name", default="", help="Pipeline file name (auto-generated from instruction if omitted)")
     compose_parser.add_argument("--list", action="store_true", help="List all saved pipelines")
+    compose_parser.add_argument("--json", action="store_true", help="Emit a machine-readable command result")
 
     # 5. pod
     pod_parser = subparsers.add_parser("pod", help="AI decomposes a requirement into components + pipelines + entry")
     pod_parser.add_argument("desc", nargs="?", default="", help="Feature or system description")
     pod_parser.add_argument("--file", "-f", default="", help="Read requirements from a file (supports long specs)")
     pod_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation, generate immediately")
+    pod_parser.add_argument("--json", action="store_true", help="Emit a machine-readable command result")
 
     # 6. config
     config_parser = subparsers.add_parser("config", help="Manage global configuration (~/.aipod/config.toml)")
@@ -101,7 +105,21 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "init":
+    handlers = {
+        "init": handle_init,
+        "create": handle_create,
+        "add": handle_add,
+        "compose": handle_compose,
+        "pod": handle_pod,
+        "config": handle_config,
+        "entry": handle_entry,
+        "run": handle_run,
+        "inspect": handle_inspect,
+        "visualize": handle_visualize,
+    }
+    if args.command in {"create", "compose", "pod"} and args.json:
+        execute_json_command(args.command, handlers[args.command], args)
+    elif args.command == "init":
         handle_init(args)
     elif args.command == "create":
         handle_create(args)

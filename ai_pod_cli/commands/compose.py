@@ -211,7 +211,7 @@ def handle_compose(args):
 
             violations = validate_pipeline_contract(generated_code)
             if violations:
-                if not request_repair(violations, attempt, max_attempts):
+                if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return
                 feedback = repair_feedback(violations)
                 continue

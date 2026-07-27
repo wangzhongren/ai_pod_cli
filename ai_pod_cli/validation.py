@@ -10,7 +10,7 @@ import ast
 from ai_pod_cli.security import validate_code
 
 
-def request_repair(violations: list[str], attempt: int, max_attempts: int) -> bool:
+def request_repair(violations: list[str], attempt: int, max_attempts: int, *, interactive: bool = True) -> bool:
     """Show validation feedback and ask whether it should be sent back to the LLM.
 
     The default is to repair, while non-interactive input safely cancels without
@@ -22,6 +22,10 @@ def request_repair(violations: list[str], attempt: int, max_attempts: int) -> bo
 
     if attempt >= max_attempts:
         print(f"   已达到 {max_attempts} 次生成上限，未修改项目文件。")
+        return False
+
+    if not interactive:
+        print("   Agent JSON 模式不会等待交互确认，未修改项目文件。")
         return False
 
     try:

@@ -453,7 +453,7 @@ def handle_pod(args):
 
                 violations = validate_component_contract(code, name, category)
                 if violations:
-                    if request_repair(violations, attempt, max_attempts):
+                    if request_repair(violations, attempt, max_attempts, interactive=not args.json):
                         feedback = repair_feedback(violations)
                         continue
                     break
