@@ -14,19 +14,25 @@ from unittest.mock import patch
 
 from ai_pod_cli.config import init_config_if_not_exists, save_config
 from ai_pod_cli.client import _parse_json_content, call_llm
-from ai_pod_cli.contracts import analyze_pipeline_contracts, normalize_type, types_compatible
+from ai_pod_cli.contracts import (
+    analyze_pipeline_contracts, normalize_type, semantic_field_similarity, types_compatible,
+)
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import handle_pod
 from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
+from ai_pod_cli.context import PipelineContext
 from ai_pod_cli.result import Effect, Failure, Success
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
 from ai_pod_cli.studio import StudioApi, StudioError, _ProgressCapture, studio_asset_path
+from ai_pod_cli.sandbox import sample_value
 from ai_pod_cli.validation import (
+    extract_component_fields,
     repair_feedback,
     request_repair,
     validate_component_contract,
+    validate_entry_contract,
     validate_pipeline_contract,
 )
 
@@ -107,6 +113,73 @@ class RuntimeIntegrationTests(unittest.TestCase):
 
 
 class GeneratedArtifactValidationTests(unittest.TestCase):
+    def test_sandbox_samples_follow_contract_types(self):
+        self.assertEqual(sample_value("count", "int — items"), 1)
+        self.assertEqual(sample_value("tick", "int (optional) — override"), 1)
+        self.assertEqual(sample_value("ratio", {"type": "float"}), 1.0)
+        self.assertEqual(sample_value("incident_type", "str"), "FIRE")
+        self.assertEqual(sample_value("payload", "dict"), {})
+
+    def test_context_get_falls_back_to_entry_params(self):
+        ctx = PipelineContext({"risk_report": {"level": "high"}})
+        self.assertEqual(ctx.get("risk_report"), {"level": "high"})
+        ctx.set("risk_report", {"level": "low"})
+        self.assertEqual(ctx.get("risk_report"), {"level": "low"})
+
+    def test_entry_rejects_unknown_frozen_route(self):
+        code = '''
+from ai_pod_cli.config import load_beans
+from ai_pod_cli.container import build_container
+container = build_container(load_beans())
+runner.run("renamed_route", {})
+'''
+        violations = validate_entry_contract(code, ["stable_route"])
+        self.assertTrue(any("renamed_route" in item for item in violations))
+
+    def test_component_fields_are_extracted_only_from_context_boundary(self):
+        code = '''
+class LifeSupport:
+    def execute(self, ctx):
+        params = ctx.params
+        state = self.repo.get_state()
+        action = params.get("action")
+        oxygen = state.get("oxygen_level")
+        ctx.set("risk", "critical")
+        updates = {}
+        updates["emergency_mode"] = True
+        self.repo.update_state(updates)
+        return {"status": "ok"}
+'''
+        actual = extract_component_fields(code)
+        self.assertEqual(actual["reads"], ["action"])
+        self.assertEqual(actual["writes"], ["risk"])
+
+    def test_component_contract_rejects_declared_actual_field_drift(self):
+        code = '''
+class LifeSupport:
+    def execute(self, ctx):
+        oxygen = ctx.get("oxygen")
+        ctx.set("risk", "critical")
+        return {"status": "ok"}
+'''
+        violations = validate_component_contract(
+            code, "LifeSupport", "service",
+            {"oxygen_level": "float"}, {"risk": "str"},
+        )
+        self.assertTrue(any("oxygen" in item and "inputs" in item for item in violations))
+
+    def test_component_rejects_nonexistent_context_output_api(self):
+        code = '''
+class Worker:
+    def execute(self, ctx):
+        ctx.output["value"] = 1
+        return {"value": 1}
+'''
+        violations = validate_component_contract(
+            code, "Worker", "service", {}, {"value": "int"},
+        )
+        self.assertTrue(any("ctx.output" in item for item in violations))
+
     def test_service_requires_execute(self):
         self.assertTrue(validate_component_contract("class MissingExecute: pass", "MissingExecute", "service"))
 
@@ -528,6 +601,17 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(contract["outputs"]["text"]["type"], "str")
         self.assertFalse(contract["valid"])
         self.assertEqual(contract["links"][0]["mismatches"][0]["field"], "count")
+
+    def test_pipeline_detects_semantic_field_drift(self):
+        components = [
+            {"id": "Telemetry", "outputs": {"oxygen": "float"}},
+            {"id": "LifeSupport", "inputs": {"oxygen_level": "float"}},
+        ]
+        contract = analyze_pipeline_contracts(["Telemetry", "LifeSupport"], components)
+        self.assertFalse(contract["valid"])
+        self.assertEqual(contract["issues"][0]["code"], "semantic_field_drift")
+        self.assertEqual(contract["issues"][0]["produced_field"], "oxygen")
+        self.assertGreater(semantic_field_similarity("oxygen", "oxygen_level"), 0.9)
 
     def test_studio_composes_and_registers_visual_pipeline(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -20,8 +20,10 @@ class PipelineContext:
         self.data[key] = value
 
     def get(self, key: str, default=None):
-        """从数据池读取一个值。"""
-        return self.data.get(key, default)
+        """Read a value produced by the pipeline, falling back to entry parameters."""
+        if key in self.data:
+            return self.data[key]
+        return self.params.get(key, default)
 
     def record_step(
         self,

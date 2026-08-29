@@ -10,6 +10,8 @@ from ai_pod_cli.config import (
     load_beans, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipeline_contract
+from ai_pod_cli.contracts import analyze_pipeline_contracts
+from ai_pod_cli.sandbox import verify_pipeline_candidate
 
 
 def _slugify(text: str) -> str:
@@ -113,6 +115,13 @@ def handle_compose(args):
     system_prompt = f"""
     你是一个智能编排引擎。当前系统中注册了以下组件账本：
     {existing_beans_context}
+
+    组件账本中的 inputs/outputs 是强制数据契约：
+    - 账本中的组件已经验证并冻结；本轮唯一允许修复的对象是当前 Pipeline。
+    - Pipeline 必须适配已有组件，禁止建议回头修改组件。
+    - 下游输入语义与上游输出相同时必须使用完全相同的字段名。
+    - 禁止在 Pipeline 中通过复制或重命名制造 oxygen/oxygen_level 一类同义字段。
+    - 如果所需字段没有上游生产者，它只能是明确的入口参数，不能伪装成同义新字段。
 
     各组件的 import 路径：
     {imports_hint}
@@ -221,6 +230,36 @@ def handle_compose(args):
                 return
 
             violations = validate_pipeline_contract(generated_code)
+            known_services = {
+                bean.get("id") for bean in beans.get("beans", [])
+                if bean.get("category") == "service"
+            }
+            if not pipeline_ids:
+                violations.append("pipeline_ids 不能为空，且必须使用组件池中的精确 Service ID")
+            for component_id in pipeline_ids:
+                if component_id not in known_services:
+                    violations.append(
+                        f"Pipeline 组件 ID '{component_id}' 不存在或不是 Service；可用 ID："
+                        + ", ".join(sorted(item for item in known_services if item))
+                    )
+            contract = analyze_pipeline_contracts(pipeline_ids, beans.get("beans", []))
+            for issue in contract["issues"]:
+                if issue["code"] == "semantic_field_drift":
+                    violations.append(
+                        f"疑似同义字段漂移：{issue['component']} 需要 '{issue['field']}'，"
+                        f"上游提供 '{issue['produced_field']}'；请复用上游字段名"
+                    )
+                elif issue["code"] == "contract_type_mismatch":
+                    violations.append(
+                        f"字段类型不兼容：{issue['component']}.{issue['field']} 需要 "
+                        f"{issue['required']}，上游提供 {issue['produced']}"
+                    )
+            if not violations:
+                violations.extend(
+                    verify_pipeline_candidate(
+                        os.getcwd(), generated_code, contract.get("inputs", {}),
+                    )
+                )
             if violations:
                 if not request_repair(
                     violations, attempt, max_attempts,

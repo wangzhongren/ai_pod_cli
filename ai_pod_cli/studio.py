@@ -328,6 +328,11 @@ class StudioApi:
                 contract = analyze_pipeline_contracts(services, components)
                 if not contract["valid"]:
                     issue = contract["issues"][0]
+                    if issue["code"] == "semantic_field_drift":
+                        raise StudioError(
+                            f"疑似同义字段漂移：{issue['component']} 需要 '{issue['field']}'，"
+                            f"但上游提供 '{issue['produced_field']}'。请统一字段名后再保存。"
+                        )
                     raise StudioError(
                         f"契约不兼容：{issue['component']}.{issue['field']} "
                         f"需要 {issue['required']}，上游提供 {issue['produced']}"

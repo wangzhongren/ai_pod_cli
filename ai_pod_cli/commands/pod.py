@@ -6,8 +6,10 @@ import sys
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import load_beans, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path
-from ai_pod_cli.security import validate_code
-from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
+from ai_pod_cli.validation import (
+    repair_feedback, request_repair, validate_component_contract, validate_entry_contract,
+)
+from ai_pod_cli.sandbox import verify_component_candidate
 
 
 def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, config_additions: dict):
@@ -69,11 +71,10 @@ def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, 
 
 def _generate_pod_entry(
     desc: str, generated: list[str], pipe_names: list[str], progress_callback=None,
+    auto_repair: bool = False,
 ) -> tuple[str, list[str]] | None:
     """Pod 自己生成入口 prompt，包含本次生成的组件和管线的完整上下文。"""
     from ai_pod_cli.client import call_llm
-    from ai_pod_cli.security import validate_code
-
     routes_map = _load_routes_map()
 
     # 构建本次生成的上下文
@@ -125,26 +126,39 @@ def _generate_pod_entry(
     }}
     """
 
-    try:
-        result = call_llm(
-            system_prompt, f"生成入口: {desc}", json_mode=True, temperature=0.2,
-            progress_callback=progress_callback, progress_label="Generating application entry point",
+    max_attempts = 3
+    feedback = ""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = call_llm(
+                system_prompt, f"生成入口: {desc}{feedback}", json_mode=True, temperature=0.2,
+                progress_callback=progress_callback, progress_label="Generating application entry point",
+            )
+        except Exception as e:
+            if attempt < max_attempts:
+                feedback = repair_feedback([f"入口生成调用失败：{e}"])
+                continue
+            print(f"   ❌ 入口生成失败: {e}")
+            return None
+
+        entry_file = result.get("entry_file", "main.py")
+        generated_code = result.get("code", "")
+        extra_deps = result.get("extra_deps", [])
+        violations = (
+            validate_entry_contract(generated_code, list(routes_map))
+            if generated_code else ["AI 未返回入口代码"]
         )
-    except Exception as e:
-        print(f"   ❌ 入口生成失败: {e}")
-        return None
-
-    entry_file = result.get("entry_file", "main.py")
-    generated_code = result.get("code", "")
-    extra_deps = result.get("extra_deps", [])
-
-    if not generated_code:
-        print("   ❌ AI 未返回入口代码")
-        return None
-
-    violations = validate_code(generated_code, allow_file_io=True)
-    if violations:
-        print(f"   🛡️  入口安全检查 ({len(violations)} 处违规)，跳过")
+        if not violations:
+            break
+        if not request_repair(
+            violations, attempt, max_attempts,
+            interactive=not auto_repair, auto_repair=auto_repair,
+        ):
+            return None
+        feedback = repair_feedback(violations) + (
+            "\n只修复当前入口文件。此前通过的组件和 Pipeline 已冻结，禁止建议修改它们。"
+        )
+    else:
         return None
 
     if os.path.exists(entry_file):
@@ -403,6 +417,14 @@ def handle_pod(args):
         当前系统组件池：
         {beans_context}
 
+        【字段复用规则】：
+        - 组件池中的所有组件都已通过上一轮验证并被冻结，只能读取其契约，禁止修改或重新设计它们。
+        - 本轮唯一允许修复的对象是当前组件 {name}。
+        - Bean Pool 中已有 Service outputs 构成当前项目的数据词汇表。
+        - 新组件 inputs 与已有 output 语义相同时，必须原样复用字段名和类型。
+        - 禁止创建 oxygen/oxygen_level、battery/battery_level 这类同义字段。
+        - 代码真实读取/写入字段必须与返回 JSON 的 inputs/outputs 完全一致。
+
         当前 config.toml 中的配置项（敏感值已隐藏）：
         {toml_keys}
 
@@ -485,7 +507,37 @@ def handle_pod(args):
                     print("   ❌ AI 未返回代码，跳过。")
                     break
 
-                violations = validate_component_contract(code, name, category)
+                violations = validate_component_contract(
+                    code, name, category, inputs, outputs,
+                )
+                known_ids = {bean.get("id") for bean in beans.get("beans", [])}
+                for dependency in dependencies:
+                    if dependency not in known_ids:
+                        violations.append(
+                            f"依赖 ID '{dependency}' 不存在；必须原样使用组件池中的 ID："
+                            + ", ".join(sorted(item for item in known_ids if item))
+                        )
+                if not violations:
+                    _module_dir, candidate_class_path = get_module_path(category, name)
+                    candidate_bean = {
+                        "id": name, "category": category, "type": "ai_created",
+                        "class_path": candidate_class_path, "file": f"{name.lower()}.py",
+                        "dependencies": dependencies, "inputs": inputs, "outputs": outputs,
+                        "methods": methods,
+                        "description": f"{description}。技术规格: {ai_spec}",
+                    }
+                    accepted_services = [
+                        component_id for component_id in generated
+                        if any(
+                            item.get("id") == component_id and item.get("category") == "service"
+                            for item in beans.get("beans", [])
+                        )
+                    ]
+                    violations.extend(
+                        verify_component_candidate(
+                            os.getcwd(), candidate_bean, code, accepted_services,
+                        )
+                    )
                 if violations:
                     if request_repair(
                         violations, attempt, max_attempts,
@@ -595,6 +647,7 @@ def handle_pod(args):
         entry_info = _generate_pod_entry(
             desc, available_components, available_pipelines,
             progress_callback=progress_callback,
+            auto_repair=getattr(args, "auto_repair", False),
         )
         if entry_info:
             entry_file, extra_deps = entry_info

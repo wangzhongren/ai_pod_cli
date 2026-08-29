@@ -7,6 +7,7 @@ import sys
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
+from ai_pod_cli.sandbox import verify_component_candidate
 
 
 def handle_create(args):
@@ -31,6 +32,12 @@ def handle_create(args):
 
     目前系统中已经注册了以下可用的依赖组件池（Bean Pool）：
     {beans_summary}
+
+    【字段复用规则】：
+    - 上述 Bean Pool 中每个 Service 的 outputs 是项目已经存在的数据词汇表。
+    - 新组件语义相同的输入必须原样复用已有 output 字段名和类型。
+    - 禁止为同一含义发明近义字段，例如上游已有 oxygen 时不得改成 oxygen_level。
+    - 只有 Bean Pool 中确实没有对应语义时，才允许创建新字段。
 
     当前 config.toml 中的配置项（敏感值已隐藏，组件通过 ConfigStore 读取）：
     {toml_keys}
@@ -178,7 +185,30 @@ def handle_create(args):
                 print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
                 return
 
-            violations = validate_component_contract(generated_code, args.name, args.category)
+            violations = validate_component_contract(
+                generated_code, args.name, args.category, inputs, outputs,
+            )
+            known_ids = {bean.get("id") for bean in beans.get("beans", [])}
+            for dependency in dependencies:
+                if dependency not in known_ids:
+                    violations.append(
+                        f"依赖 ID '{dependency}' 不存在；必须原样使用组件池中的 ID："
+                        + ", ".join(sorted(item for item in known_ids if item))
+                    )
+            if not violations:
+                _module_dir, candidate_class_path = get_module_path(args.category, args.name)
+                candidate_bean = {
+                    "id": args.name, "category": args.category, "type": "ai_created",
+                    "class_path": candidate_class_path, "file": f"{args.name.lower()}.py",
+                    "dependencies": dependencies, "inputs": inputs, "outputs": outputs,
+                    "methods": methods,
+                    "description": f"{args.desc}。技术规格: {ai_spec}",
+                }
+                violations.extend(
+                    verify_component_candidate(
+                        os.getcwd(), candidate_bean, generated_code, [],
+                    )
+                )
             if violations:
                 if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return
