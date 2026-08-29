@@ -58,4 +58,4 @@ aipod = "ai_pod_cli.cli:main"
 include = ["ai_pod_cli*"]
 
 [tool.setuptools.package-data]
-ai_pod_cli = ["studio_assets/*.html"]
+ai_pod_cli = ["studio_assets/*.html", "studio_assets/*.css", "studio_assets/*.png"]

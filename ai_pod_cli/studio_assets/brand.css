@@ -1,0 +1,11 @@
+.mark {
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 3px !important;
+  background: transparent url("aipod-icon.png") center / contain no-repeat !important;
+  box-shadow: none !important;
+}
+
+.mark::after {
+  display: none !important;
+}

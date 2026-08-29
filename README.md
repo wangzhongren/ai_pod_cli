@@ -1,6 +1,10 @@
-# AIPod
+<p align="center">
+  <img src="docs/assets/aipod-icon.png" alt="AIPod icon" width="132">
+</p>
 
-**A compositional computation model and governed runtime for AI-built Python software.**
+<h1 align="center">AIPod</h1>
+
+<p align="center"><strong>A compositional computation model and governed runtime for AI-built Python software.</strong></p>
 
 AIPod lets AI create software without giving the model control of the runtime. Humans define the architecture and governance rules; AI discovers, creates, selects, and composes components inside those boundaries; AIPod validates and executes the resulting program deterministically.
 
@@ -100,6 +104,8 @@ aipod studio .
 ## AIPod Studio
 
 AIPod Studio is a native desktop shell built with `pywebview` and WebView2 on Windows. It provides a VS Code-inspired workspace while preserving the Python runtime underneath.
+
+![AIPod Studio project graph](docs/assets/aipod-studio.png)
 
 ```bash
 pip install -e ".[studio]"
