@@ -38,17 +38,34 @@ def write_run_trace(
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
     run_id = f"run_{now.strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
+    structured_failure = (
+        isinstance(result, dict)
+        and result.get("status") == "failure"
+        and isinstance(result.get("error"), dict)
+    )
+    failed = error is not None or structured_failure
+    if structured_failure:
+        trace_error = redact(result["error"])
+        trace_error.setdefault("type", "Failure")
+    elif error is not None:
+        trace_error = {"type": type(error).__name__, "message": str(error)}
+    else:
+        trace_error = None
+    if isinstance(result, dict) and isinstance(result.get("context"), dict):
+        steps = result["context"].get("steps", [])
+    else:
+        steps = result.get("steps", []) if isinstance(result, dict) else []
     trace = {
         "schema_version": "1.0",
         "run_id": run_id,
         "route": route,
-        "status": "success" if error is None else "failed",
+        "status": "failed" if failed else "success",
         "started_at": started_at or now.isoformat(),
         "duration_ms": round(duration_ms, 3),
         "params": redact(params),
-        "result": redact(result) if error is None else None,
-        "steps": redact(result.get("steps", [])) if isinstance(result, dict) else [],
-        "error": None if error is None else {"type": type(error).__name__, "message": str(error)},
+        "result": redact(result),
+        "steps": redact(steps),
+        "error": trace_error,
     }
     path = RUNS_DIR / f"{run_id}.json"
     path.write_text(json.dumps(trace, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -142,6 +142,10 @@ def handle_compose(args):
     6. 需要条件分支时，用 if/else 分别串联不同的管道。
     7. 最后 return ctx.summary()。
     8. 加上清晰的中文注释。
+    9. 外部调用不稳定时，可为组件声明运行策略：
+       S(RemoteService).retry(3, delay_seconds=0.2).fallback(CacheService)
+       retry 的 attempts 表示重试次数；fallback 可传组件类或 S(Component) 引用。
+       不要默认添加策略，只在需求或组件性质明确需要时使用。
 
     【PipelineContext 的 API】：
     - ctx.params: dict — 入口参数

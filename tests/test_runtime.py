@@ -18,6 +18,7 @@ from ai_pod_cli.commands.pod import handle_pod
 from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
+from ai_pod_cli.result import Effect, Failure, Success
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
 from ai_pod_cli.studio import StudioApi, StudioError, studio_asset_path
 from ai_pod_cli.validation import (
@@ -106,6 +107,78 @@ def run(ctx):
 
         self.assertEqual(ctx.get("answer"), 42)
         self.assertEqual(ctx.steps[0]["result"], {"answer": 42})
+
+    def test_structured_success_merges_output_and_records_effects(self):
+        from ai_pod_cli.container import _ComponentRef
+        from ai_pod_cli.context import PipelineContext
+
+        component = type("Writer", (), {"execute": lambda self, ctx: Success(
+            {"saved": True}, effects=(Effect("database", "expenses", "insert"),)
+        )})()
+        ctx = PipelineContext()
+
+        result = _ComponentRef("Writer", component).execute_all(ctx)
+
+        self.assertTrue(result.ok)
+        self.assertTrue(ctx.get("saved"))
+        self.assertEqual(ctx.steps[0]["result"]["effects"][0]["kind"], "database")
+        self.assertEqual(ctx.steps[0]["status"], "success")
+
+    def test_failure_stops_the_remaining_pipeline(self):
+        from ai_pod_cli.container import _ComponentRef, _PipeChain
+        from ai_pod_cli.context import PipelineContext
+
+        calls = []
+        failing = type("Failing", (), {"execute": lambda self, ctx: Failure("not available")})()
+        later = type("Later", (), {"execute": lambda self, ctx: calls.append("later") or {"ok": True}})()
+        ctx = PipelineContext()
+
+        result = _PipeChain([
+            _ComponentRef("Failing", failing),
+            _ComponentRef("Later", later),
+        ]).execute_all(ctx)
+
+        self.assertIsInstance(result, Failure)
+        self.assertEqual(calls, [])
+        self.assertEqual(ctx.steps[0]["status"], "failure")
+
+    def test_retry_recovers_from_transient_exception(self):
+        from ai_pod_cli.container import _ComponentRef
+        from ai_pod_cli.context import PipelineContext
+
+        class Flaky:
+            def __init__(self):
+                self.calls = 0
+
+            def execute(self, ctx):
+                self.calls += 1
+                if self.calls < 3:
+                    raise ConnectionError("temporary")
+                return {"connected": True}
+
+        ctx = PipelineContext()
+        component = Flaky()
+        result = _ComponentRef("Flaky", component).retry(2).execute_all(ctx)
+
+        self.assertEqual(result, {"connected": True})
+        self.assertEqual(component.calls, 3)
+        self.assertEqual(ctx.steps[0]["attempts"], 3)
+
+    def test_fallback_handles_explicit_failure(self):
+        from ai_pod_cli.container import _ComponentRef
+        from ai_pod_cli.context import PipelineContext
+
+        primary = type("Primary", (), {"execute": lambda self, ctx: Failure("offline")})()
+        cache = type("Cache", (), {"execute": lambda self, ctx: {"source": "cache"}})()
+        ctx = PipelineContext()
+
+        result = _ComponentRef("Primary", primary).fallback(
+            _ComponentRef("Cache", cache)
+        ).execute_all(ctx)
+
+        self.assertEqual(result, {"source": "cache"})
+        self.assertEqual(ctx.get("source"), "cache")
+        self.assertEqual(ctx.steps[0]["fallback"], "Cache")
 
     def test_repair_feedback_is_explicit_and_requires_confirmation(self):
         violations = ["Pipeline 必须定义 run(ctx) 函数"]
@@ -197,6 +270,22 @@ class RunTraceTests(unittest.TestCase):
         self.assertEqual(trace["params"]["api_key"], "***")
         self.assertEqual(loaded["result"]["data"]["token"], "***")
         self.assertEqual(listed[0]["run_id"], trace["run_id"])
+
+    def test_structured_failure_creates_a_failed_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                trace = write_run_trace(
+                    "demo", {}, Failure("queue unavailable", code="queue_down").to_dict(),
+                    None, 1.0,
+                )
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(trace["status"], "failed")
+        self.assertEqual(trace["error"]["code"], "queue_down")
+        self.assertEqual(trace["error"]["type"], "Failure")
 
 
 class StudioApiTests(unittest.TestCase):

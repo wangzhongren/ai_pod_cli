@@ -23,7 +23,13 @@ class PipelineContext:
         """从数据池读取一个值。"""
         return self.data.get(key, default)
 
-    def record_step(self, component_id: str, result, duration_ms: float | None = None) -> None:
+    def record_step(
+        self,
+        component_id: str,
+        result,
+        duration_ms: float | None = None,
+        **metadata,
+    ) -> None:
         """记录一个执行步骤。"""
         step = {
             "component": component_id,
@@ -31,6 +37,7 @@ class PipelineContext:
         }
         if duration_ms is not None:
             step["duration_ms"] = round(duration_ms, 3)
+        step.update(metadata)
         self.steps.append(step)
 
     def summary(self) -> dict:

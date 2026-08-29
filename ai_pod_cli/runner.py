@@ -7,6 +7,7 @@ import sys
 import tomlkit
 
 from ai_pod_cli.config import ROUTES_TOML
+from ai_pod_cli.result import Failure, Success
 
 
 class PipelineRunner:
@@ -99,4 +100,8 @@ class PipelineRunner:
         except Exception as error:
             error.aipod_context = ctx
             raise
+        if isinstance(result, (Success, Failure)):
+            payload = result.to_dict()
+            payload["context"] = ctx.summary()
+            return payload, ctx
         return result or ctx.summary(), ctx

@@ -204,6 +204,48 @@ def run(ctx: PipelineContext) -> dict:
 
 Each component is resolved as a singleton within its container. Each dictionary result is merged into the context, and every step records its component, result preview, and duration.
 
+### Structured Results
+
+Components may keep returning dictionaries, or use explicit computation results:
+
+```python
+from ai_pod_cli import Effect, Failure, Success
+
+
+def execute(self, ctx):
+    if not ctx.params.get("invoice_id"):
+        return Failure(
+            "invoice_id is required",
+            code="invalid_input",
+            retryable=False,
+        )
+
+    return Success(
+        output={"published": True},
+        effects=(
+            Effect("message", "invoices", "publish"),
+        ),
+    )
+```
+
+`Success.output` is merged into `PipelineContext`. An explicit `Failure` stops the remaining sequential Pipeline and produces a failed execution trace. Legacy dictionary returns remain fully compatible.
+
+### Execution Policies
+
+Retry and fallback policies are declared where a component is composed:
+
+```python
+flow = (
+    S(FetchRemoteInvoice)
+    .retry(3, delay_seconds=0.2)
+    .fallback(ReadCachedInvoice)
+    | S(RenderInvoice)
+)
+result = flow.execute_all(ctx)
+```
+
+Policies are visible in execution steps through `attempts`, `status`, `last_error`, and `fallback`. Exceptions still propagate normally when no retry or fallback policy handles them.
+
 ## Contracts and Governance
 
 `beans_config.json` is the machine-readable component pool. A component entry records identity, import path, category, description, dependencies, and inferred input/output contracts.
@@ -295,10 +337,9 @@ The package uses `setuptools`; the desktop frontend is bundled as a package asse
 
 ## Roadmap
 
-- First-class `Effect` values and effect policies
-- Explicit `Success | Failure` results
+- Effect approval and denial policies
 - Parallel, asynchronous, event, and streaming composition
-- Retry, timeout, fallback, rollback, and compensation operators
+- Timeout, rollback, and compensation operators
 - Rich schema contracts and stronger static Pipeline checking
 - Sandboxed execution and approval policies for privileged Providers
 - Reusable component packages and a governed capability registry
