@@ -10,7 +10,10 @@ import ast
 from ai_pod_cli.security import validate_code
 
 
-def request_repair(violations: list[str], attempt: int, max_attempts: int, *, interactive: bool = True) -> bool:
+def request_repair(
+    violations: list[str], attempt: int, max_attempts: int, *,
+    interactive: bool = True, auto_repair: bool = False,
+) -> bool:
     """Show validation feedback and ask whether it should be sent back to the LLM.
 
     The default is to repair, while non-interactive input safely cancels without
@@ -23,6 +26,10 @@ def request_repair(violations: list[str], attempt: int, max_attempts: int, *, in
     if attempt >= max_attempts:
         print(f"   已达到 {max_attempts} 次生成上限，未修改项目文件。")
         return False
+
+    if auto_repair:
+        print("   Studio 将校验问题反馈给 AI 并自动重试。")
+        return True
 
     if not interactive:
         print("   Agent JSON 模式不会等待交互确认，未修改项目文件。")
@@ -53,6 +60,14 @@ def validate_component_contract(code: str, class_name: str, category: str) -> li
         return violations
 
     tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "ConfigStore" for alias in node.names):
+            if node.module != "ai_pod_cli.config_store":
+                violations.append(
+                    "ConfigStore 必须使用 `from ai_pod_cli.config_store import ConfigStore` 导入"
+                )
+    if violations:
+        return list(dict.fromkeys(violations))
     component = next(
         (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name),
         None,

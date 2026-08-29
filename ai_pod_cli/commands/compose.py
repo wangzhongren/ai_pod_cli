@@ -138,7 +138,10 @@ def handle_compose(args):
        这会自动依次执行各组件并记录轨迹。
        **重要**：只有 service 类型组件可以放入管道链！provider 类型组件（如 ConfigStore、SqliteStore 等）
        没有 execute 方法，只能作为依赖注入到 service 中，绝对不能放进 S() 管道链里！
-    5. 从 ctx.params 读取入口参数，通过 ctx.set() 传递数据。
+    5. 严格按组件账本中的 inputs 键准备输入。Service 的 execute(ctx) 默认从 ctx.params 读取输入，
+       因此调用前使用 `ctx.params.update({{"action": "...", ...}})` 写入准确的输入键。
+       **禁止**把输入包装成 `xxx_input` 后只调用 ctx.set("xxx_input", payload)，除非该名称明确列在组件 inputs 中。
+       ctx.set()/ctx.get() 用于组件输出和后续步骤之间的状态传递；从状态取值后仍需写入下一个 Service 声明的输入键。
     6. 需要条件分支时，用 if/else 分别串联不同的管道。
     7. 最后 return ctx.summary()。
     8. 加上清晰的中文注释。
@@ -199,7 +202,11 @@ def handle_compose(args):
     feedback = ""
     for attempt in range(1, max_attempts + 1):
         try:
-            result = call_llm(system_prompt, f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1)
+            result = call_llm(
+                system_prompt, f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1,
+                progress_callback=getattr(args, "progress_callback", None),
+                progress_label=f"Composing pipeline: {args.name or args.cmd[:40]}",
+            )
 
             pipeline_ids = result.get("pipeline_ids", [])
             generated_code = result.get("code", "")
@@ -215,7 +222,11 @@ def handle_compose(args):
 
             violations = validate_pipeline_contract(generated_code)
             if violations:
-                if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
+                if not request_repair(
+                    violations, attempt, max_attempts,
+                    interactive=not args.json,
+                    auto_repair=getattr(args, "auto_repair", False),
+                ):
                     return
                 feedback = repair_feedback(violations)
                 continue

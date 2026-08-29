@@ -9,9 +9,11 @@ import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ai_pod_cli.config import init_config_if_not_exists, save_config
+from ai_pod_cli.client import _parse_json_content, call_llm
 from ai_pod_cli.contracts import analyze_pipeline_contracts, normalize_type, types_compatible
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import handle_pod
@@ -20,7 +22,7 @@ from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
 from ai_pod_cli.result import Effect, Failure, Success
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
-from ai_pod_cli.studio import StudioApi, StudioError, studio_asset_path
+from ai_pod_cli.studio import StudioApi, StudioError, _ProgressCapture, studio_asset_path
 from ai_pod_cli.validation import (
     repair_feedback,
     request_repair,
@@ -30,6 +32,31 @@ from ai_pod_cli.validation import (
 
 
 class RuntimeIntegrationTests(unittest.TestCase):
+    def test_llm_streaming_accumulates_json_and_reports_progress(self):
+        chunks = [
+            SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='{"answer"'))]),
+            SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=': 42}'))]),
+        ]
+        completions = SimpleNamespace(create=lambda **kwargs: chunks)
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        events = []
+        with patch("ai_pod_cli.client.get_client", return_value=fake_client), patch(
+            "ai_pod_cli.client.get_model", return_value="test-model"
+        ):
+            result = call_llm(
+                "system", "user", json_mode=True, max_retries=1,
+                progress_callback=events.append, progress_label="Planning",
+            )
+        self.assertEqual(result, {"answer": 42})
+        self.assertEqual(events[0]["type"], "llm_started")
+        self.assertEqual(events[-1], {"type": "llm_completed", "label": "Planning", "characters": 14})
+
+    def test_json_parser_accepts_markdown_wrapped_proxy_output(self):
+        self.assertEqual(
+            _parse_json_content("Here is the result:\n```json\n{\"ok\": true}\n```"),
+            {"ok": True},
+        )
+
     def test_registered_services_execute_through_pipeline_runner(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -82,6 +109,15 @@ class RuntimeIntegrationTests(unittest.TestCase):
 class GeneratedArtifactValidationTests(unittest.TestCase):
     def test_service_requires_execute(self):
         self.assertTrue(validate_component_contract("class MissingExecute: pass", "MissingExecute", "service"))
+
+    def test_component_rejects_noncanonical_config_store_import(self):
+        code = (
+            "from modules.providers.config_store import ConfigStore\n"
+            "class Worker:\n"
+            "    def execute(self, ctx): return {}\n"
+        )
+        violations = validate_component_contract(code, "Worker", "service")
+        self.assertTrue(any("ai_pod_cli.config_store" in item for item in violations))
 
     def test_pipeline_requires_run(self):
         self.assertTrue(validate_pipeline_contract("def other(): pass"))
@@ -289,6 +325,16 @@ class RunTraceTests(unittest.TestCase):
 
 
 class StudioApiTests(unittest.TestCase):
+    def test_progress_capture_truncates_unbounded_output(self):
+        lines = []
+        capture = _ProgressCapture(lines.append)
+
+        capture.write("x" * 20_000)
+
+        self.assertEqual(len(lines), 1)
+        self.assertIn("truncated", lines[0])
+        self.assertLessEqual(len(lines[0]), 16_400)
+
     def test_studio_inspects_project_without_leaking_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
             previous_cwd = Path.cwd()

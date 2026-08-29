@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from collections.abc import Callable
 
 from openai import OpenAI
 
@@ -13,6 +14,25 @@ _model: str | None = None
 # 默认重试配置
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_DELAY = 2  # 秒
+DEFAULT_TIMEOUT_SECONDS = 120.0
+
+
+def _parse_json_content(raw_content: str) -> dict:
+    """Parse strict JSON, with a small compatibility fallback for proxy wrappers."""
+    content = (raw_content or "").strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as original_error:
+        if content.startswith("```"):
+            content = content.removeprefix("```json").removeprefix("```")
+            content = content.removesuffix("```").strip()
+        start, end = content.find("{"), content.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(content[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+        raise original_error
 
 
 def get_client() -> OpenAI:
@@ -27,6 +47,7 @@ def get_client() -> OpenAI:
         _client = OpenAI(
             api_key=os.environ.get("OPENAI_API_KEY"),
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            timeout=float(os.environ.get("OPENAI_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)),
         )
     return _client
 
@@ -47,6 +68,9 @@ def call_llm(
     temperature: float = 0.1,
     max_retries: int = DEFAULT_MAX_RETRIES,
     retry_delay: float = DEFAULT_RETRY_DELAY,
+    max_tokens: int = 32768,
+    progress_callback: Callable[[dict], None] | None = None,
+    progress_label: str = "Model response",
 ) -> dict | str:
     """Call the LLM with retry on network errors or invalid JSON.
 
@@ -74,7 +98,7 @@ def call_llm(
             {"role": "user", "content": user_content},
         ],
         "temperature": temperature,
-        "max_tokens": 32768,
+        "max_tokens": max_tokens,
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
@@ -87,13 +111,38 @@ def call_llm(
             if attempt > 1:
                 print(f"   [retry] 第 {attempt}/{max_retries} 次重试...")
 
-            response = client.chat.completions.create(**kwargs)
-            raw_content = response.choices[0].message.content
+            if progress_callback is None:
+                response = client.chat.completions.create(**kwargs)
+                raw_content = response.choices[0].message.content
+            else:
+                progress_callback({"type": "llm_started", "label": progress_label, "characters": 0})
+                stream = client.chat.completions.create(**kwargs, stream=True)
+                parts: list[str] = []
+                character_count = 0
+                last_reported_at = 0.0
+                last_reported_count = 0
+                for chunk in stream:
+                    choices = getattr(chunk, "choices", None) or []
+                    delta = getattr(choices[0], "delta", None) if choices else None
+                    content = getattr(delta, "content", None) if delta is not None else None
+                    if content:
+                        parts.append(content)
+                        character_count += len(content)
+                    now = time.monotonic()
+                    if character_count > last_reported_count and (
+                        character_count - last_reported_count >= 256
+                        or now - last_reported_at >= 0.4
+                    ):
+                        progress_callback({"type": "llm_delta", "label": progress_label, "characters": character_count})
+                        last_reported_at = now
+                        last_reported_count = character_count
+                raw_content = "".join(parts)
+                progress_callback({"type": "llm_completed", "label": progress_label, "characters": character_count})
 
             if json_mode:
                 # 尝试解析 JSON
                 try:
-                    result = json.loads(raw_content)
+                    result = _parse_json_content(raw_content)
                 except (json.JSONDecodeError, TypeError) as e:
                     last_error = ValueError(f"AI 返回的内容不是合法 JSON: {e}\n原始内容: {raw_content[:300]}")
                     print(f"   [retry] 第 {attempt} 次: JSON 解析失败")

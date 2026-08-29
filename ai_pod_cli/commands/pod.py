@@ -67,7 +67,9 @@ def _save_pod_plan(pod_name: str, desc: str, components: list, pipelines: list, 
     print(f"📋 [方案已保存] {filename}\n")
 
 
-def _generate_pod_entry(desc: str, generated: list[str], pipe_names: list[str]) -> tuple[str, list[str]] | None:
+def _generate_pod_entry(
+    desc: str, generated: list[str], pipe_names: list[str], progress_callback=None,
+) -> tuple[str, list[str]] | None:
     """Pod 自己生成入口 prompt，包含本次生成的组件和管线的完整上下文。"""
     from ai_pod_cli.client import call_llm
     from ai_pod_cli.security import validate_code
@@ -124,7 +126,10 @@ def _generate_pod_entry(desc: str, generated: list[str], pipe_names: list[str]) 
     """
 
     try:
-        result = call_llm(system_prompt, f"生成入口: {desc}", json_mode=True, temperature=0.2)
+        result = call_llm(
+            system_prompt, f"生成入口: {desc}", json_mode=True, temperature=0.2,
+            progress_callback=progress_callback, progress_label="Generating application entry point",
+        )
     except Exception as e:
         print(f"   ❌ 入口生成失败: {e}")
         return None
@@ -176,6 +181,8 @@ def _load_routes_map() -> dict[str, str]:
 
 def handle_pod(args):
     """【pod 命令】AI 将一个大需求拆解为一组组件，逐个生成并加入 Bean Pool"""
+
+    progress_callback = getattr(args, "progress_callback", None)
 
     # 读取需求描述：优先 --file，其次 desc
     desc = ""
@@ -259,7 +266,15 @@ def handle_pod(args):
     """
 
     try:
-        plan = call_llm(system_prompt, f"需求: {desc}", json_mode=True, temperature=0.2)
+        plan = call_llm(
+            system_prompt,
+            f"需求: {desc}",
+            json_mode=True,
+            temperature=0.2,
+            max_tokens=8192,
+            progress_callback=progress_callback,
+            progress_label="Planning architecture",
+        )
     except Exception as e:
         print(f"❌ AI 拆解失败: {e}")
         return
@@ -450,6 +465,9 @@ def handle_pod(args):
                     f"生成组件: {name}{feedback}",
                     json_mode=True,
                     temperature=0.1,
+                    max_tokens=8192,
+                    progress_callback=progress_callback,
+                    progress_label=f"Generating component {i}/{len(components)}: {name}",
                 )
 
                 code = result.get("code", "")
@@ -469,7 +487,11 @@ def handle_pod(args):
 
                 violations = validate_component_contract(code, name, category)
                 if violations:
-                    if request_repair(violations, attempt, max_attempts, interactive=not args.json):
+                    if request_repair(
+                        violations, attempt, max_attempts,
+                        interactive=not args.json,
+                        auto_repair=getattr(args, "auto_repair", False),
+                    ):
                         feedback = repair_feedback(violations)
                         continue
                     break
@@ -549,6 +571,9 @@ def handle_pod(args):
             compose_args.cmd = instruction
             compose_args.name = pipe_name
             compose_args.list = False
+            compose_args.progress_callback = progress_callback
+            compose_args.auto_repair = getattr(args, "auto_repair", False)
+            compose_args.json = getattr(args, "json", False)
 
             try:
                 handle_compose(compose_args)
@@ -567,7 +592,10 @@ def handle_pod(args):
     available_pipelines = list(dict.fromkeys(reused_pipelines + generated_pipelines))
     if available_components and (generated or generated_pipelines):
         print(f"\n🚀 [生成入口文件]")
-        entry_info = _generate_pod_entry(desc, available_components, available_pipelines)
+        entry_info = _generate_pod_entry(
+            desc, available_components, available_pipelines,
+            progress_callback=progress_callback,
+        )
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:

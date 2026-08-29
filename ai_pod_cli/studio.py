@@ -50,13 +50,52 @@ class _ProgressCapture(io.StringIO):
     def write(self, value):
         if self._cancelled():
             raise _PodCancelled()
+        if not isinstance(value, str):
+            value = str(value)
         written = super().write(value)
         self._pending += value
+        if len(self._pending) > 16_384 and "\n" not in self._pending:
+            line, self._pending = self._pending[:16_384], ""
+            if self._callback:
+                self._callback(line + " … [truncated]")
         while "\n" in self._pending:
             line, self._pending = self._pending.split("\n", 1)
             if self._callback and line.strip():
                 self._callback(line.rstrip("\r"))
         return written
+
+
+class _ThreadOutputRouter:
+    """Route writes from one worker thread while preserving all other stdout."""
+
+    def __init__(self, target, fallback, thread_id: int):
+        self._target = target
+        self._fallback = fallback
+        self._thread_id = thread_id
+
+    def write(self, value):
+        stream = self._target if threading.get_ident() == self._thread_id else self._fallback
+        return stream.write(value)
+
+    def flush(self):
+        self._target.flush()
+        return self._fallback.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._fallback, name)
+
+
+@contextmanager
+def _redirect_current_thread_stdout(target):
+    """Capture only this thread; contextlib.redirect_stdout is process-global."""
+    previous = sys.stdout
+    router = _ThreadOutputRouter(target, previous, threading.get_ident())
+    sys.stdout = router
+    try:
+        yield target
+    finally:
+        if sys.stdout is router:
+            sys.stdout = previous
 
 
 class StudioApi:
@@ -398,6 +437,7 @@ class StudioApi:
                 "build_id": build_id, "status": "running", "stage": "planning",
                 "percent": 2, "message": "Preparing project context…", "logs": [],
                 "result": None, "error": None, "cancel_requested": False,
+                "received_characters": 0,
                 "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None,
             }
             self._pod_tasks[build_id] = task
@@ -440,8 +480,12 @@ class StudioApi:
                 before_entries = set(self._discover_entrypoints())
                 from ai_pod_cli.commands.pod import handle_pod
                 output = _ProgressCapture(_progress, _cancelled)
-                args = SimpleNamespace(desc=description, file="", yes=True, json=True)
-                with redirect_stdout(output):
+                args = SimpleNamespace(
+                    desc=description, file="", yes=True, json=True,
+                    auto_repair=True,
+                    progress_callback=getattr(_progress, "event", None),
+                )
+                with _redirect_current_thread_stdout(output):
                     try:
                         handle_pod(args)
                     except SystemExit as error:
@@ -487,6 +531,13 @@ class StudioApi:
         def progress(line: str):
             self._record_pod_progress(build_id, line)
 
+        def event(payload: dict):
+            if cancelled():
+                raise _PodCancelled()
+            self._record_pod_event(build_id, payload)
+
+        progress.event = event
+
         try:
             result = self.build_pod(description, progress, cancelled)
             with self._pod_task_lock:
@@ -515,7 +566,9 @@ class StudioApi:
         clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         if not clean:
             return
-        stage, percent, message = "planning", 8, clean
+        if len(clean) > 2_000:
+            clean = clean[:2_000] + " … [truncated]"
+        stage, percent, message = None, 0, clean
         match = re.search(r"\[(\d+)/(\d+)\]\s*生成\s+([^\s]+)", clean)
         if "拆解方案" in clean:
             stage, percent, message = "planned", 18, "Architecture planned."
@@ -524,7 +577,7 @@ class StudioApi:
             stage = "components"
             percent = 20 + int(50 * (current - 1) / total)
             message = f"Generating component {current}/{total}: {name}"
-        elif "Pipeline" in clean or "pipeline" in clean:
+        elif "[生成 Pipeline]" in clean or "[Pipeline 复用]" in clean:
             stage, percent = "pipelines", 74
         elif "入口" in clean:
             stage, percent = "entrypoint", 90
@@ -538,7 +591,39 @@ class StudioApi:
             if len(task["logs"]) > 500:
                 del task["logs"][:100]
             if task["status"] == "running":
-                task.update(stage=stage, percent=max(task["percent"], percent), message=message)
+                task.update(
+                    stage=stage or task["stage"],
+                    percent=max(task["percent"], percent) if stage else task["percent"],
+                    message=message[:300],
+                )
+
+    def _record_pod_event(self, build_id: str, event: dict) -> None:
+        """Record model-stream activity without retaining generated content."""
+        label = str(event.get("label", "Model response"))[:180]
+        characters = max(0, int(event.get("characters", 0)))
+        event_type = str(event.get("type", "llm_delta"))
+        with self._pod_task_lock:
+            task = self._pod_tasks.get(build_id)
+            if task is None or task["status"] not in {"running", "cancelling"}:
+                return
+            task["received_characters"] = characters
+            if task["status"] == "running":
+                stage = task["stage"]
+                percent = task["percent"]
+                component_match = re.match(r"Generating component (\d+)/(\d+):", label)
+                if label == "Planning architecture":
+                    stage, percent = "planning", max(percent, 8)
+                elif component_match:
+                    current, total = int(component_match.group(1)), max(1, int(component_match.group(2)))
+                    stage, percent = "components", 20 + int(50 * (current - 1) / total)
+                elif label.startswith("Composing pipeline:"):
+                    stage, percent = "pipelines", max(percent, 74)
+                elif label == "Generating application entry point":
+                    stage, percent = "entrypoint", max(percent, 90)
+                suffix = "starting…" if event_type == "llm_started" else f"{characters:,} characters received"
+                if event_type == "llm_completed":
+                    suffix = f"response complete · {characters:,} characters"
+                task.update(stage=stage, percent=percent, message=f"{label} · {suffix}")
 
     @staticmethod
     def _pod_task_snapshot(task: dict) -> dict:
