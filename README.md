@@ -1,406 +1,302 @@
 # AIPod
 
-**A human-governed operating framework for AI software agents.**
+**A compositional computation model and governed runtime for AI-built Python software.**
 
-Humans define the architecture, component contracts, execution boundaries, and
-review requirements. AIPod encodes those decisions as a project protocol so AI
-agents can inspect, build, validate, run, and report on software without freely
-operating on an unstructured codebase.
+AIPod lets AI create software without giving the model control of the runtime. Humans define the architecture and governance rules; AI discovers, creates, selects, and composes components inside those boundaries; AIPod validates and executes the resulting program deterministically.
 
-> **Human defines governance. AIPod encodes it. AI operates within it.**
+```text
+Component: (State, Input, Dependencies) -> Result(State', Output, Effects)
+Pipeline:  Cn ∘ ... ∘ C2 ∘ C1
+
+Software = Components + Dependencies + Composition + State + Effects
+AIPod   = Software Model + Governance
+```
+
+> AIPod is currently alpha software. Components, dependency injection, sequential composition, contracts, validation, execution traces, CLI workflows, and the desktop Studio are implemented. First-class effects, parallel pipelines, retries, and compensation are on the roadmap.
 
 ## Why AIPod?
 
-Most AI coding tools give an agent broad freedom to edit a repository. AIPod
-gives it a durable operating model instead:
+Most AI coding tools generate files. AIPod generates a system that remains inspectable and operable after generation:
+
+- **Components** provide reusable capabilities and business transformations.
+- **Contracts** describe required inputs, produced outputs, and dependencies.
+- **Pipelines** compose compatible components into executable programs.
+- **Interfaces** expose programs through CLI, web, desktop, API, workers, or schedulers.
+- **PipelineContext** carries input and transient state through a run.
+- **Dependency injection** provides deterministic runtime assembly and singleton reuse.
+- **Validation and traces** make generated systems reviewable and debuggable.
+
+The result is ordinary Python. AIPod does not hide the source or require a proprietary deployment target.
+
+## The Four-Layer Model
 
 ```text
-Human
-  → defines architecture, permissions, and review rules
-AIPod
-  → encodes component contracts, project memory, pipelines, validation, and traces
-AI Agent
-  → inspects → builds → validates → runs → reports
+Capabilities            Business logic          Composition             Delivery
+Providers       --->    Services        --->    Pipelines       --->    Interfaces
+database, HTTP          use-case logic           execution order         CLI, web, desktop,
+Redis, queues           and transformation       and state flow           API, worker, schedule
 ```
 
-AIPod is not a prompt that tells an AI how to code. It is the framework the
-project adopts. Its Bean Pool, component contracts, deterministic Pipeline
-runtime, JSON Agent Project Model, and execution traces are the shared facts an
-AI agent must work with.
+### Provider
 
-## What AIPod Governs
+A Provider wraps infrastructure or an external capability: a database, filesystem, HTTP client, Redis client, message producer, or model gateway. It is injected into Services and reused by the container.
 
-- **Component boundaries.** Everything is a `provider` or `service`, with an
-  explicit dependency and data contract.
-- **Reusable project memory.** Human-written and AI-generated components join
-  the Bean Pool, which agents inspect before creating new capability.
-- **Deterministic orchestration.** Pipelines compose `service` components; the
-  DI runtime, not the AI, assembles and executes them.
-- **Validation and recovery.** Generated code is checked before registration;
-  invalid output is never silently added to the system.
-- **Observable execution.** Every `aipod run` attempt writes a redacted trace
-  that humans and agents can inspect.
-- **Machine-readable governance.** Agents use JSON contracts, state, changes,
-  and diagnostics rather than inferring intent from terminal prose.
+### Service
 
-This lets a system accumulate capability without allowing an agent to improvise
-its architecture on every task.
+A Service implements one business transformation. It reads inputs from `PipelineContext`, uses injected Providers, and returns a dictionary of outputs. Returned values are merged into the context for downstream components.
 
+### Pipeline
+
+A Pipeline is an ordered composition of Services. Before a visual pipeline is saved, AIPod checks whether each component's output contract can satisfy the next component's input contract.
+
+### Interface
+
+An Interface is an executable boundary around one or more Pipelines. A web server, desktop window, CLI command, API route, message consumer, or scheduled job belongs here—not in the business Pipeline itself.
 
 ## Quick Start
 
-```bash
-# 1. Install (Python 3.10+)
-pip install aipodcli
+Python 3.10 or newer is required.
 
-# 2. Configure once (global, shared across all projects)
+```bash
+git clone https://github.com/wangzhongren/ai_pod_cli.git
+cd ai_pod_cli
+
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
+
+pip install -e ".[studio]"
+```
+
+Configure an OpenAI-compatible model once. The global configuration is reused by every project:
+
+```bash
 aipod config set OPENAI_API_KEY sk-your-key
 aipod config set OPENAI_BASE_URL https://api.openai.com/v1
-aipod config set OPENAI_MODEL deepseek-chat
-
-# 3. Create a project
-mkdir my-app && cd my-app
-aipod init
-aipod pod "a CLI todo app with SQLite storage, add/list/complete/delete"
-
-# 4. Run it
-python main.py add "Buy groceries"
-python main.py list
+aipod config set OPENAI_MODEL your-model-name
 ```
 
-Review the generated code and authorize execution when it is appropriate for
-your project. AIPod keeps the resulting components, routes, and execution
-evidence inspectable for later work.
-
-Want to inspect the runtime before connecting an LLM? Run the checked-in
-[Todo CLI example](examples/todo_cli/README.md); it uses the same Bean Pool,
-DI container, and PipelineRunner without making an API call.
-
-## What Just Happened
-
-```
-aipod init
-  → modules/, pipelines/, config.toml, routes.toml, beans_config.json
-
-aipod pod "a CLI todo app..."
-  → AI decomposes requirement into components
-  → AI generates 4 components (TodoStore, AddTodo, ListTodo, CompleteTodo)
-  → AI composes 3 pipelines (add, list, complete)
-  → AI generates entry point (main.py with argparse)
-  → Registers everything in routes.toml and beans_config.json
-```
-
-## The Growing System
-
-Every component you create makes the system smarter:
-
-```
-Round 1:  aipod create --name SqliteStore --desc "SQLite storage"
-          → Bean Pool: [ConfigStore, SqliteStore]
-
-Round 2:  aipod create --name DataCollector --desc "generates sales data"
-          → Bean Pool: [..., DataCollector]
-
-Round 3:  aipod create --name DataWriter --desc "depends on SqliteStore, writes to DB"
-          → AI sees SqliteStore in the pool, auto-wires it as dependency
-
-Compose:  aipod compose "collect sales and write to SQLite"
-          → AI picks [DataCollector, DataWriter] from the pool
-          → Generates pipeline: (S(DataCollector) | S(DataWriter)).execute_all(ctx)
-```
-
-**The Bean Pool grows with every `create`.** Agents see more approved
-components, reuse them in richer pipelines, and work from a shared project
-model rather than a one-shot prompt.
-
-## Commands
-
-| Command | What it does | Needs AI |
-|---------|-------------|----------|
-| `aipod init` | Create project skeleton | ❌ |
-| `aipod config set KEY VALUE` | Set global config (once, shared everywhere) | ❌ |
-| `aipod config list` | Show global config | ❌ |
-| `aipod entry "desc"` | AI generates entry point file | ✅ |
-| `aipod visualize` | Generate an interactive component and Pipeline graph | ❌ |
-| `aipod inspect --json` | Read the Agent Project Model (components, pipelines, validation) | ❌ |
-| `aipod run ROUTE --params JSON --json` | Run a route and persist a structured execution trace | ❌ |
-| `aipod create --category service\|provider --name X --desc "..."` | AI generates one component | ✅ |
-| `aipod add --name X --class-path Y` | Register hand-written component | ❌ |
-| `aipod compose "instruction"` | AI generates pipeline | ✅ |
-| `aipod pod "requirement"` | **AI generates components + pipelines + entry** | ✅ |
-| `aipod pod --file req.md` | Same, reads from file | ✅ |
-
-## Two Ways to Build
-
-### Fast: `pod` (one-shot)
+Create and build a project:
 
 ```bash
+mkdir expense_app
+cd expense_app
 aipod init
-aipod pod "e-commerce order system with inventory, payment, and notifications"
-python main.py
+aipod pod "Build an expense tracker with add, list, summary, and delete operations" --yes
 ```
 
-AI generates everything: components, pipelines, entry point, config.
-
-### Step-by-step: `create` → `compose`
+Then inspect or run it:
 
 ```bash
-aipod init
-
-# Build component pool incrementally
-aipod create --category provider --name SqliteStore \
-    --desc "SQLite storage, reads database.sqlite_path from ConfigStore"
-
-aipod create --category service --name DataCollector \
-    --desc "generates random sales records"
-
-aipod create --category service --name DataWriter \
-    --desc "depends on SqliteStore, writes records to database"
-
-# Compose pipelines from the pool
-aipod compose "collect sales data and write to SQLite" --name sales_flow
-
-# Generate entry point
-aipod entry "a CLI data processing tool"
-
-# Run
-python main.py sales_flow
+aipod inspect project
+aipod run add_expense --params "{\"amount\": 42.5, \"category\": \"food\"}"
+aipod studio .
 ```
 
-## How It Works
+`aipod pod` reuses compatible components and routes already registered in the project. Restarting Studio or describing another feature does not automatically recreate the entire Pod.
 
-### The Bean Pool
+## AIPod Studio
 
-Every component is registered in `beans_config.json`:
+AIPod Studio is a native desktop shell built with `pywebview` and WebView2 on Windows. It provides a VS Code-inspired workspace while preserving the Python runtime underneath.
 
-```json
-{
-  "id": "DataWriter",
-  "class_path": "modules.datawriter.DataWriter",
-  "dependencies": ["SqliteStore"],
-  "inputs": {"raw_sales": "list — sales records"},
-  "outputs": {"written_count": "int — rows written"}
-}
+```bash
+pip install -e ".[studio]"
+aipod studio .
 ```
 
-AI reads the pool when generating new components and composing pipelines. **The pool is the memory of your system.**
+From Studio you can:
 
-### Components
+- open or switch project directories and initialize an ordinary folder;
+- describe an application and let AI build components, pipelines, and an entry point;
+- manually register a complete Provider or Service;
+- inspect the graph from Providers to Services, Pipelines, and Interfaces;
+- compose a Pipeline by selecting Service nodes in execution order;
+- inspect syntax-highlighted source in an editor tab;
+- start discovered CLI, web, desktop, API, or Python entry points;
+- stream process output in the integrated terminal;
+- inspect validation results and recent execution traces.
 
-AI generates classes with constructor injection:
+The graph supports wheel zoom, canvas panning, fixed controls, collapsible navigation sections, and selectable nodes. Built-in runtime helpers are hidden by default so the graph focuses on application architecture.
 
-```python
-class DataWriter:
-    @inject
-    def __init__(self, sqlite_store: SqliteStore, config_store: ConfigStore):
-        self.sqlite_store = sqlite_store           # Auto-injected by runtime
-        self.batch_size = config_store.get("writer.batch_size", 100)
+## Build Workflows
 
-    def execute(self, ctx: PipelineContext) -> dict:
-        records = ctx.get("raw_sales", [])
-        for r in records:
-            self.sqlite_store.insert("sales", r)
-        ctx.set("written_count", len(records))
-        return {"status": "success"}
+### Describe the Whole Pod
+
+```bash
+aipod pod "Collect articles, remove duplicates, summarize them, and expose a CLI report" --yes
+aipod pod --file requirements.md --yes
 ```
 
-- **service** — business logic, has `execute(ctx)` and can be placed in a pipeline
-- **provider** — infrastructure (DB, cache, HTTP client), exposes custom methods and is injected into services
+The command plans the architecture, reuses compatible existing beans, creates missing Providers and Services, composes Pipelines, registers routes, and generates an entry point when appropriate.
 
-### Pipelines
+### Build Incrementally
 
-AI generates pipeline files using pipe syntax:
+Generate components:
+
+```bash
+aipod create --category provider --name ArticleRepository --desc "Persist and query articles in SQLite"
+aipod create --category service --name SummarizeArticles --desc "Produce a concise report from collected articles"
+```
+
+Register hand-written code:
+
+```bash
+aipod add --category provider --name RedisStore \
+  --class-path modules.providers.redis_store.RedisStore \
+  --desc "Redis-backed cache and idempotency store"
+```
+
+Compose and run a route:
+
+```bash
+aipod compose "Collect articles, deduplicate them, then summarize the result" --name daily_report
+aipod run daily_report --params "{\"topic\": \"AI\"}"
+```
+
+## Runtime Model
+
+Every run starts with a `PipelineContext`:
 
 ```python
 from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.config import load_beans
-from ai_pod_cli.container import build_container, Pod
-from modules.services.datacollector import DataCollector
-from modules.services.datacleaner import DataCleaner
-from modules.services.datawriter import DataWriter
-from modules.services.notifier import Notifier
 
-def run(ctx: PipelineContext):
-    beans = load_beans()
-    S = Pod(build_container(beans))
-
-    # Chain: DataCollector → DataCleaner → DataWriter
-    (S(DataCollector) | S(DataCleaner) | S(DataWriter)).execute_all(ctx)
-
-    # Branching
-    if ctx.get("alert_needed"):
-        (S(Notifier)).execute_all(ctx)
-
-    return ctx.summary()
+ctx = PipelineContext(params={"topic": "AI"})
+ctx.set("articles", [{"title": "Example"}])
+articles = ctx.get("articles", [])
 ```
 
-### Global Configuration
-
-Set once, use everywhere:
-
-```bash
-aipod config set OPENAI_API_KEY sk-xxx       # stored in ~/.aipod/config.toml
-aipod config set OPENAI_BASE_URL https://...
-```
-
-Components read project config through injected `ConfigStore`:
-
-```toml
-# config.toml (per-project)
-[database]
-sqlite_path = "data.db"    # AI suggested this when creating SqliteStore
-```
+A Service performs one transformation:
 
 ```python
-config_store.get("database.sqlite_path", "data.db")
+from ai_pod_cli.context import PipelineContext
+
+
+class SummarizeArticles:
+    def execute(self, ctx: PipelineContext) -> dict:
+        articles = ctx.get("articles", [])
+        summary = "\n".join(item["title"] for item in articles)
+        return {"summary": summary}
 ```
 
-### Generation → Execution
+A Pipeline resolves components from the Pod and composes them with `|`:
 
-```
-┌──────────────────────────┐
-│ Human governance + agent │
-│                          │
-│  aipod init              │  → project skeleton
-│  aipod inspect --json    │  → machine-readable project state
-│  aipod config set ...    │  → global config
-│  aipod pod "big req"     │  → components + pipelines + entry
-│  aipod create ...        │  → single component (pool grows)
-│  aipod compose "..."     │  → pipeline + route
-│  aipod entry "desc"      │  → entry point file
-│                          │
-│  Human reviews & authorizes │
-│  Agent receives JSON state │
-└──────────────────────────┘
-            ↓
-┌──────────────────────────┐
-│   Runtime (run time)     │
-│                          │
-│  aipod run ROUTE --json  │  → explicit, traceable execution
-│  PipelineRunner loads    │
-│  DI container assembles  │
-│  Pipeline executes       │
-│  Context flows data      │
-│  inspect runs --json     │  → result and execution trace
-└──────────────────────────┘
+```python
+from ai_pod_cli.config import load_beans
+from ai_pod_cli.container import Pod, build_container
+from ai_pod_cli.context import PipelineContext
+from modules.services.collect_articles import CollectArticles
+from modules.services.summarize_articles import SummarizeArticles
+
+
+def run(ctx: PipelineContext) -> dict:
+    container = build_container(load_beans())
+    S = Pod(container)
+    return (S(CollectArticles) | S(SummarizeArticles)).execute_all(ctx)
 ```
 
-**Execution is explicit and observable.** Humans decide when an agent may run a
-route; AIPod records the result as a redacted trace for later review.
+Each component is resolved as a singleton within its container. Each dictionary result is merged into the context, and every step records its component, result preview, and duration.
 
-## Key APIs
+## Contracts and Governance
 
-| API | Methods |
-|-----|---------|
-| **PipelineContext** | `ctx.params`, `ctx.set(k,v)`, `ctx.get(k,d)`, `ctx.summary()` |
-| **ConfigStore** | `get("section.key", default)`, `get_section("name")`, `sections()` |
-| **Pod** | `S = Pod(container)`, `S(Class)`, `(S(A) \| S(B)).execute_all(ctx)` |
-| **PipelineRunner** | `PipelineRunner()`, `route_names()`, `run("name", params)` |
+`beans_config.json` is the machine-readable component pool. A component entry records identity, import path, category, description, dependencies, and inferred input/output contracts.
+
+```json
+{
+  "id": "SummarizeArticles",
+  "class_path": "modules.services.summarize_articles.SummarizeArticles",
+  "category": "service",
+  "dependencies": ["ArticleRepository"],
+  "inputs": {"articles": "list"},
+  "outputs": {"summary": "str"}
+}
+```
+
+Current validation covers importability and registration, the required Service boundary, route and Pipeline structure, adjacent contract compatibility, context-based argument flow, rejection of `sys.exit()` inside Pipelines, and project-level diagnostics in both CLI and Studio.
+
+Contracts currently use inferred lightweight type names. Rich schemas and stricter static composition are planned.
+
+## Redis and Message Queues
+
+Redis, Kafka, RabbitMQ, and similar systems fit the same model:
+
+```text
+Redis client / Queue producer  -> Provider
+Cache or publish use case      -> Service
+Ordered business flow          -> Pipeline
+Message consumer process       -> Interface
+```
+
+For example, a `RabbitMQProvider` owns connections and publish/consume primitives, a `PublishInvoice` Service expresses the business operation, and a worker entry point receives messages and invokes an AIPod route. Long-running listeners remain Interfaces so infrastructure lifecycle does not leak into reusable business components.
 
 ## Project Structure
 
+```text
+expense_app/
+├── modules/
+│   ├── providers/          # Infrastructure capabilities
+│   └── services/           # Business transformations
+├── pipelines/              # Composed execution routes
+├── beans_config.json       # Component pool and contracts
+├── routes.toml             # Route-to-pipeline registry
+├── config.toml             # Project configuration
+├── requirements.txt        # Generated project dependencies
+├── server.py               # Example discovered interface
+└── .aipod/
+    └── runs/               # Runtime traces (gitignored)
 ```
-project/
-├── main.py                  ← AI-generated entry point
-├── config.toml              ← Project config (you + AI)
-├── routes.toml              ← Pipeline routes (compose/pod auto-registers)
-├── beans_config.json        ← Component pool (AI maintains)
-├── modules/                 ← Your component pool
-│   ├── providers/
-│   │   └── sqlitestore.py
-│   └── services/
-│       ├── datacollector.py
-│       └── datawriter.py
-└── pipelines/               ← AI-composed pipelines
-    └── sales_flow.py
+
+The global model configuration lives at `~/.aipod/config.toml`. Project configuration and generated code remain local to each project.
+
+## CLI Reference
+
+| Command | Purpose | Uses AI |
+|---|---|:---:|
+| `aipod init [--install-deps]` | Initialize the current directory | No |
+| `aipod pod DESC [--file FILE] [--yes]` | Build or extend a complete Pod | Yes |
+| `aipod create --category ... --name ... --desc ...` | Generate one Provider or Service | Yes |
+| `aipod add --category ... --name ... --class-path ... --desc ...` | Register hand-written code | No |
+| `aipod compose CMD [--name NAME]` | Generate and register a Pipeline | Yes |
+| `aipod entry DESC` | Generate an executable project entry point | Yes |
+| `aipod run ROUTE [--params JSON]` | Execute a route and save its trace | No |
+| `aipod inspect [TARGET] [NAME] [--json]` | Inspect project/run metadata | No |
+| `aipod visualize [--output FILE] [--open]` | Export an interactive graph | No |
+| `aipod studio [PATH] [--debug]` | Open the native desktop Studio | No |
+| `aipod config set/get/remove/list/path` | Manage global model configuration | No |
+
+Run `aipod COMMAND --help` for complete arguments.
+
+## Development
+
+```bash
+git clone https://github.com/wangzhongren/ai_pod_cli.git
+cd ai_pod_cli
+python -m venv .venv
+.venv\Scripts\activate   # Windows
+pip install -e ".[studio]"
+python -m unittest discover -s tests -q
 ```
+
+The package uses `setuptools`; the desktop frontend is bundled as a package asset and does not require a separate Node build.
 
 ## Security
 
-All AI-generated code receives static validation before it is written or registered:
-- Blocks: `eval()`, `exec()`, `compile()`, `__import__()`, dunder chain access
-- Checks syntax plus the required component/Pipeline entry-point contract
-- If validation fails, shows the exact errors and asks before sending them to the LLM for a correction attempt (at most three attempts)
-- Does NOT sandbox imports, filesystem access, networking, or process execution. Review generated code before running it locally.
-
-## Visualize Your System
-
-Generate a standalone interactive graph of the current Bean Pool, dependency
-edges, routes, and statically detected Pipeline service chains:
-
-```bash
-aipod visualize
-# writes aipod-graph.html
-
-aipod visualize --open
-```
-
-Click a component to inspect its class path, contract, dependencies, and
-description. The command only reads project metadata and Python source; it never
-imports or executes generated components.
-
-## Agent Project Model
-
-`SKILL.md` tells an AI agent how to operate AIPod. `inspect --json` tells it
-what currently exists in the project, without requiring it to parse terminal
-text, HTML, or source files:
-
-```bash
-aipod inspect --json
-aipod inspect components --json
-aipod inspect component SqliteStore --json
-aipod inspect pipeline sales_flow --json
-aipod inspect runs --json
-aipod inspect run RUN_ID --json
-aipod inspect --summary --json
-```
-
-The stable JSON model includes component contracts, DI dependencies, statically
-parsed Pipeline service chains, and validation issues such as missing
-dependencies or pipeline files. `visualize` renders the same model for humans.
-
-For mutating Agent operations, use `--json`. AIPod emits one JSON envelope with
-the command status, exit code, structured project changes, and diagnostics; an
-Agent never needs to parse terminal decorations. A mutating command that makes
-no state change returns `status: "no_change"`:
-
-```bash
-aipod create --category service --name ImportOrders --desc "..." --json
-aipod compose "import orders" --name import_orders --json
-aipod pod "an order import CLI" --yes --json
-```
-
-## Agent Run and Trace
-
-Run a registered route without depending on an AI-generated entry file. Every
-attempt, including failures, is persisted as a redacted JSON trace under
-`.aipod/runs/`:
-
-```bash
-aipod run sales_flow --params '{"month":"2026-07"}' --json
-aipod inspect runs --json
-aipod inspect run run_20260727T120000Z_abcdef12 --json
-```
-
-Traces include the route, parameters, result or error, total duration, and
-per-component durations recorded by the Pipeline runtime. Fields whose names
-look like secrets, passwords, or tokens are redacted before persistence.
-
-## Install
-
-```bash
-pip install aipodcli
-```
+- Keep API keys in global config or environment variables; never commit them.
+- Review AI-generated code and dependencies before executing an unfamiliar project.
+- Treat Providers as privileged boundaries because they can access files, networks, databases, and external services.
+- Use least-privilege credentials and isolate untrusted generated projects.
 
 ## Roadmap
 
-- [ ] Component contract validation (typed inputs/outputs)
-- [ ] Pipeline static type checking
-- [ ] Component versioning
-- [ ] Visual pipeline graph
-- [ ] Incremental generation (AI reuses existing components)
-- [ ] Multi-language component support
+- First-class `Effect` values and effect policies
+- Explicit `Success | Failure` results
+- Parallel, asynchronous, event, and streaming composition
+- Retry, timeout, fallback, rollback, and compensation operators
+- Rich schema contracts and stronger static Pipeline checking
+- Sandboxed execution and approval policies for privileged Providers
+- Reusable component packages and a governed capability registry
 
 ## License
 
-MIT
+[MIT](LICENSE)

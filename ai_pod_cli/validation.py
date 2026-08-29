@@ -80,4 +80,31 @@ def validate_pipeline_contract(code: str) -> list[str]:
     tree = ast.parse(code)
     if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "run" for node in tree.body):
         return ["Pipeline 必须定义 run(ctx) 函数"]
-    return []
+    violations = []
+    component_refs = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "S"
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value
+        is_component_ref = (
+            isinstance(owner, ast.Call)
+            and isinstance(owner.func, ast.Name)
+            and owner.func.id == "S"
+        ) or (isinstance(owner, ast.Name) and owner.id in component_refs)
+        if node.func.attr == "execute" and is_component_ref:
+            violations.append(
+                "S(Component) 返回运行时组件引用，只能调用 execute(ctx) 或 execute_all(ctx)；"
+                "业务参数必须先写入 PipelineContext"
+            )
+        if node.func.attr == "exit" and isinstance(owner, ast.Name) and owner.id == "sys":
+            violations.append("Pipeline 不得调用 sys.exit()；失败应写入 PipelineContext 并返回结果")
+    return list(dict.fromkeys(violations))

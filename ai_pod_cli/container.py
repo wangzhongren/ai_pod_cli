@@ -56,6 +56,9 @@ class _ComponentRef:
         """Execute this single component and record the step (same API as _PipeChain)."""
         started = perf_counter()
         result = self.execute(ctx)
+        if isinstance(result, dict):
+            for key, value in result.items():
+                ctx.set(key, value)
         ctx.record_step(self._id, result, (perf_counter() - started) * 1000)
         return result
 
@@ -83,6 +86,9 @@ class _PipeChain:
         for ref in self._refs:
             started = perf_counter()
             result = ref.execute(ctx)
+            if isinstance(result, dict):
+                for key, value in result.items():
+                    ctx.set(key, value)
             ctx.record_step(ref._id, result, (perf_counter() - started) * 1000)
         return result
 

@@ -43,6 +43,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 
+[project.optional-dependencies]
+studio = ["pywebview>=5.0"]
+
 [project.urls]
 Homepage = "https://github.com/wangzhongren/ai_pod_cli"
 Repository = "https://github.com/wangzhongren/ai_pod_cli.git"
@@ -53,3 +56,6 @@ aipod = "ai_pod_cli.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ai_pod_cli*"]
+
+[tool.setuptools.package-data]
+ai_pod_cli = ["studio_assets/*.html"]

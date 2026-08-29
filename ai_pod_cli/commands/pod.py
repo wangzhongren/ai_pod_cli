@@ -234,6 +234,7 @@ def handle_pod(args):
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
         "pod_name": "这组组件的简短名称",
+        "reuse_components": ["直接复用的已有 Bean ID"],
         "components": [
             {{
                 "name": "组件类名（PascalCase）",
@@ -265,11 +266,24 @@ def handle_pod(args):
 
     pod_name = plan.get("pod_name", "unnamed_pod")
     components = plan.get("components", [])
+    requested_reuse = [str(item) for item in plan.get("reuse_components", [])]
     pipelines = plan.get("pipelines", [])
     config_additions = plan.get("config_additions", {})
 
-    if not components:
-        print("❌ AI 未返回任何组件。")
+    existing_by_id = {bean.get("id"): bean for bean in beans.get("beans", [])}
+    reused = [item for item in requested_reuse if item in existing_by_id]
+    create_components = []
+    for component in components:
+        name = component.get("name")
+        if name in existing_by_id:
+            if name not in reused:
+                reused.append(name)
+        else:
+            create_components.append(component)
+    components = create_components
+
+    if not components and not reused and not pipelines:
+        print("❌ AI 未返回可创建或可复用的组件。")
         return
 
     # 打印拆解方案
@@ -277,6 +291,8 @@ def handle_pod(args):
     print(f"   组件: {len(components)} 个  |  Pipeline: {len(pipelines)} 条\n")
 
     print(f"   📦 组件:")
+    for name in reused:
+        print(f"      ♻️  {name} (reuse)")
     for i, comp in enumerate(components, 1):
         deps = comp.get("depends_on", [])
         dep_str = f" ← depends: {', '.join(deps)}" if deps else ""
@@ -511,14 +527,20 @@ def handle_pod(args):
     # 生成 pipelines
     generated_pipelines = []
     failed_pipelines = []
-    if pipelines and generated:
+    reused_pipelines = []
+    if pipelines and (generated or reused):
         print(f"\n🔗 [生成 Pipeline] {len(pipelines)} 条")
         from ai_pod_cli.commands.compose import handle_compose
+        existing_routes = _load_routes_map()
 
         for i, pipe in enumerate(pipelines, 1):
             pipe_name = pipe.get("name", f"pipeline_{i}")
             instruction = pipe.get("instruction", "")
             print(f"\n   [{i}/{len(pipelines)}] {pipe_name}: {instruction}")
+            if pipe_name in existing_routes:
+                reused_pipelines.append(pipe_name)
+                print(f"   ♻️  [Pipeline 复用] {pipe_name}")
+                continue
 
             # 构造 compose 的 args
             class ComposeArgs:
@@ -541,9 +563,11 @@ def handle_pod(args):
 
     # 生成入口文件
     entry_file = None
-    if generated:
+    available_components = list(dict.fromkeys(reused + generated))
+    available_pipelines = list(dict.fromkeys(reused_pipelines + generated_pipelines))
+    if available_components and (generated or generated_pipelines):
         print(f"\n🚀 [生成入口文件]")
-        entry_info = _generate_pod_entry(desc, generated, generated_pipelines)
+        entry_info = _generate_pod_entry(desc, available_components, available_pipelines)
         if entry_info:
             entry_file, extra_deps = entry_info
             if extra_deps:
@@ -554,16 +578,20 @@ def handle_pod(args):
     print(f"\n{'='*50}")
     print(f"🧩 [Pod 生成完毕] {pod_name}")
     print(f"   ✅ 组件: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")
+    if reused:
+        print(f"   ♻️  复用组件: {len(reused)} 个 — {', '.join(reused)}")
     if failed:
         print(f"   ❌ 组件失败: {len(failed)} 个 — {', '.join(failed)}")
     if pipelines:
         print(f"   🔗 Pipeline: {len(generated_pipelines)} 条 — {', '.join(generated_pipelines) if generated_pipelines else '(无)'}")
+        if reused_pipelines:
+            print(f"   ♻️  复用 Pipeline: {len(reused_pipelines)} 条 — {', '.join(reused_pipelines)}")
         if failed_pipelines:
             print(f"   ❌ Pipeline 失败: {len(failed_pipelines)} 条 — {', '.join(failed_pipelines)}")
     if entry_file:
         print(f"   🚀 入口: {entry_file}")
 
-    if generated:
+    if available_components:
         if entry_file:
             print(f"\n   运行: python {entry_file}")
         else:

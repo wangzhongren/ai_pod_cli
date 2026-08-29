@@ -8,6 +8,7 @@ from pathlib import Path
 import tomlkit
 
 from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
+from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.run_store import get_run_trace, list_run_traces
 
 
@@ -96,6 +97,10 @@ def build_project_model() -> dict:
                 "pipeline": pipeline["name"],
                 "path": pipeline["pipeline"],
             })
+        contract = analyze_pipeline_contracts(pipeline.get("services", []), components)
+        pipeline["contract"] = contract
+        for issue in contract["issues"]:
+            issues.append({**issue, "pipeline": pipeline["name"]})
 
     provider_count = sum(component.get("category") == "provider" for component in components)
     summary = {
