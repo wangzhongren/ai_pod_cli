@@ -364,6 +364,68 @@ class StudioApiTests(unittest.TestCase):
         self.assertIn("pywebview.api", page)
         self.assertIn("Build a Pod with AI", page)
         self.assertIn("Run pipeline", page)
+        self.assertIn("pod_build_status", page)
+        self.assertIn("podProgressBar", page)
+
+    def test_studio_pod_build_runs_in_background_with_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+
+            def fake_build(_description, progress, _cancelled):
+                progress("📋 [拆解方案] test")
+                progress("🤖 [1/2] 生成 Repository (provider)...")
+                progress("🤖 [2/2] 生成 Service (service)...")
+                return {"ok": True, "project": {"summary": {}}, "changes": {}}
+
+            with patch.object(api, "build_pod", side_effect=fake_build):
+                started = api.start_pod_build("build a test")
+                for _ in range(100):
+                    task = api.pod_build_status(started["build_id"])["task"]
+                    if task["status"] != "running":
+                        break
+                    time.sleep(0.005)
+
+            self.assertEqual(task["status"], "completed")
+            self.assertEqual(task["percent"], 100)
+            self.assertTrue(any("Repository" in line for line in task["logs"]))
+            self.assertTrue(task["result"]["ok"])
+
+    def test_studio_pod_build_supports_cooperative_cancellation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+
+            def wait_for_cancel(_description, _progress, cancelled):
+                for _ in range(200):
+                    if cancelled():
+                        return {"ok": True}
+                    time.sleep(0.002)
+                return {"ok": False, "error": {"message": "not cancelled"}}
+
+            with patch.object(api, "build_pod", side_effect=wait_for_cancel):
+                started = api.start_pod_build("cancel me")
+                cancelled = api.cancel_pod_build(started["build_id"])
+                for _ in range(100):
+                    task = api.pod_build_status(started["build_id"])["task"]
+                    if task["status"] == "cancelled":
+                        break
+                    time.sleep(0.005)
+
+            self.assertTrue(cancelled["ok"])
+            self.assertEqual(task["status"], "cancelled")
 
     def test_studio_imports_complete_manual_component(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
+from uuid import uuid4
 
 from ai_pod_cli.project_model import ProjectModelError, build_project_model
 from ai_pod_cli.contracts import analyze_pipeline_contracts
@@ -33,6 +34,31 @@ class StudioError(ValueError):
     """An error that can be safely presented in the Studio UI."""
 
 
+class _PodCancelled(BaseException):
+    """Internal cooperative cancellation signal that bypasses generation retries."""
+
+
+class _ProgressCapture(io.StringIO):
+    """Capture command output while forwarding complete lines to Studio."""
+
+    def __init__(self, callback=None, cancelled=None):
+        super().__init__()
+        self._callback = callback
+        self._cancelled = cancelled or (lambda: False)
+        self._pending = ""
+
+    def write(self, value):
+        if self._cancelled():
+            raise _PodCancelled()
+        written = super().write(value)
+        self._pending += value
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            if self._callback and line.strip():
+                self._callback(line.rstrip("\r"))
+        return written
+
+
 class StudioApi:
     """Small, project-scoped API exposed to the webview renderer."""
 
@@ -42,6 +68,8 @@ class StudioApi:
         self._process = None
         self._process_output: list[str] = []
         self._process_lock = threading.RLock()
+        self._pod_task_lock = threading.RLock()
+        self._pod_tasks: dict[str, dict] = {}
         self._window_maximized = False
         atexit.register(self._terminate_on_exit)
 
@@ -353,7 +381,55 @@ class StudioApi:
         except (OSError, StudioError, ValueError) as error:
             return self._error(error)
 
-    def build_pod(self, description: str) -> dict:
+    def start_pod_build(self, description: str) -> dict:
+        """Start one Pod build in the background and return its task id."""
+        description = str(description).strip()
+        if not description:
+            return self._error(StudioError("请描述你想构建的程序"))
+        with self._pod_task_lock:
+            active = next(
+                (task for task in self._pod_tasks.values() if task["status"] in {"running", "cancelling"}),
+                None,
+            )
+            if active:
+                return {"ok": False, "error": {"type": "BuildInProgress", "message": "A Pod build is already running."}, "build_id": active["build_id"]}
+            build_id = f"pod_{uuid4().hex[:12]}"
+            task = {
+                "build_id": build_id, "status": "running", "stage": "planning",
+                "percent": 2, "message": "Preparing project context…", "logs": [],
+                "result": None, "error": None, "cancel_requested": False,
+                "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None,
+            }
+            self._pod_tasks[build_id] = task
+        threading.Thread(
+            target=self._run_pod_task,
+            args=(build_id, description),
+            name=f"aipod-build-{build_id}",
+            daemon=True,
+        ).start()
+        return {"ok": True, "build_id": build_id, "task": self._pod_task_snapshot(task)}
+
+    def pod_build_status(self, build_id: str) -> dict:
+        """Return a non-blocking snapshot for a background Pod build."""
+        with self._pod_task_lock:
+            task = self._pod_tasks.get(str(build_id))
+            if task is None:
+                return self._error(StudioError("Pod build task not found"))
+            return {"ok": True, "task": self._pod_task_snapshot(task)}
+
+    def cancel_pod_build(self, build_id: str) -> dict:
+        """Request cooperative cancellation of a running Pod build."""
+        with self._pod_task_lock:
+            task = self._pod_tasks.get(str(build_id))
+            if task is None:
+                return self._error(StudioError("Pod build task not found"))
+            if task["status"] == "running":
+                task["cancel_requested"] = True
+                task["status"] = "cancelling"
+                task["message"] = "Cancellation requested; waiting for the current model call…"
+            return {"ok": True, "task": self._pod_task_snapshot(task)}
+
+    def build_pod(self, description: str, _progress=None, _cancelled=None) -> dict:
         """Run the canonical Pod workflow from one natural-language requirement."""
         try:
             description = str(description).strip()
@@ -363,7 +439,7 @@ class StudioApi:
                 before = build_project_model()
                 before_entries = set(self._discover_entrypoints())
                 from ai_pod_cli.commands.pod import handle_pod
-                output = io.StringIO()
+                output = _ProgressCapture(_progress, _cancelled)
                 args = SimpleNamespace(desc=description, file="", yes=True, json=True)
                 with redirect_stdout(output):
                     try:
@@ -402,6 +478,75 @@ class StudioApi:
             }
         except (OSError, StudioError, ValueError, ProjectModelError) as error:
             return self._error(error)
+
+    def _run_pod_task(self, build_id: str, description: str) -> None:
+        def cancelled():
+            with self._pod_task_lock:
+                return bool(self._pod_tasks[build_id]["cancel_requested"])
+
+        def progress(line: str):
+            self._record_pod_progress(build_id, line)
+
+        try:
+            result = self.build_pod(description, progress, cancelled)
+            with self._pod_task_lock:
+                task = self._pod_tasks[build_id]
+                if task["cancel_requested"]:
+                    task.update(status="cancelled", stage="cancelled", message="Pod build cancelled.")
+                elif result.get("ok"):
+                    task.update(status="completed", stage="completed", percent=100, message="Pod build completed.", result=result)
+                else:
+                    task.update(status="failed", stage="failed", message=result.get("error", {}).get("message", "Pod build failed."), error=result.get("error"))
+                task["finished_at"] = datetime.now(timezone.utc).isoformat()
+        except _PodCancelled:
+            with self._pod_task_lock:
+                task = self._pod_tasks[build_id]
+                task.update(status="cancelled", stage="cancelled", message="Pod build cancelled.", finished_at=datetime.now(timezone.utc).isoformat())
+        except BaseException as error:
+            with self._pod_task_lock:
+                task = self._pod_tasks[build_id]
+                task.update(
+                    status="failed", stage="failed", message=str(error),
+                    error={"type": type(error).__name__, "message": str(error)},
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+
+    def _record_pod_progress(self, build_id: str, line: str) -> None:
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        if not clean:
+            return
+        stage, percent, message = "planning", 8, clean
+        match = re.search(r"\[(\d+)/(\d+)\]\s*生成\s+([^\s]+)", clean)
+        if "拆解方案" in clean:
+            stage, percent, message = "planned", 18, "Architecture planned."
+        elif match:
+            current, total, name = int(match.group(1)), max(1, int(match.group(2))), match.group(3)
+            stage = "components"
+            percent = 20 + int(50 * (current - 1) / total)
+            message = f"Generating component {current}/{total}: {name}"
+        elif "Pipeline" in clean or "pipeline" in clean:
+            stage, percent = "pipelines", 74
+        elif "入口" in clean:
+            stage, percent = "entrypoint", 90
+        elif "完成" in clean or "验证" in clean:
+            stage, percent = "validation", 96
+        with self._pod_task_lock:
+            task = self._pod_tasks.get(build_id)
+            if task is None:
+                return
+            task["logs"].append(clean)
+            if len(task["logs"]) > 500:
+                del task["logs"][:100]
+            if task["status"] == "running":
+                task.update(stage=stage, percent=max(task["percent"], percent), message=message)
+
+    @staticmethod
+    def _pod_task_snapshot(task: dict) -> dict:
+        return {
+            key: (list(value) if key == "logs" else value)
+            for key, value in task.items()
+            if key != "cancel_requested"
+        }
 
     def generate_entrypoint(self, description: str) -> dict:
         """Generate a project entry point using the canonical entry generator."""

@@ -116,6 +116,8 @@ From Studio you can:
 
 - open or switch project directories and initialize an ordinary folder;
 - describe an application and let AI build components, pipelines, and an entry point;
+- follow Pod generation through a non-blocking progress panel with live stages and logs;
+- request cooperative cancellation without freezing the Studio interface;
 - manually register a complete Provider or Service;
 - inspect the graph from Providers to Services, Pipelines, and Interfaces;
 - compose a Pipeline by selecting Service nodes in execution order;

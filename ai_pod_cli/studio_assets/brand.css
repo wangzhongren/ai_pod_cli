@@ -9,3 +9,47 @@
 .mark::after {
   display: none !important;
 }
+
+.pod-progress {
+  min-width: 520px;
+}
+
+.pod-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #d4d4d4;
+}
+
+.pod-progress-track {
+  height: 5px;
+  overflow: hidden;
+  background: #3c3c3c;
+}
+
+.pod-progress-track i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #007acc, #c586c0);
+  transition: width .25s ease;
+}
+
+.pod-message {
+  min-height: 18px;
+  margin: 10px 0 6px;
+  color: #9cdcfe;
+}
+
+.pod-log {
+  height: 210px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #3c3c3c;
+  background: #181818;
+  color: #b8b8b8;
+  font: 11px/1.5 Consolas, monospace;
+  white-space: pre-wrap;
+}

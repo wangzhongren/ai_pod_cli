@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "AIPodCli"
-version = "0.7.0"
+version = "0.7.1"
 description = "AI-native application framework where AI builds software and a DI runtime executes it"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -58,4 +58,4 @@ aipod = "ai_pod_cli.cli:main"
 include = ["ai_pod_cli*"]
 
 [tool.setuptools.package-data]
-ai_pod_cli = ["studio_assets/*.html", "studio_assets/*.css", "studio_assets/*.png"]
+ai_pod_cli = ["studio_assets/*.html", "studio_assets/*.css", "studio_assets/*.js", "studio_assets/*.png"]
