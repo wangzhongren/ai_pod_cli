@@ -19,12 +19,8 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
         Tuple of (entry_filename, extra_deps) or None if generation failed.
     """
     if not os.environ.get("OPENAI_API_KEY"):
-        print("⚠️  OPENAI_API_KEY 未配置，跳过入口文件生成。")
-        print("   请先设置大模型配置（一次设置，所有项目共用）：")
-        print("   aipod config set OPENAI_API_KEY sk-your-key")
-        print("   aipod config set OPENAI_BASE_URL https://api.deepseek.com/v1")
-        print("   aipod config set OPENAI_MODEL deepseek-chat")
-        print("   然后重新运行: aipod init \"描述\"")
+        from ai_pod_cli.commands.env import print_missing_model_config
+        print_missing_model_config()
         return None
 
     print(f"\n🚀 [入口生成] AI 正在根据描述生成项目入口...")

@@ -6,6 +6,9 @@ import platform
 import tomlkit
 
 
+_GLOBAL_CONFIG_LOAD_ERROR: Exception | None = None
+
+
 def _global_config_dir() -> str:
     """Get the global config directory path."""
     if platform.system() == "Windows":
@@ -61,6 +64,24 @@ def get_global_env() -> dict:
     """Get global env settings. Used by other commands to auto-populate .env."""
     config = _load_global_config()
     return dict(config.get("env", {}))
+
+
+def record_global_config_load_error(error: Exception | None) -> None:
+    """Remember a startup config failure without exposing credential values."""
+    global _GLOBAL_CONFIG_LOAD_ERROR
+    _GLOBAL_CONFIG_LOAD_ERROR = error
+
+
+def print_missing_model_config() -> None:
+    """Explain whether model config is absent or merely inaccessible."""
+    if _GLOBAL_CONFIG_LOAD_ERROR is not None:
+        print(f"❌ 无法读取 AIPod 全局配置: {_global_config_path()}")
+        print(f"   原因: {type(_GLOBAL_CONFIG_LOAD_ERROR).__name__}")
+        print("   API Key 可能已经配置；请允许当前进程读取该文件后重试，无需重新设置。")
+        return
+
+    print("❌ OPENAI_API_KEY 未配置。请先设置：")
+    print("   aipod config set OPENAI_API_KEY sk-your-key")
 
 
 def handle_config(args):

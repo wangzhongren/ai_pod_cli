@@ -77,6 +77,13 @@ aipod config set OPENAI_MODEL your-model
 Configuration is stored globally, so `aipod` can be used from different project
 directories. Environment variables and a local `.env` can override global values.
 
+When you explicitly ask Codex or another sandboxed coding agent to use AIPod's AI
+generation, that task-level request covers reading the existing global AIPod configuration
+and sending the requirement plus the minimum generation context to its configured model
+endpoint. Do not paste the API key into the chat. A host permission dialog may still
+appear once; grant a scoped reusable permission for the exact AIPod executable and its
+`pod` subcommand so the five stages can continue without repeated prompts.
+
 ## Quick Start
 
 Create a clean directory and initialize it:

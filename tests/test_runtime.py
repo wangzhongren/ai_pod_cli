@@ -24,6 +24,8 @@ from ai_pod_cli.commands.pod import (
     _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status, handle_pod,
 )
 from ai_pod_cli.commands.verify import _bounded_output, _project_traceback_locations, verify_project
+from ai_pod_cli.cli import _apply_global_env
+from ai_pod_cli.commands.env import print_missing_model_config, record_global_config_load_error
 from ai_pod_cli.sandbox import (
     materialize_path_fixtures, sample_value, verify_component_candidate,
 )
@@ -86,6 +88,43 @@ class RepositoryItem(Model, table=True):
 
 
 class RuntimeIntegrationTests(unittest.TestCase):
+    def test_global_config_permission_error_is_not_reported_as_missing_key(self):
+        output = io.StringIO()
+        try:
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("ai_pod_cli.commands.env.get_global_env", side_effect=PermissionError("denied")),
+                redirect_stdout(output),
+            ):
+                _apply_global_env()
+                print_missing_model_config()
+        finally:
+            record_global_config_load_error(None)
+
+        message = output.getvalue()
+        self.assertIn("无法读取 AIPod 全局配置", message)
+        self.assertIn("PermissionError", message)
+        self.assertIn("无需重新设置", message)
+        self.assertNotIn("sk-your-key", message)
+
+    def test_successful_global_config_load_clears_previous_error(self):
+        output = io.StringIO()
+        record_global_config_load_error(PermissionError("old"))
+        try:
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("ai_pod_cli.commands.env.get_global_env", return_value={"OPENAI_API_KEY": "secret"}),
+                redirect_stdout(output),
+            ):
+                _apply_global_env()
+                self.assertEqual(os.environ["OPENAI_API_KEY"], "secret")
+                print_missing_model_config()
+        finally:
+            record_global_config_load_error(None)
+
+        self.assertIn("OPENAI_API_KEY 未配置", output.getvalue())
+        self.assertNotIn("无法读取 AIPod 全局配置", output.getvalue())
+
     def test_verify_reports_real_failure_and_project_location(self):
         with tempfile.TemporaryDirectory() as tmp:
             previous_cwd = Path.cwd()

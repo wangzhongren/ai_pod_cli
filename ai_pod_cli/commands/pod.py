@@ -290,8 +290,8 @@ def handle_pod(args):
     print(f"📝 [需求] {desc[:200]}{'...' if len(desc) > 200 else ''}")
 
     if not os.environ.get("OPENAI_API_KEY"):
-        print("❌ OPENAI_API_KEY 未配置。请先设置：")
-        print("   aipod config set OPENAI_API_KEY sk-your-key")
+        from ai_pod_cli.commands.env import print_missing_model_config
+        print_missing_model_config()
         sys.exit(1)
 
     # 确保 requirements.txt 存在（空依赖触发 header 写入）

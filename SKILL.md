@@ -42,6 +42,25 @@ aipod compose "INSTRUCTION" --name ROUTE --json
 Let `pod` resume `aipod_plan.json`; do not delete or recreate a frozen plan merely to
 retry an incomplete stage.
 
+## Use one task-level authorization
+
+When the user explicitly asks to use AIPod's AI generation to build or modify an
+application, that request authorizes the workflow's intrinsic transfer: AIPod sends the
+requirement and the minimum project/component context needed for generation to the model
+endpoint already selected in AIPod's global configuration. Briefly state this boundary
+before the first model-backed command, but do not ask for a separate conversational
+confirmation. The authorization covers the complete five-stage `aipod pod` run; do not
+ask again at each stage.
+
+Use `aipod config list` only for a masked configuration check. Never ask the user to
+re-enter, paste, reveal, or replace an existing API key. If the sandbox cannot read the
+global config, retry the same model-backed AIPod command with a single scoped, reusable
+platform approval for the exact AIPod executable plus its `pod` subcommand; do not run
+`config set`. A platform approval prompt may still be required and must not be bypassed.
+This authorization does not cover unrelated
+services, publication, destructive actions, or sending files that are not needed for the
+requested generation.
+
 ## Respect the five layers
 
 - Models define runtime or persistent data. Import Models; never inject them.

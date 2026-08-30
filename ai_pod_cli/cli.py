@@ -167,10 +167,14 @@ def _apply_global_env():
     """
     import os
     try:
-        from ai_pod_cli.commands.env import get_global_env
+        from ai_pod_cli.commands.env import get_global_env, record_global_config_load_error
         global_env = get_global_env()
+        record_global_config_load_error(None)
         for key, value in global_env.items():
             if not os.environ.get(key):
                 os.environ[key] = value
-    except Exception:
-        pass
+    except Exception as error:
+        # Commands that require a model can now distinguish an inaccessible
+        # global config from a genuinely missing API key.
+        from ai_pod_cli.commands.env import record_global_config_load_error
+        record_global_config_load_error(error)

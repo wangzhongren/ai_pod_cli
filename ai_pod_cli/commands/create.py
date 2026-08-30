@@ -16,8 +16,8 @@ def handle_create(args):
     print(f"📝 [CLI] 您的核心诉求: {args.desc}")
 
     if not os.environ.get("OPENAI_API_KEY"):
-        print("❌ OPENAI_API_KEY 未配置。请先设置：")
-        print("   aipod config set OPENAI_API_KEY sk-your-key")
+        from ai_pod_cli.commands.env import print_missing_model_config
+        print_missing_model_config()
         sys.exit(1)
 
     append_deps_to_requirements([])
