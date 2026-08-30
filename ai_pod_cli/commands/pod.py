@@ -1,5 +1,6 @@
 """`pod` command — AI decomposes a requirement into a set of components."""
 
+import hashlib
 import json
 import os
 import sys
@@ -9,13 +10,21 @@ from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import load_beans, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
 from ai_pod_cli.validation import (
     repair_feedback, request_repair, validate_component_contract, validate_entry_contract,
+    validate_pipeline_contract,
 )
-from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
+from ai_pod_cli.repair import (
+    apply_code_patches, apply_file_patches, can_patch_code, classify_failures,
+    file_patch_prompt, patch_prompt,
+)
 from ai_pod_cli.decision import reduce_decision_fragments, reduce_evidence
 
 
 DECISION_PLAN_FILE = Path("aipod_plan.json")
 STAGE_NAMES = ("models", "providers", "services", "pipelines", "interfaces")
+STAGE_BUILD_TOOLS = (
+    "generate_models", "generate_providers", "generate_services",
+    "compose_pipelines", "generate_interfaces",
+)
 
 
 def _load_decision_plan(desc: str, explicit_stage: int | None = None) -> dict:
@@ -30,12 +39,16 @@ def _load_decision_plan(desc: str, explicit_stage: int | None = None) -> dict:
             state = None
     if state is None:
         state = {
-            "version": 1,
+            "version": 3,
             "objective": desc,
             "current_stage": STAGE_NAMES[explicit_stage or 0],
             "stages": {
                 name: {"status": "pending", "plan": None}
                 for name in STAGE_NAMES
+            },
+            "agent": {
+                "status": "idle", "step": 0, "history": [],
+                "verification": {"status": "pending", "attempts": 0, "repairs": 0},
             },
         }
         if explicit_stage is not None:
@@ -43,6 +56,17 @@ def _load_decision_plan(desc: str, explicit_stage: int | None = None) -> dict:
                 state["stages"][name]["status"] = "complete"
     for name in STAGE_NAMES:
         state.setdefault("stages", {}).setdefault(name, {"status": "pending", "plan": None})
+    state.setdefault("agent", {"status": "idle", "step": 0, "history": []})
+    state["agent"].setdefault("status", "idle")
+    state["agent"].setdefault("step", 0)
+    state["agent"].setdefault("history", [])
+    state["agent"].setdefault(
+        "verification", {"status": "pending", "attempts": 0, "repairs": 0},
+    )
+    state["agent"]["verification"].setdefault("status", "pending")
+    state["agent"]["verification"].setdefault("attempts", 0)
+    state["agent"]["verification"].setdefault("repairs", 0)
+    state["version"] = max(3, int(state.get("version", 1)))
     return state
 
 
@@ -146,6 +170,10 @@ def _generate_pod_entry(
     interface_name = str(interface.get("name", "application"))
     interface_kind = str(interface.get("kind", "cli"))
     interface_instruction = str(interface.get("instruction", desc))
+    required_routes = [
+        name for name in routes_map
+        if f"`{name}`" in interface_instruction
+    ]
 
     # 构建本次生成的上下文
     comp_summary = "\n".join(f"   - {name}" for name in generated) if generated else "   (无)"
@@ -222,6 +250,14 @@ def _generate_pod_entry(
             validate_entry_contract(generated_code, list(routes_map))
             if generated_code else ["AI 未返回入口代码"]
         )
+        for route_name in required_routes:
+            if not any(
+                quoted in generated_code
+                for quoted in (f'"{route_name}"', f"'{route_name}'")
+            ):
+                violations.append(
+                    f"Interface 规划要求调用路由 '{route_name}'，但入口代码没有引用它"
+                )
         if not violations:
             break
         if not request_repair(
@@ -236,7 +272,23 @@ def _generate_pod_entry(
         return None
 
     if os.path.exists(entry_file):
-        print(f"   ⚠️  {entry_file} 已存在，跳过写入。")
+        with open(entry_file, "r", encoding="utf-8") as existing:
+            existing_code = existing.read()
+        existing_violations = validate_entry_contract(existing_code, list(routes_map))
+        for route_name in required_routes:
+            if not any(
+                quoted in existing_code
+                for quoted in (f'"{route_name}"', f"'{route_name}'")
+            ):
+                existing_violations.append(
+                    f"现有入口未实现规划要求的路由 '{route_name}'"
+                )
+        if existing_violations:
+            print(f"   ❌ {entry_file} 已存在，但与当前 Interface 规划不兼容；未覆盖文件。")
+            for violation in existing_violations:
+                print(f"      - {violation}")
+            return None
+        print(f"   ♻️  {entry_file} 已存在且符合当前 Interface 规划，复用。")
         return entry_file, extra_deps
 
     with open(entry_file, "w", encoding="utf-8") as f:
@@ -267,8 +319,8 @@ def _load_routes_map() -> dict[str, str]:
     return routes_map
 
 
-def handle_pod(args):
-    """【pod 命令】AI 将一个大需求拆解为一组组件，逐个生成并加入 Bean Pool"""
+def _execute_pod_build_tool(args):
+    """Execute exactly one stage selected by the Pod Agent."""
 
     progress_callback = getattr(args, "progress_callback", None)
 
@@ -898,10 +950,7 @@ def handle_pod(args):
 
     if stage < 3:
         _set_stage_status(decision_state, stage, "complete")
-        print(f"\n✅ [{stage_name} 阶段已冻结] 重新读取 Bean Pool 后进入 {stage_names[stage + 1]} 阶段。")
-        args._pod_stage = stage + 1
-        args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
-        handle_pod(args)
+        print(f"\n✅ [{stage_name} 阶段已冻结] 控制权返回 Pod Agent。")
         return
 
     # 生成 pipelines
@@ -934,8 +983,16 @@ def handle_pod(args):
             compose_args.json = getattr(args, "json", False)
 
             try:
-                handle_compose(compose_args)
-                generated_pipelines.append(pipe_name)
+                compose_succeeded = handle_compose(compose_args)
+                route_was_registered = pipe_name in _load_routes_map()
+                if compose_succeeded is True and route_was_registered:
+                    generated_pipelines.append(pipe_name)
+                else:
+                    print(
+                        "   ❌ Pipeline 工具未返回成功回执或未注册路由；"
+                        "本条不会被标记为完成。"
+                    )
+                    failed_pipelines.append(pipe_name)
             except Exception as e:
                 print(f"   ❌ Pipeline 生成失败: {e}")
                 failed_pipelines.append(pipe_name)
@@ -950,10 +1007,7 @@ def handle_pod(args):
             print("   ⛔ Pipeline 阶段未完全通过，不规划 Interface。")
             raise SystemExit(1)
         _set_stage_status(decision_state, stage, "complete")
-        print("\n✅ [pipelines 阶段已冻结] 重新读取 routes.toml 后进入 interfaces 阶段。")
-        args._pod_stage = 4
-        args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
-        handle_pod(args)
+        print("\n✅ [pipelines 阶段已冻结] 控制权返回 Pod Agent。")
         return
 
     # Generate interfaces only after all routes have been frozen.
@@ -985,6 +1039,7 @@ def handle_pod(args):
 
     # 输出汇总
     if stage == 4:
+        decision_state["stages"]["interfaces"]["artifacts"] = entry_files
         _set_stage_status(decision_state, stage, "complete")
     print(f"\n{'='*50}")
     print(f"🧩 [Pod 生成完毕] {pod_name}")
@@ -1008,3 +1063,478 @@ def handle_pod(args):
         else:
             print(f"\n   可以手动生成入口: aipod init \"{desc[:50]}\"")
     print(f"{'='*50}")
+
+
+def _agent_project_observation(state: dict) -> dict:
+    """Return compact public state that lets the Pod Agent choose its next tool."""
+    beans = load_beans().get("beans", [])
+    counts = {"model": 0, "provider": 0, "service": 0}
+    for bean in beans:
+        category = bean.get("category")
+        if category in counts and bean.get("status") != "invalid":
+            counts[category] += 1
+    return {
+        "current_stage": state.get("current_stage"),
+        "stages": {
+            name: state.get("stages", {}).get(name, {}).get("status", "pending")
+            for name in STAGE_NAMES
+        },
+        "component_counts": counts,
+        "routes": list(_load_routes_map()),
+        "verification": {
+            key: value
+            for key, value in state.get("agent", {}).get("verification", {}).items()
+            if key in {"status", "attempts", "repairs", "command", "repaired_file"}
+        },
+        "recent_actions": [
+            {
+                key: item.get(key)
+                for key in ("step", "action", "stage", "status", "summary")
+                if key in item
+            }
+            for item in state.get("agent", {}).get("history", [])[-6:]
+        ],
+    }
+
+
+def _select_pod_build_tool(
+    desc: str, state: dict, stage: int, progress_callback=None,
+) -> dict:
+    """Ask the Pod Agent Leader to select one governed Build Tool."""
+    expected_action = STAGE_BUILD_TOOLS[stage]
+    observation = _agent_project_observation(state)
+    system_prompt = f"""
+    You are the AIPod Pod Agent Leader. You construct software by selecting exactly one
+    governed Build Tool at a time. You never generate source code in this response.
+
+    Available Build Tools:
+    - generate_models: plan, generate, validate, and freeze the current Model stage
+    - generate_providers: plan, generate, validate, and freeze infrastructure Providers
+    - generate_services: plan, generate, validate, and freeze business Services
+    - compose_pipelines: compose and validate Pipelines from frozen Services
+    - generate_interfaces: generate Interfaces from frozen Pipeline routes
+    - retry_current: retry only the current failed or incomplete stage
+
+    Governance:
+    - The earliest incomplete stage is {STAGE_NAMES[stage]} and its normal tool is
+      {expected_action}. Never skip it or modify a completed stage.
+    - Select retry_current only when recent_actions shows that the current tool failed.
+    - Return a compact public decision summary, never private chain-of-thought.
+    - Return strict JSON only:
+      {{"action":"tool name","summary":"why this is the next bounded action",
+        "success_criteria":["observable condition"]}}
+    """
+    return call_llm(
+        system_prompt,
+        "Objective:\n" + desc + "\n\nCurrent observation:\n"
+        + json.dumps(observation, ensure_ascii=False),
+        json_mode=True,
+        temperature=0.1,
+        max_tokens=1024,
+        progress_callback=progress_callback,
+        progress_label=f"Pod Agent selecting tool for {STAGE_NAMES[stage]}",
+    )
+
+
+def _application_verification_command(state: dict) -> list[str]:
+    """Choose one deterministic, non-interactive command from frozen Interface metadata."""
+    verification = state["agent"]["verification"]
+    existing = verification.get("command")
+    if isinstance(existing, list) and existing:
+        return [str(item) for item in existing]
+
+    interface_stage = state.get("stages", {}).get("interfaces", {})
+    plan = interface_stage.get("plan") or {}
+    interfaces = plan.get("interfaces", []) if isinstance(plan, dict) else []
+    artifacts = [
+        str(item) for item in interface_stage.get("artifacts", [])
+        if isinstance(item, str) and item
+    ]
+    for interface in interfaces:
+        name = str(interface.get("name", "")).strip()
+        if name and not name.endswith(".py"):
+            name += ".py"
+        if name and name not in artifacts:
+            artifacts.append(name)
+    artifacts.extend(
+        name for name in ("main.py", "app.py", "server.py")
+        if Path(name).exists() and name not in artifacts
+    )
+
+    entry_file = next((name for name in artifacts if Path(name).is_file()), "")
+    if entry_file:
+        command = [sys.executable, "-X", "utf8", entry_file]
+        matching = next(
+            (
+                item for item in interfaces
+                if str(item.get("name", "")).removesuffix(".py")
+                == Path(entry_file).stem
+            ),
+            interfaces[0] if len(interfaces) == 1 else {},
+        )
+        instruction = str(matching.get("instruction", "")).lower()
+        if "--smoke" in instruction:
+            command.append("--smoke")
+        elif "`smoke`" in instruction or " smoke" in instruction:
+            command.append("smoke")
+        return command
+    if Path("tests").is_dir():
+        return [sys.executable, "-X", "utf8", "-m", "unittest", "discover"]
+    return []
+
+
+def _project_verification_fingerprint() -> str:
+    """Hash behavior-relevant project files so stale passes are never reused."""
+    paths = [
+        path for path in (
+            Path("beans_config.json"), Path("routes.toml"), Path("config.toml"),
+        )
+        if path.is_file()
+    ]
+    paths.extend(sorted(Path.cwd().glob("*.py")))
+    for directory in (Path("modules"), Path("pipelines"), Path("tests")):
+        if directory.is_dir():
+            paths.extend(sorted(directory.rglob("*.py")))
+    digest = hashlib.sha256()
+    for path in sorted(set(paths), key=lambda item: item.as_posix()):
+        digest.update(path.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _verify_application(desc: str, state: dict, timeout: int = 120) -> dict:
+    """Execute the frozen application's real smoke/test command and persist evidence."""
+    from ai_pod_cli.commands.verify import verify_project
+
+    command = _application_verification_command(state)
+    result = verify_project(command, timeout=max(1, timeout))
+    latest = _load_decision_plan(desc)
+    verification = latest["agent"]["verification"]
+    verification["attempts"] = int(verification.get("attempts", 0)) + 1
+    verification["command"] = command
+    verification["status"] = "passed" if result["status"] == "passed" else "failed"
+    verification["last_result"] = result
+    verification["fingerprint"] = _project_verification_fingerprint()
+    _save_decision_plan(latest)
+    return result
+
+
+def _validate_repaired_artifact(relative_path: str, code: str) -> list[str]:
+    """Run the existing deterministic validator appropriate for one repaired file."""
+    normalized = Path(relative_path).as_posix()
+    if normalized.startswith("pipelines/"):
+        return validate_pipeline_contract(code)
+
+    beans = load_beans().get("beans", [])
+    for bean in beans:
+        class_path = str(bean.get("class_path", ""))
+        if not class_path or "." not in class_path:
+            continue
+        module_name, class_name = class_path.rsplit(".", 1)
+        component_path = Path(*module_name.split(".")).with_suffix(".py").as_posix()
+        if component_path == normalized:
+            return validate_component_contract(
+                code,
+                class_name,
+                str(bean.get("category", "service")),
+                bean.get("inputs"),
+                bean.get("outputs"),
+                bean.get("methods"),
+            )
+    return validate_entry_contract(code, list(_load_routes_map()))
+
+
+def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> dict:
+    """Patch only the deepest project file selected by the last verification traceback."""
+    from ai_pod_cli.commands.verify import _bounded_output
+
+    verification = state["agent"]["verification"]
+    result = verification.get("last_result") or {}
+    suggested = result.get("repair", {}).get("suggested_files", [])
+    root = Path.cwd().resolve()
+    candidates: list[tuple[str, Path]] = []
+    for raw_path in suggested:
+        candidate = (root / str(raw_path)).resolve()
+        try:
+            relative = candidate.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if candidate.is_file() and candidate.suffix == ".py":
+            candidates.append((relative, candidate))
+    if not candidates:
+        raise RuntimeError("验证失败，但没有 traceback 指向可安全修复的项目 Python 文件")
+
+    relative_path, artifact = candidates[-1]
+    source = artifact.read_text(encoding="utf-8")
+    checks = result.get("checks", {})
+    execution = checks.get("execution") or {}
+    evidence = [
+        *[str(item) for item in checks.get("structure", {}).get("issues", [])],
+        str(execution.get("stdout", ""))[-8000:],
+        str(execution.get("stderr", ""))[-8000:],
+    ]
+    evidence = [item for item in evidence if item]
+    response = call_llm(
+        "You repair one evidence-selected Python artifact with exact minimal patches. "
+        "Never return hidden reasoning or a whole-file rewrite.",
+        file_patch_prompt(_bounded_output(source, 50000), evidence, relative_path),
+        json_mode=True,
+        temperature=0.1,
+        max_tokens=4096,
+        progress_callback=progress_callback,
+        progress_label=f"Repairing current artifact: {relative_path}",
+    )
+    repaired = apply_file_patches(source, response.get("patches"))
+    violations = _validate_repaired_artifact(relative_path, repaired)
+    if violations:
+        raise ValueError("修复补丁未通过本地预检：" + "；".join(violations))
+    artifact.write_text(repaired, encoding="utf-8")
+
+    latest = _load_decision_plan(desc)
+    latest_verification = latest["agent"]["verification"]
+    latest_verification["repairs"] = int(latest_verification.get("repairs", 0)) + 1
+    latest_verification["status"] = "repair_applied"
+    latest_verification["repaired_file"] = relative_path
+    _save_decision_plan(latest)
+    return {"file": relative_path, "patch_count": len(response.get("patches", []))}
+
+
+def _append_agent_event(desc: str, event: dict) -> dict:
+    """Persist one public Agent action/observation without hidden reasoning."""
+    state = _load_decision_plan(desc)
+    agent = state["agent"]
+    agent["step"] = int(agent.get("step", 0)) + 1
+    normalized = {"step": agent["step"], **event}
+    history = list(agent.get("history", []))
+    history.append(normalized)
+    agent["history"] = history[-50:]
+    agent["status"] = normalized.get("status", "running")
+    agent["last_action"] = normalized.get("action")
+    agent["last_observation"] = normalized.get("observation", {})
+    _save_decision_plan(state)
+    return state
+
+
+def _set_agent_status(desc: str, status: str) -> None:
+    state = _load_decision_plan(desc)
+    state["agent"]["status"] = status
+    _save_decision_plan(state)
+
+
+def _read_pod_requirement(args) -> str:
+    if getattr(args, "file", ""):
+        if not os.path.exists(args.file):
+            print(f"❌ 文件不存在: {args.file}")
+            return ""
+        with open(args.file, "r", encoding="utf-8") as file:
+            return file.read().strip()
+    return str(getattr(args, "desc", "") or "").strip()
+
+
+def handle_pod(args):
+    """Run the resumable Pod Agent over governed five-stage Build Tools."""
+    desc = _read_pod_requirement(args)
+    if not desc:
+        print("❌ 请提供需求描述或 --file 文件路径。")
+        return
+    if not os.environ.get("OPENAI_API_KEY"):
+        from ai_pod_cli.commands.env import print_missing_model_config
+        print_missing_model_config()
+        raise SystemExit(1)
+
+    original_file = getattr(args, "file", "")
+    args.file = ""
+    args.desc = desc
+    explicit_stage = int(args._pod_stage) if hasattr(args, "_pod_stage") else None
+    state = _load_decision_plan(desc, explicit_stage)
+    verification = state["agent"]["verification"]
+    if (
+        verification.get("status") == "passed"
+        and verification.get("fingerprint") != _project_verification_fingerprint()
+    ):
+        verification["status"] = "pending"
+    _save_decision_plan(state)
+    _set_agent_status(desc, "running")
+    max_steps = int(getattr(args, "_pod_agent_max_steps", 15))
+    stage_failures: dict[int, int] = {}
+    repair_tool_failures = 0
+
+    print("🧠 [Pod Agent] 启动构建循环：Observe → Select Tool → Execute → Observe")
+    if original_file:
+        print(f"🧩 [Pod Agent] 需求来源: {original_file}")
+
+    for _ in range(max_steps):
+        state = _load_decision_plan(desc)
+        stage = _resume_stage(state)
+        if stage is None:
+            verification = state["agent"]["verification"]
+            verification_status = verification.get("status", "pending")
+            if verification_status == "passed":
+                _set_agent_status(desc, "complete")
+                print("✅ [Pod Agent] 五阶段构建与应用运行验证均已完成。")
+                return
+
+            action = (
+                "repair_current_artifact"
+                if verification_status == "failed"
+                else "verify_application"
+            )
+            step = state["agent"].get("step", 0) + 1
+            print(f"\n🧠 [Pod Agent · Step {step}] {action} (application)")
+            if action == "verify_application":
+                result = _verify_application(
+                    desc,
+                    state,
+                    int(getattr(args, "_pod_verify_timeout", 120)),
+                )
+                execution = result.get("checks", {}).get("execution")
+                observation = {
+                    "verification_status": result.get("status"),
+                    "structure": result.get("checks", {}).get("structure", {}).get("status"),
+                    "execution": execution.get("status") if execution else "skipped",
+                    "command": execution.get("command", []) if execution else [],
+                    "suggested_files": result.get("repair", {}).get("suggested_files", []),
+                }
+                event_status = "succeeded" if result.get("status") == "passed" else "failed"
+                _append_agent_event(desc, {
+                    "action": action,
+                    "stage": "application",
+                    "status": event_status,
+                    "decision_status": "policy_selected",
+                    "summary": "Run the frozen application's deterministic smoke or test command.",
+                    "observation": observation,
+                })
+                if result.get("status") == "passed":
+                    _set_agent_status(desc, "complete")
+                    print("✅ [verify_application] 应用结构与实际运行命令均已通过。")
+                    return
+                print("🔁 [verify_application] 运行失败；下一步只允许修复证据指向的当前文件。")
+                continue
+
+            if int(verification.get("repairs", 0)) >= 3:
+                _set_agent_status(desc, "blocked")
+                print("⛔ [Pod Agent] 已达到 3 次受限修复上限，冻结上游保持不变。")
+                raise SystemExit(1)
+            try:
+                repaired = _repair_current_artifact(
+                    desc, state, getattr(args, "progress_callback", None),
+                )
+            except Exception as error:
+                repair_tool_failures += 1
+                _append_agent_event(desc, {
+                    "action": action,
+                    "stage": "application",
+                    "status": "failed",
+                    "decision_status": "policy_selected",
+                    "summary": "Repair only the evidence-selected current artifact.",
+                    "observation": {"error": f"{type(error).__name__}: {error}"},
+                })
+                if repair_tool_failures >= 2:
+                    _set_agent_status(desc, "blocked")
+                    print("⛔ [repair_current_artifact] 连续失败，未修改冻结上游。")
+                    raise SystemExit(1)
+                print("🔁 [repair_current_artifact] 补丁未通过约束，将重试当前修复工具。")
+                continue
+            repair_tool_failures = 0
+            _append_agent_event(desc, {
+                "action": action,
+                "stage": "application",
+                "status": "succeeded",
+                "decision_status": "policy_selected",
+                "summary": "Applied a bounded patch to the traceback-selected artifact.",
+                "observation": repaired,
+            })
+            print(
+                f"🩹 [repair_current_artifact] 已修复 {repaired['file']}；"
+                "下一步重新执行同一验证命令。"
+            )
+            continue
+
+        decision = _select_pod_build_tool(
+            desc, state, stage, getattr(args, "progress_callback", None),
+        )
+        requested_action = str(decision.get("action", ""))
+        expected_action = STAGE_BUILD_TOOLS[stage]
+        last_actions = state.get("agent", {}).get("history", [])
+        retry_allowed = bool(
+            last_actions
+            and last_actions[-1].get("stage") == STAGE_NAMES[stage]
+            and last_actions[-1].get("status") == "failed"
+        )
+        if requested_action == "retry_current" and retry_allowed:
+            action = expected_action
+            decision_status = "retry"
+        elif requested_action == expected_action:
+            action = requested_action
+            decision_status = "selected"
+        else:
+            action = expected_action
+            decision_status = "policy_corrected"
+
+        print(
+            f"\n🧠 [Pod Agent · Step {state['agent'].get('step', 0) + 1}] "
+            f"{action} ({STAGE_NAMES[stage]})"
+        )
+        summary = str(decision.get("summary", ""))[:400]
+        if summary:
+            print(f"   决策摘要: {summary}")
+        if decision_status == "policy_corrected":
+            print(
+                f"   🛡️ Stage Policy 将无效动作 '{requested_action or '(empty)'}' "
+                f"约束为 '{expected_action}'。"
+            )
+
+        args._pod_stage = stage
+        args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
+        try:
+            _execute_pod_build_tool(args)
+        except SystemExit as error:
+            stage_failures[stage] = stage_failures.get(stage, 0) + 1
+            _append_agent_event(desc, {
+                "action": action,
+                "requested_action": requested_action,
+                "stage": STAGE_NAMES[stage],
+                "status": "failed",
+                "decision_status": decision_status,
+                "summary": summary,
+                "observation": {
+                    "exit_code": error.code if isinstance(error.code, int) else 1,
+                    "stage_status": _load_decision_plan(desc)["stages"][STAGE_NAMES[stage]]["status"],
+                },
+            })
+            if stage_failures[stage] >= 2:
+                _set_agent_status(desc, "blocked")
+                print("⛔ [Pod Agent] 当前 Build Tool 连续失败，已保留冻结上游与 Agent 状态。")
+                raise
+            print("🔁 [Pod Agent] 已观察到失败；下一步只允许重试当前 Build Tool。")
+            continue
+        except Exception as error:
+            _append_agent_event(desc, {
+                "action": action,
+                "requested_action": requested_action,
+                "stage": STAGE_NAMES[stage],
+                "status": "failed",
+                "decision_status": decision_status,
+                "summary": summary,
+                "observation": {"error": f"{type(error).__name__}: {error}"},
+            })
+            _set_agent_status(desc, "blocked")
+            raise
+
+        updated = _load_decision_plan(desc)
+        _append_agent_event(desc, {
+            "action": action,
+            "requested_action": requested_action,
+            "stage": STAGE_NAMES[stage],
+            "status": "succeeded",
+            "decision_status": decision_status,
+            "summary": summary,
+            "success_criteria": decision.get("success_criteria", []),
+            "observation": _agent_project_observation(updated),
+        })
+
+    _set_agent_status(desc, "blocked")
+    print(f"⛔ [Pod Agent] 达到最大步骤数 {max_steps}，已保存状态，可再次运行续接。")
+    raise SystemExit(1)

@@ -217,21 +217,46 @@ Interfaces expose Pipeline routes as a CLI, website, desktop application, worker
 message consumer. They depend on routes through `PipelineRunner` instead of duplicating
 business logic.
 
-## Five-Stage Generation
+## Five-Stage Generation and Runtime Closure
 
-`aipod pod` builds one layer at a time:
+`aipod pod` now runs a resumable build-time Agent. The Agent observes the Canonical State,
+selects one governed Build Tool, executes it, and observes the result before deciding the
+next action:
 
 ```text
-1. Models
-2. Providers
-3. Services
-4. Pipelines
-5. Interfaces
+Observe → Select Tool → Execute → Observe evidence
+   ↑                                  |
+   └──── repair current artifact ─────┘
 ```
 
-Each stage is saved in `aipod_plan.json`. If generation is interrupted, running the same
-Pod request resumes the first incomplete stage and reuses its frozen plan. Components
-already registered in the Bean Pool are reused instead of regenerated.
+Its first five tools follow the dependency layers, then two application tools close the
+runtime loop:
+
+```text
+1. generate_models
+2. generate_providers
+3. generate_services
+4. compose_pipelines
+5. generate_interfaces
+6. verify_application
+7. repair_current_artifact
+```
+
+The Agent cannot skip the earliest incomplete stage. Each tool plans, generates, checks,
+and freezes only its current layer. A failed tool may retry its own unfinished layer but
+cannot rewrite a completed upstream layer.
+
+After all five layers are complete, `verify_application` runs the frozen Interface's
+non-interactive smoke command (or the project's test command) through the same structured
+verifier exposed by `aipod verify`. A failure does not reopen planning. The next permitted
+action is `repair_current_artifact`, which uses project-local traceback evidence to select
+one Python file and applies bounded exact-text patches. The same command then runs again.
+Three applied repair cycles are allowed before the Agent stops as blocked.
+
+`aipod_plan.json` is both the resumable Canonical Plan and the Agent's public memory. It
+stores selected actions, compact decision summaries, observations, validation outcomes,
+and stage status—not hidden chain-of-thought. If generation is interrupted, running the
+same Pod request resumes the first incomplete tool and reuses frozen components.
 
 ## Code Is Composable; Chain-of-Thought Is Not
 
@@ -310,9 +335,11 @@ Neither requires chain-of-thought to become project state. The durable project m
 the Canonical Plan, decision fragments, Contracts, Bean Pool, source code, and execution
 evidence.
 
-In the current CLI, the staged `pod` planner performs the Leader role sequentially and
-the deterministic reducer validates its fragments. Parallel external Workers are a
-future extension of the same protocol, not a requirement for using AIPod today.
+In the current CLI, the `pod` command is the Leader Agent. Its Build Tools perform bounded
+generation work, and the deterministic reducer validates their decision fragments. The
+Agent receives the updated project observation after every tool call before choosing its
+next action. Parallel external Workers remain a future extension of the same protocol,
+not a requirement for using AIPod today.
 
 ## Contracts
 
@@ -340,9 +367,9 @@ AIPod checks:
 - adjacent Pipeline field names, types, and structured schemas;
 - raw SQL inside generated Services.
 
-Generation intentionally does not execute every candidate with invented sample data.
+Layer generation intentionally does not execute every candidate with invented sample data.
 Files, queues, UI events, and domain state cannot be represented reliably by a generic
-fixture. Runtime repair starts from a real command instead.
+fixture. The Pod Agent therefore closes the build with a real Interface or test command.
 
 ## Real Verification and Agent Repair
 
@@ -367,18 +394,20 @@ The result includes:
 - suggested repair files;
 - redaction of common API key and Bearer token formats.
 
-AIPod does not embed Codex, Claude Code, Pi, or another coding agent. [`SKILL.md`](SKILL.md)
-is the portable handoff protocol. An external agent reads `inspect`, runs `verify`, makes
-the smallest evidence-backed repair, and repeats the same command.
+AIPod does not embed Codex, Claude Code, Pi, or another third-party coding agent. The Pod
+Agent can ask its already configured model for constrained patches, but AIPod itself
+selects the traceback file, limits patch size, runs deterministic validation, and repeats
+the exact verification command. [`SKILL.md`](SKILL.md) remains the portable handoff
+protocol when a human wants an external coding agent to inspect or extend the project.
 
 ```text
-AIPod generates and describes the system
-                ↓
-aipod verify returns real execution evidence
-                ↓
-Codex / Claude Code / another agent edits ordinary Python
-                ↓
-the same verification command runs again
+AIPod Pod Agent generates the five layers
+                 ↓
+verify_application runs real application evidence
+                 ↓ failure
+repair_current_artifact patches one traceback-selected file
+                 ↓
+the exact same verification command runs again
 ```
 
 Install or copy this repository as an `aipod-development` skill in the skill directory
@@ -407,6 +436,23 @@ Studio provides:
 - syntax-highlighted source tabs;
 - Pipeline composition and entry execution;
 - streamed program output and run traces.
+
+### Pod Agent visibility
+
+The Studio does not treat Pod generation as a single opaque request. While the Agent is
+working, the progress dialog reports the active planning, generation, composition,
+Interface, verification, or repair action. After the run, the same public state is
+available in three places:
+
+- the status bar shows `Pod Agent: pending`, `passed`, `failed`, or `blocked`;
+- Explorer shows `Pod Agent > Application verification`;
+- selecting that row opens the exact command, attempt count, repair count, most recently
+  repaired file, and recent Agent actions in the Inspector.
+
+A `passed` result belongs to the verified application sources, not merely to the saved
+plan. If relevant project code or runtime configuration changes, AIPod detects the source
+fingerprint change and returns verification to `pending` until the application is run
+again. This prevents Studio from presenting stale success as current evidence.
 
 Built-in runtime Providers are hidden from the graph by default so the view focuses on
 project-owned architecture.

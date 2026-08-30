@@ -518,7 +518,14 @@ class StudioApi:
                         reused_components.append(component_match.group(1))
                     if pipeline_match and pipeline_match.group(1) not in reused_pipelines:
                         reused_pipelines.append(pipeline_match.group(1))
-                if not added_components and not added_pipelines and not reused_components and not reused_pipelines:
+                verification_status = (
+                    after.get("pod_agent", {}).get("verification", {}).get("status")
+                )
+                if (
+                    not added_components and not added_pipelines
+                    and not reused_components and not reused_pipelines
+                    and verification_status != "passed"
+                ):
                     message = diagnostics[-1] if diagnostics else "Pod 没有生成项目内容，请检查模型配置"
                     raise StudioError(message)
             project = self.inspect_project()["project"]
@@ -582,7 +589,11 @@ class StudioApi:
             clean = clean[:2_000] + " … [truncated]"
         stage, percent, message = None, 0, clean
         match = re.search(r"\[(\d+)/(\d+)\]\s*生成\s+([^\s]+)", clean)
-        if "拆解方案" in clean:
+        if "verify_application" in clean:
+            stage, percent, message = "verification", 96, "Running application verification."
+        elif "repair_current_artifact" in clean:
+            stage, percent, message = "repair", 97, "Repairing the current failing artifact."
+        elif "拆解方案" in clean:
             stage, percent, message = "planned", 18, "Architecture planned."
         elif match:
             current, total, name = int(match.group(1)), max(1, int(match.group(2))), match.group(3)
@@ -632,6 +643,8 @@ class StudioApi:
                     stage, percent = "pipelines", max(percent, 74)
                 elif label == "Generating application entry point":
                     stage, percent = "entrypoint", max(percent, 90)
+                elif label.startswith("Repairing current artifact:"):
+                    stage, percent = "repair", max(percent, 97)
                 suffix = "starting…" if event_type == "llm_started" else f"{characters:,} characters received"
                 if event_type == "llm_completed":
                     suffix = f"response complete · {characters:,} characters"

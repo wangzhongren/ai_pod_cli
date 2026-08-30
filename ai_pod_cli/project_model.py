@@ -13,6 +13,7 @@ from ai_pod_cli.run_store import get_run_trace, list_run_traces
 
 
 SCHEMA_VERSION = "1.0"
+POD_PLAN_FILE = Path("aipod_plan.json")
 
 
 class ProjectModelError(ValueError):
@@ -75,6 +76,41 @@ def load_project_graph() -> tuple[list[dict], list[dict]]:
     return beans, routes
 
 
+def load_pod_agent_state() -> dict | None:
+    """Return compact, public Pod Agent state without frozen plan prompt content."""
+    try:
+        state = json.loads(POD_PLAN_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    agent = state.get("agent", {})
+    return {
+        "status": agent.get("status", "idle"),
+        "step": agent.get("step", 0),
+        "current_stage": state.get("current_stage"),
+        "stages": {
+            name: record.get("status", "pending")
+            for name, record in state.get("stages", {}).items()
+            if isinstance(record, dict)
+        },
+        "last_action": agent.get("last_action"),
+        "last_observation": agent.get("last_observation", {}),
+        "verification": {
+            key: value
+            for key, value in agent.get("verification", {}).items()
+            if key in {"status", "attempts", "repairs", "command", "repaired_file"}
+        },
+        "recent_actions": [
+            {
+                key: item.get(key)
+                for key in ("step", "action", "stage", "status", "summary")
+                if key in item
+            }
+            for item in agent.get("history", [])[-6:]
+            if isinstance(item, dict)
+        ],
+    }
+
+
 def build_project_model() -> dict:
     """Build the stable Agent Project Model used by inspect and visualize."""
     beans, pipelines = load_project_graph()
@@ -116,6 +152,7 @@ def build_project_model() -> dict:
         "schema_version": SCHEMA_VERSION,
         "project_root": str(Path.cwd()),
         "summary": summary,
+        "pod_agent": load_pod_agent_state(),
         "components": components,
         "pipelines": pipelines,
         "validation": {"valid": not issues, "issues": issues},

@@ -17,11 +17,29 @@ _TYPE_ALIASES = {
 }
 
 
+def _model_path(spec: Any) -> str | None:
+    """Read a Model reference from structured or legacy contract metadata."""
+    if isinstance(spec, dict):
+        value = spec.get("model")
+        return value.strip() if isinstance(value, str) and value.strip() else None
+    if not isinstance(spec, str):
+        return None
+    candidate = re.split(r"\s*(?:—|–)\s*", spec.strip(), maxsplit=1)[0]
+    parts = candidate.split(".")
+    if (
+        len(parts) >= 3
+        and all(re.fullmatch(r"[A-Za-z_]\w*", part) for part in parts)
+        and parts[-1][:1].isupper()
+    ):
+        return candidate
+    return None
+
+
 def normalize_type(spec: Any) -> str:
     """Extract a stable type token from legacy or structured field metadata."""
+    if _model_path(spec):
+        return "model"
     if isinstance(spec, dict):
-        if spec.get("model"):
-            return "model"
         spec = spec.get("type", "any")
     if not isinstance(spec, str) or not spec.strip():
         return "any"
@@ -59,8 +77,8 @@ def schema_compatibility(produced: Any, required: Any, path: str = "") -> list[d
     if not types_compatible(produced_type, required_type):
         return [{"path": path or "$", "produced": produced_type, "required": required_type}]
     if required_type == "model":
-        produced_model = produced.get("model") if isinstance(produced, dict) else None
-        required_model = required.get("model") if isinstance(required, dict) else None
+        produced_model = _model_path(produced)
+        required_model = _model_path(required)
         if produced_model != required_model:
             return [{
                 "path": path or "$", "produced": produced_model or "unknown model",
@@ -96,8 +114,8 @@ def schema_compatibility(produced: Any, required: Any, path: str = "") -> list[d
 def validate_contract_value(value: Any, spec: Any, path: str = "$") -> list[str]:
     """Validate a runtime value against the supported contract schema subset."""
     expected = normalize_type(spec)
-    if expected == "model" and isinstance(spec, dict):
-        model_path = spec.get("model", "")
+    if expected == "model":
+        model_path = _model_path(spec) or ""
         try:
             module_name, class_name = model_path.rsplit(".", 1)
             model_class = getattr(importlib.import_module(module_name), class_name)

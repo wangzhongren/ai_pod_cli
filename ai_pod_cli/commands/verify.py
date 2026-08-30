@@ -35,6 +35,12 @@ def _bounded_output(value: str, limit: int = 20000) -> str:
     value = value or ""
     value = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+", r"\1[REDACTED]", value)
     value = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", value)
+    value = re.sub(
+        r"(?i)((?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*[\"'])"
+        r"[^\"'\r\n]+([\"'])",
+        r"\1[REDACTED]\2",
+        value,
+    )
     if len(value) <= limit:
         return value
     return "[output truncated]\n" + value[-limit:]

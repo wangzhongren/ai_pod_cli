@@ -71,26 +71,30 @@ def _list_pipelines() -> list[dict]:
 
 
 def handle_compose(args):
-    """【compose 命令】AI 编排器：生成 pipeline 文件 → 注册到 routes.toml"""
+    """【compose 命令】AI 编排器：生成 pipeline 文件 → 注册到 routes.toml。
+
+    生成模式返回 ``True`` 表示文件与路由均已保存，返回 ``False`` 表示生成失败。
+    调用方必须使用该回执决定是否冻结下游阶段。
+    """
 
     # --- --list: 列出所有已保存的 pipeline ---
     if args.list:
         pipelines = _list_pipelines()
         if not pipelines:
             print(f"📂 {PIPELINES_DIR}/ 目录为空，还没有保存任何 pipeline。")
-            return
+            return []
 
         print(f"📂 已保存的 Pipeline ({len(pipelines)} 条):\n")
         for p in pipelines:
             print(f"   🐍 {p['file']}")
             print(f"      指令: {p['instruction']}")
             print()
-        return
+        return pipelines
 
     # --- 默认: AI 生成新的 Python pipeline ---
     if not args.cmd:
         print("❌ 请提供指令描述。")
-        return
+        return False
 
     print(f"🎬 [compose] 人类宏观指令: '{args.cmd}'")
 
@@ -226,7 +230,7 @@ def handle_compose(args):
                     print(f"   ⚠️  AI 未返回有效代码，第 {attempt}/{max_attempts} 次重试...")
                     continue
                 print("❌ AI 未返回有效代码，已重试 3 次仍失败。")
-                return
+                return False
 
             violations = validate_pipeline_contract(generated_code)
             known_services = {
@@ -267,7 +271,7 @@ def handle_compose(args):
                     interactive=not args.json,
                     auto_repair=getattr(args, "auto_repair", False),
                 ):
-                    return
+                    return False
                 feedback = repair_feedback(violations)
                 continue
             break
@@ -277,7 +281,7 @@ def handle_compose(args):
                 print(f"   ⚠️  第 {attempt}/{max_attempts} 次失败 ({e})，重试...")
                 continue
             print(f"❌ AI 编排失败: {e}")
-            return
+            return False
 
     print("🛡️  [生成预检通过] 代码语法、基础安全规则和 Pipeline 契约均有效；运行修复交由后续 Agent")
 
@@ -296,3 +300,4 @@ def handle_compose(args):
 
     print(f"\n🎉 [compose 完成] Pipeline 已生成并注册。")
     print(f"   运行方式: 通过你的入口文件调用 PipelineRunner().run(\"{name}\", params)")
+    return True

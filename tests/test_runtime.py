@@ -152,9 +152,13 @@ class RuntimeIntegrationTests(unittest.TestCase):
             )
 
     def test_verify_redacts_common_credentials(self):
-        output = _bounded_output("Authorization: Bearer abc.def-123 token=sk-exampleSECRET123")
+        output = _bounded_output(
+            'Authorization: Bearer abc.def-123 token=sk-exampleSECRET123 '
+            'api_key="custom-provider-secret"'
+        )
         self.assertNotIn("abc.def-123", output)
         self.assertNotIn("sk-exampleSECRET123", output)
+        self.assertNotIn("custom-provider-secret", output)
 
     def test_model_sample_prefers_none_for_optional_fields(self):
         self.assertIsNone(OptionalValue.sample_instance().label)
@@ -826,6 +830,9 @@ class StudioApiTests(unittest.TestCase):
         self.assertIn("Run pipeline", page)
         self.assertIn("pod_build_status", page)
         self.assertIn("podProgressBar", page)
+        self.assertIn("Application verification", page)
+        self.assertIn("agentStatus", page)
+        self.assertIn("Repairs applied", page)
 
     def test_studio_pod_build_runs_in_background_with_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -842,6 +849,8 @@ class StudioApiTests(unittest.TestCase):
                 progress("📋 [拆解方案] test")
                 progress("🤖 [1/2] 生成 Repository (provider)...")
                 progress("🤖 [2/2] 生成 Service (service)...")
+                progress("🧠 [Pod Agent · Step 6] verify_application (application)")
+                progress("🧠 [Pod Agent · Step 7] repair_current_artifact (application)")
                 return {"ok": True, "project": {"summary": {}}, "changes": {}}
 
             with patch.object(api, "build_pod", side_effect=fake_build):
@@ -855,7 +864,45 @@ class StudioApiTests(unittest.TestCase):
             self.assertEqual(task["status"], "completed")
             self.assertEqual(task["percent"], 100)
             self.assertTrue(any("Repository" in line for line in task["logs"]))
+            self.assertTrue(any("verify_application" in line for line in task["logs"]))
+            self.assertTrue(any("repair_current_artifact" in line for line in task["logs"]))
             self.assertTrue(task["result"]["ok"])
+
+    def test_studio_accepts_verification_only_pod_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                (project / "aipod_plan.json").write_text(json.dumps({
+                    "version": 3,
+                    "objective": "verified app",
+                    "current_stage": "interfaces",
+                    "stages": {
+                        name: {"status": "complete", "plan": None}
+                        for name in ("models", "providers", "services", "pipelines", "interfaces")
+                    },
+                    "agent": {
+                        "status": "complete", "step": 1, "history": [],
+                        "verification": {
+                            "status": "passed", "attempts": 1, "repairs": 0,
+                            "command": [sys.executable, "app.py", "smoke"],
+                        },
+                    },
+                }), encoding="utf-8")
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+
+            with patch("ai_pod_cli.commands.pod.handle_pod", return_value=None):
+                result = api.build_pod("verified app")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(
+                result["project"]["pod_agent"]["verification"]["status"],
+                "passed",
+            )
 
     def test_studio_pod_build_supports_cooperative_cancellation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -928,8 +975,22 @@ class StudioApiTests(unittest.TestCase):
     def test_contract_types_support_legacy_descriptions(self):
         self.assertEqual(normalize_type("str — order identifier"), "str")
         self.assertEqual(normalize_type({"type": "boolean"}), "bool")
+        self.assertEqual(normalize_type("modules.models.order.Order"), "model")
         self.assertTrue(types_compatible("int", "float"))
         self.assertFalse(types_compatible("str", "bool"))
+
+    def test_pipeline_accepts_legacy_model_path_as_structured_model(self):
+        model_path = "modules.models.scenestate.SceneState"
+        contract = analyze_pipeline_contracts(
+            ["CreateScene", "AdvanceFrame"],
+            [
+                {"id": "CreateScene", "outputs": {"scene": model_path}},
+                {"id": "AdvanceFrame", "inputs": {"scene": {"model": model_path}}},
+            ],
+        )
+
+        self.assertTrue(contract["valid"])
+        self.assertEqual(contract["links"][0]["matched"], ["scene"])
 
     def test_pipeline_contract_infers_inputs_outputs_and_type_errors(self):
         components = [
@@ -1220,6 +1281,10 @@ class StudioApiTests(unittest.TestCase):
                 (project / "routes.toml").write_text(
                     '[existing_route]\npipeline = "pipelines/existing_route.py"\n', encoding="utf-8"
                 )
+                (project / "pipelines").mkdir(exist_ok=True)
+                (project / "pipelines" / "existing_route.py").write_text(
+                    "def run(ctx):\n    return ctx.summary()\n", encoding="utf-8",
+                )
                 plan = {
                     "pod_name": "reuse_test",
                     "reuse_components": ["ExistingService"],
@@ -1228,19 +1293,37 @@ class StudioApiTests(unittest.TestCase):
                     "config_additions": {},
                 }
                 args = type("Args", (), {"desc": "reuse", "file": "", "yes": True, "json": True})()
+                responses = []
+                for action in (
+                    "generate_models", "generate_providers", "generate_services",
+                    "compose_pipelines", "generate_interfaces",
+                ):
+                    responses.extend([
+                        {"action": action, "summary": f"run {action}", "success_criteria": ["frozen"]},
+                        plan,
+                    ])
                 output = io.StringIO()
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", return_value=plan) as llm,
+                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=responses) as llm,
                     redirect_stdout(output),
                 ):
                     handle_pod(args)
             finally:
                 os.chdir(previous_cwd)
 
-            self.assertEqual(llm.call_count, 5)
+            self.assertEqual(llm.call_count, 10)
             self.assertIn("ExistingService (reuse)", output.getvalue())
             self.assertIn("[Pipeline 复用] existing_route", output.getvalue())
+            state = json.loads((project / "aipod_plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["agent"]["status"], "complete")
+            self.assertEqual(
+                [item["action"] for item in state["agent"]["history"]],
+                [
+                    "generate_models", "generate_providers", "generate_services",
+                    "compose_pipelines", "generate_interfaces", "verify_application",
+                ],
+            )
 
     def test_pod_accepts_empty_provider_stage_and_continues_to_services(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1275,19 +1358,148 @@ class StudioApiTests(unittest.TestCase):
                         "pipelines": [], "interfaces": [], "config_additions": {},
                     },
                 ]
+                action_by_stage = {
+                    "providers": "generate_providers",
+                    "services": "generate_services",
+                    "pipelines": "compose_pipelines",
+                    "interfaces": "generate_interfaces",
+                }
+                plan_by_stage = dict(zip(action_by_stage, plans))
+
+                def respond(_system, _user, **kwargs):
+                    label = kwargs.get("progress_label", "")
+                    stage_name = next((name for name in action_by_stage if name in label), None)
+                    if stage_name is None:
+                        raise AssertionError(f"unexpected model call: {label}")
+                    if label.startswith("Pod Agent selecting"):
+                        action = action_by_stage[stage_name]
+                        return {
+                            "action": action, "summary": f"run {action}",
+                            "success_criteria": ["frozen"],
+                        }
+                    return plan_by_stage[stage_name]
                 output = io.StringIO()
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=plans) as llm,
+                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=respond) as llm,
                     redirect_stdout(output),
                 ):
                     handle_pod(args)
             finally:
                 os.chdir(previous_cwd)
 
-            self.assertEqual(llm.call_count, 4)
+            self.assertEqual(llm.call_count, 8)
             self.assertIn("[providers 阶段已冻结]", output.getvalue())
-            self.assertIn("进入 services 阶段", output.getvalue())
+            self.assertIn("generate_services (services)", output.getvalue())
+
+    def test_pod_agent_observes_failure_and_retries_only_current_tool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                args = type("Args", (), {
+                    "desc": "agent retry", "file": "", "yes": True, "json": True,
+                    "_pod_agent_max_steps": 3,
+                })()
+                tool_calls = []
+
+                def fake_build_tool(_args):
+                    tool_calls.append(_args._pod_stage)
+                    if len(tool_calls) == 1:
+                        raise SystemExit(1)
+                    state = _load_decision_plan("agent retry")
+                    for name in state["stages"]:
+                        state["stages"][name]["status"] = "complete"
+                    _save_decision_plan(state)
+
+                decisions = [
+                    {"action": "generate_models", "summary": "start models"},
+                    {"action": "retry_current", "summary": "retry failed models"},
+                ]
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=decisions),
+                    patch("ai_pod_cli.commands.pod._execute_pod_build_tool", side_effect=fake_build_tool),
+                ):
+                    handle_pod(args)
+                inspected = inspect_project()
+            finally:
+                os.chdir(previous_cwd)
+
+            state = json.loads((project / "aipod_plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(tool_calls, [0, 0])
+            self.assertEqual(
+                [item["status"] for item in state["agent"]["history"]],
+                ["failed", "succeeded", "succeeded"],
+            )
+            self.assertEqual(state["agent"]["history"][1]["requested_action"], "retry_current")
+            self.assertNotIn("chain_of_thought", json.dumps(state))
+
+            self.assertEqual(inspected["pod_agent"]["status"], "complete")
+            self.assertEqual(inspected["pod_agent"]["last_action"], "verify_application")
+            self.assertEqual(inspected["pod_agent"]["verification"]["status"], "passed")
+
+    def test_pod_agent_verifies_repairs_current_artifact_and_reverifies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                entry = project / "engine_cli.py"
+                failing_line = 'raise RuntimeError("smoke failed")'
+                entry.write_text(
+                    "from ai_pod_cli.config import load_beans\n"
+                    "from ai_pod_cli.container import build_container\n\n"
+                    "def main():\n"
+                    "    build_container(load_beans())\n"
+                    f"    {failing_line}\n\n"
+                    "if __name__ == '__main__':\n"
+                    "    main()\n",
+                    encoding="utf-8",
+                )
+                stable = project / "modules" / "models" / "stable.py"
+                stable.parent.mkdir(parents=True, exist_ok=True)
+                stable.write_text("FROZEN = True\n", encoding="utf-8")
+
+                state = _load_decision_plan("repair app")
+                for record in state["stages"].values():
+                    record["status"] = "complete"
+                state["stages"]["interfaces"]["plan"] = {
+                    "interfaces": [{
+                        "name": "engine_cli", "kind": "cli",
+                        "instruction": "Run the `smoke` command without interaction.",
+                    }],
+                }
+                state["stages"]["interfaces"]["artifacts"] = ["engine_cli.py"]
+                _save_decision_plan(state)
+                args = type("Args", (), {
+                    "desc": "repair app", "file": "", "yes": True, "json": True,
+                })()
+
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    patch("ai_pod_cli.commands.pod.call_llm", return_value={
+                        "patches": [{"old": failing_line, "new": 'print("SMOKE OK")'}],
+                    }) as llm,
+                ):
+                    handle_pod(args)
+            finally:
+                os.chdir(previous_cwd)
+
+            final_state = json.loads((project / "aipod_plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(llm.call_count, 1)
+            self.assertEqual(final_state["agent"]["status"], "complete")
+            self.assertEqual(final_state["agent"]["verification"]["status"], "passed")
+            self.assertEqual(final_state["agent"]["verification"]["repairs"], 1)
+            self.assertEqual(
+                [item["action"] for item in final_state["agent"]["history"]],
+                ["verify_application", "repair_current_artifact", "verify_application"],
+            )
+            self.assertIn('print("SMOKE OK")', entry.read_text(encoding="utf-8"))
+            self.assertEqual(stable.read_text(encoding="utf-8"), "FROZEN = True\n")
 
     def test_studio_discovers_cli_interface_and_connected_routes(self):
         with tempfile.TemporaryDirectory() as tmp:

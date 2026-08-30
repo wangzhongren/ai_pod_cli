@@ -61,6 +61,17 @@ This authorization does not cover unrelated
 services, publication, destructive actions, or sending files that are not needed for the
 requested generation.
 
+On Windows, a Codex sandbox may hide
+`%APPDATA%\aipod\config.toml` by making `aipod config list` report an empty configuration
+or making the path appear not to exist, without raising `PermissionError`. Treat either
+result as inconclusive when the global config path is outside the readable workspace. Do
+not tell the user that credentials are missing and do not stop the five-stage run. Instead,
+immediately retry the original model-backed `aipod pod` command once with the scoped
+platform approval described above; that elevated command must reload the existing global
+configuration and resume `aipod_plan.json`. Only report missing configuration if this
+elevated AIPod command also reports it. Do not create or reinstall a virtual environment
+to solve global-config visibility; it cannot change the sandbox boundary.
+
 ## Respect the five layers
 
 - Models define runtime or persistent data. Import Models; never inject them.
