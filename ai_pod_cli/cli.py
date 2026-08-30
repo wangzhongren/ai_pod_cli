@@ -50,14 +50,14 @@ def main():
 
     # 2. create
     create_parser = subparsers.add_parser("create", help="AI generates a component")
-    create_parser.add_argument("--category", choices=["service", "provider"], required=True, help="Component category")
+    create_parser.add_argument("--category", choices=["model", "service", "provider"], required=True, help="Project element category")
     create_parser.add_argument("--name", required=True, help="Component name (must match class name)")
     create_parser.add_argument("--desc", required=True, help="Component description for AI")
     create_parser.add_argument("--json", action="store_true", help="Emit a machine-readable command result")
 
     # 3. add
     add_parser = subparsers.add_parser("add", help="Register a hand-written component")
-    add_parser.add_argument("--category", choices=["service", "provider"], default="provider", help="Component category (default: provider)")
+    add_parser.add_argument("--category", choices=["model", "service", "provider"], default="provider", help="Project element category (default: provider)")
     add_parser.add_argument("--name", required=True, help="Component name")
     add_parser.add_argument("--class-path", required=True, help="Full class path, e.g. mypackage.module.MyClass")
     add_parser.add_argument("--desc", required=True, help="Component description")

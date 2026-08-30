@@ -105,15 +105,21 @@ def call_llm(
 
     last_error: Exception | None = None
     delay = retry_delay
+    force_non_stream = False
 
     for attempt in range(1, max_retries + 1):
         try:
             if attempt > 1:
                 print(f"   [retry] 第 {attempt}/{max_retries} 次重试...")
 
-            if progress_callback is None:
+            finish_reason = None
+            usage = None
+            used_stream = progress_callback is not None and not force_non_stream
+            if not used_stream:
                 response = client.chat.completions.create(**kwargs)
                 raw_content = response.choices[0].message.content
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                usage = getattr(response, "usage", None)
             else:
                 progress_callback({"type": "llm_started", "label": progress_label, "characters": 0})
                 stream = client.chat.completions.create(**kwargs, stream=True)
@@ -124,6 +130,9 @@ def call_llm(
                 for chunk in stream:
                     choices = getattr(chunk, "choices", None) or []
                     delta = getattr(choices[0], "delta", None) if choices else None
+                    chunk_finish = getattr(choices[0], "finish_reason", None) if choices else None
+                    if chunk_finish is not None:
+                        finish_reason = chunk_finish
                     content = getattr(delta, "content", None) if delta is not None else None
                     if content:
                         parts.append(content)
@@ -137,15 +146,49 @@ def call_llm(
                         last_reported_at = now
                         last_reported_count = character_count
                 raw_content = "".join(parts)
-                progress_callback({"type": "llm_completed", "label": progress_label, "characters": character_count})
+                completed_event = {
+                    "type": "llm_completed", "label": progress_label,
+                    "characters": character_count,
+                }
+                if finish_reason is not None:
+                    completed_event["finish_reason"] = finish_reason
+                progress_callback(completed_event)
+
+            if finish_reason == "length":
+                previous_limit = int(kwargs["max_tokens"])
+                next_limit = min(previous_limit * 2, 32768)
+                last_error = ValueError(
+                    f"模型输出达到 token 上限：finish_reason=length, "
+                    f"characters={len(raw_content or '')}, max_tokens={previous_limit}"
+                )
+                print(
+                    f"   [retry] 第 {attempt} 次: 输出达到上限 "
+                    f"({previous_limit} tokens, {len(raw_content or '')} chars)"
+                )
+                if next_limit > previous_limit:
+                    kwargs["max_tokens"] = next_limit
+                    print(f"   [retry] 下一次提高输出上限到 {next_limit} tokens")
+                if attempt < max_retries:
+                    time.sleep(delay)
+                    delay *= 2
+                continue
 
             if json_mode:
                 # 尝试解析 JSON
                 try:
                     result = _parse_json_content(raw_content)
                 except (json.JSONDecodeError, TypeError) as e:
-                    last_error = ValueError(f"AI 返回的内容不是合法 JSON: {e}\n原始内容: {raw_content[:300]}")
-                    print(f"   [retry] 第 {attempt} 次: JSON 解析失败")
+                    last_error = ValueError(
+                        f"AI 返回的内容不是合法 JSON: {e}; finish_reason={finish_reason or 'missing'}; "
+                        f"characters={len(raw_content or '')}\n原始内容: {(raw_content or '')[:300]}"
+                    )
+                    print(
+                        f"   [retry] 第 {attempt} 次: JSON 解析失败 "
+                        f"(finish_reason={finish_reason or 'missing'}, {len(raw_content or '')} chars)"
+                    )
+                    if used_stream and finish_reason is None:
+                        force_non_stream = True
+                        print("   [retry] 流没有正常结束，下一次切换为非流式完整响应")
                     if attempt < max_retries:
                         time.sleep(delay)
                         delay *= 2

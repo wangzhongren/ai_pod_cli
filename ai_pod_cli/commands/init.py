@@ -7,7 +7,7 @@ import sys
 
 from ai_pod_cli.config import (
     CONFIG_FILE, CONFIG_TOML, ROUTES_TOML,
-    MODULES_DIR, PROVIDERS_DIR, SERVICES_DIR,
+    MODULES_DIR, PROVIDERS_DIR, SERVICES_DIR, MODELS_DIR,
     PIPELINES_DIR, init_config_if_not_exists,
     append_deps_to_requirements, REQUIREMENTS_FILE,
 )
@@ -19,8 +19,21 @@ def handle_init(args):
     created = []
     skipped = []
 
-    # 1. 创建 modules/ 子目录：providers/ 和 services/
-    for sub_dir, desc in [(PROVIDERS_DIR, "基础设施提供者"), (SERVICES_DIR, "业务服务")]:
+    os.makedirs(MODULES_DIR, exist_ok=True)
+    modules_init = os.path.join(MODULES_DIR, "__init__.py")
+    if not os.path.exists(modules_init):
+        with open(modules_init, "w", encoding="utf-8") as f:
+            f.write('"""AIPod project modules."""\n')
+        created.append(f"📄 {modules_init}")
+    else:
+        skipped.append(f"📄 {modules_init} (已存在)")
+
+    # 1. 创建 modules/ 子目录：models、providers 和 services
+    for sub_dir, desc in [
+        (MODELS_DIR, "共享数据模型"),
+        (PROVIDERS_DIR, "基础设施提供者"),
+        (SERVICES_DIR, "业务服务"),
+    ]:
         if not os.path.exists(sub_dir):
             os.makedirs(sub_dir)
             created.append(f"📁 目录 {sub_dir}/")
@@ -68,7 +81,7 @@ def handle_init(args):
         skipped.append(f"📄 {ROUTES_TOML} (已存在)")
 
     if not beans_exists:
-        created.append(f"📄 {CONFIG_FILE} (含 ConfigStore, PipelineRunner)")
+        created.append(f"📄 {CONFIG_FILE} (含 ConfigStore, ModelRepository, PipelineRunner)")
     else:
         skipped.append(f"📄 {CONFIG_FILE} (已存在)")
 
@@ -83,13 +96,13 @@ def handle_init(args):
 
     # 6. 安装依赖
     if args.install_deps:
-        print("\n📦 [初始化] 正在安装 Python 依赖 (openai, injector, python-dotenv, tomlkit)...")
+        print("\n📦 [初始化] 正在安装 Python 依赖 (openai, injector, sqlmodel, python-dotenv, tomlkit)...")
         try:
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install",
-                 "openai", "injector", "python-dotenv", "tomlkit", "-q"],
+                 "openai", "injector", "sqlmodel", "python-dotenv", "tomlkit", "-q"],
             )
-            created.append("📦 依赖 openai, injector, python-dotenv, tomlkit")
+            created.append("📦 依赖 openai, injector, sqlmodel, python-dotenv, tomlkit")
         except subprocess.CalledProcessError as e:
             print(f"   ⚠️  依赖安装失败: {e}")
     else:

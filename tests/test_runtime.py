@@ -7,26 +7,34 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import date, datetime
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ai_pod_cli.config import init_config_if_not_exists, save_config
+from ai_pod_cli.config import extract_model_fields, extract_sql_resources, init_config_if_not_exists, save_config
 from ai_pod_cli.client import _parse_json_content, call_llm
 from ai_pod_cli.contracts import (
     analyze_pipeline_contracts, normalize_type, semantic_field_similarity, types_compatible,
+    validate_contract_data,
 )
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import handle_pod
+from ai_pod_cli.sandbox import sample_value
 from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
 from ai_pod_cli.context import PipelineContext
+from ai_pod_cli.model import Model
+from ai_pod_cli.repository import ModelRepository
+from ai_pod_cli.config_store import ConfigStore
+from sqlmodel import Field
 from ai_pod_cli.result import Effect, Failure, Success
+from ai_pod_cli.repair import apply_code_patches, classify_failures
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
 from ai_pod_cli.studio import StudioApi, StudioError, _ProgressCapture, studio_asset_path
-from ai_pod_cli.sandbox import sample_value
+from ai_pod_cli.sandbox import sample_value, verify_component_candidate
 from ai_pod_cli.validation import (
     extract_component_fields,
     repair_feedback,
@@ -37,7 +45,150 @@ from ai_pod_cli.validation import (
 )
 
 
+class TestShipment(Model):
+    id: str
+    distance_km: float
+
+
+class TestShipmentSnapshot(Model):
+    shipments: list[TestShipment]
+
+
+class OtherShipmentSnapshot(Model):
+    shipments: list[TestShipment]
+
+
+class TimedSample(Model):
+    timestamp: datetime
+
+
+class DatedSample(Model):
+    day: date
+
+
+class RepositoryItem(Model, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+
+
 class RuntimeIntegrationTests(unittest.TestCase):
+    def test_model_sample_supports_date(self):
+        self.assertEqual(DatedSample.sample_instance().day, date(2024, 1, 1))
+
+    def test_sqlmodel_repository_initializes_saves_and_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.toml"
+            database_path = (Path(tmp) / "repo.db").as_posix()
+            config_path.write_text(f'[database]\nurl = "sqlite:///{database_path}"\n', encoding="utf-8")
+            repository = ModelRepository(ConfigStore(str(config_path)))
+            repository.load_models = lambda package_name="modules.models": None
+            saved = repository.save(RepositoryItem(name="alpha"))
+            self.assertIsNotNone(saved.id)
+            self.assertEqual(repository.get(RepositoryItem, saved.id).name, "alpha")
+            self.assertEqual(repository.find(RepositoryItem, name="alpha")[0].id, saved.id)
+            repository.close()
+
+    def test_model_fields_are_extracted_for_registry_contract(self):
+        fields = extract_model_fields(
+            "from dataclasses import dataclass\n@dataclass\nclass Audit(Model):\n    details: str\n    tags: list[str]\n",
+            "Audit",
+        )
+        self.assertEqual(fields, {"details": "str", "tags": "list[str]"})
+
+    def test_provider_sql_resources_are_machine_readable(self):
+        resources = extract_sql_resources(
+            "sql = '''CREATE TABLE IF NOT EXISTS audit_log (log_id TEXT PRIMARY KEY, details TEXT)'''"
+        )
+        self.assertEqual(resources["tables"]["audit_log"]["columns"]["details"], "TEXT")
+
+    def test_scalar_contract_accepts_parenthesized_format_qualifier(self):
+        self.assertEqual(normalize_type("str (ISO8601)"), "str")
+        self.assertEqual(normalize_type("string (ISO8601 datetime)"), "str")
+        self.assertEqual(validate_contract_data(
+            {"at": datetime(2024, 1, 1)}, {"at": "datetime"},
+        ), [])
+        self.assertIsInstance(sample_value("period_start", "str (ISO8601)"), str)
+        self.assertIsInstance(sample_value("timestamp", "datetime"), datetime)
+        self.assertEqual(sample_value("window_minutes", "any"), 1)
+
+    def test_constrained_repair_preserves_candidate_and_class(self):
+        code = "from datetime import datetime\nclass Clock:\n    def now(self):\n        return datetime.timezone.utc\n"
+        repaired = apply_code_patches(
+            code,
+            [
+                {"old": "from datetime import datetime", "new": "from datetime import datetime, timezone"},
+                {"old": "datetime.timezone.utc", "new": "timezone.utc"},
+            ],
+            "Clock", "import",
+        )
+        self.assertIn("class Clock", repaired)
+        self.assertIn("timezone.utc", repaired)
+        self.assertNotIn("datetime.timezone.utc", repaired)
+
+    def test_constrained_repair_rejects_whole_candidate_rewrite(self):
+        code = "class Worker:\n    def run(self):\n        return 'stable'\n"
+        with self.assertRaisesRegex(ValueError, "补丁范围过大"):
+            apply_code_patches(
+                code, [{"old": code, "new": "class Worker:\n    pass\n"}],
+                "Worker", "runtime",
+            )
+
+    def test_failure_classifier_routes_contract_away_from_code_patch(self):
+        self.assertEqual(classify_failures(["outputs.batch schema validation failed"]), "contract")
+        self.assertEqual(classify_failures(["ModuleNotFoundError: no module x"]), "import")
+
+    def test_model_sample_instance_preserves_nested_model_types(self):
+        snapshot = TestShipmentSnapshot.sample_instance()
+        self.assertIsInstance(snapshot, TestShipmentSnapshot)
+        self.assertIsInstance(snapshot.shipments[0], TestShipment)
+        self.assertIsInstance(TimedSample.sample_instance().timestamp, datetime)
+
+    def test_incomplete_stream_retries_as_non_streaming_response(self):
+        calls = []
+
+        def create(**kwargs):
+            calls.append(kwargs)
+            if kwargs.get("stream"):
+                return [SimpleNamespace(choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content='{"answer":'), finish_reason=None,
+                )])]
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content='{"answer": 42}'), finish_reason="stop",
+            )], usage=None)
+
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("ai_pod_cli.client.get_client", return_value=fake_client):
+            result = call_llm(
+                "system", "user", json_mode=True, max_retries=2, retry_delay=0,
+                progress_callback=lambda event: None,
+            )
+        self.assertEqual(result, {"answer": 42})
+        self.assertTrue(calls[0]["stream"])
+        self.assertNotIn("stream", calls[1])
+
+    def test_length_finish_reason_increases_output_limit(self):
+        calls = []
+
+        def create(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return [SimpleNamespace(choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content='{"answer":'), finish_reason="length",
+                )])]
+            return [SimpleNamespace(choices=[SimpleNamespace(
+                delta=SimpleNamespace(content='{"answer": 42}'), finish_reason="stop",
+            )])]
+
+        fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("ai_pod_cli.client.get_client", return_value=fake_client):
+            result = call_llm(
+                "system", "user", json_mode=True, max_tokens=100,
+                max_retries=2, retry_delay=0, progress_callback=lambda event: None,
+            )
+        self.assertEqual(result, {"answer": 42})
+        self.assertEqual(calls[0]["max_tokens"], 100)
+        self.assertEqual(calls[1]["max_tokens"], 200)
+
     def test_llm_streaming_accumulates_json_and_reports_progress(self):
         chunks = [
             SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='{"answer"'))]),
@@ -113,6 +264,27 @@ class RuntimeIntegrationTests(unittest.TestCase):
 
 
 class GeneratedArtifactValidationTests(unittest.TestCase):
+
+    def test_sandbox_sample_uses_contract_enum_value(self):
+        self.assertEqual(
+            sample_value("movement_type", "str — one of 'IN' | 'OUT' | 'ADJUST'"),
+            "IN",
+        )
+        self.assertEqual(sample_value("status", {"type": "string", "enum": ["open", "closed"]}), "open")
+
+    def test_model_repository_find_accepts_filter_dict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "find.db"
+            config_path = Path(tmp) / "config.toml"
+            config_path.write_text(
+                f'[database]\nurl = "sqlite:///{db_path.as_posix()}"\n', encoding="utf-8",
+            )
+            repository = ModelRepository(ConfigStore(config_path))
+            repository.load_models = lambda package_name="modules.models": None
+            repository.save(RepositoryItem(name="sample"))
+            rows = repository.find(RepositoryItem, {"name": "sample"})
+            self.assertEqual(len(rows), 1)
+            repository.close()
     def test_sandbox_samples_follow_contract_types(self):
         self.assertEqual(sample_value("count", "int — items"), 1)
         self.assertEqual(sample_value("tick", "int (optional) — override"), 1)
@@ -191,6 +363,16 @@ class Worker:
         )
         violations = validate_component_contract(code, "Worker", "service")
         self.assertTrue(any("ai_pod_cli.config_store" in item for item in violations))
+
+    def test_component_rejects_noncanonical_repository_import(self):
+        code = (
+            "from modules.providers.repository import ModelRepository\n"
+            "class Worker:\n"
+            "    def execute(self, ctx):\n"
+            "        return {}\n"
+        )
+        violations = validate_component_contract(code, "Worker", "service", {}, {})
+        self.assertTrue(any("ai_pod_cli.repository" in item for item in violations))
 
     def test_pipeline_requires_run(self):
         self.assertTrue(validate_pipeline_contract("def other(): pass"))
@@ -291,7 +473,10 @@ def run(ctx):
 
     def test_repair_feedback_is_explicit_and_requires_confirmation(self):
         violations = ["Pipeline 必须定义 run(ctx) 函数"]
-        self.assertIn(violations[0], repair_feedback(violations))
+        feedback = repair_feedback(violations)
+        self.assertIn(violations[0], feedback)
+        self.assertIn('"type":"array"', feedback)
+        self.assertIn('"model":"modules.models.<module>.<Class>"', feedback)
         with patch("builtins.input", return_value="n"):
             self.assertFalse(request_repair(violations, 1, 3))
         with patch("builtins.input", return_value=""):
@@ -333,7 +518,7 @@ class AgentProjectModelTests(unittest.TestCase):
                 os.chdir(previous_cwd)
 
         self.assertEqual(summary["schema_version"], "1.0")
-        self.assertEqual(summary["summary"]["component_count"], 2)
+        self.assertEqual(summary["summary"]["component_count"], 3)
         self.assertTrue(summary["validation"]["valid"])
 
     def test_json_command_envelope_reports_real_project_changes(self):
@@ -430,7 +615,7 @@ class StudioApiTests(unittest.TestCase):
         self.assertNotIn("api_key", settings["settings"])
         self.assertFalse(invalid_run["ok"])
         self.assertIn("JSON", invalid_run["error"]["message"])
-        self.assertEqual(result["project"]["summary"]["component_count"], 2)
+        self.assertEqual(result["project"]["summary"]["component_count"], 3)
         self.assertEqual(Path.cwd(), previous_cwd)
 
     def test_studio_rejects_non_aipod_directory(self):
@@ -613,6 +798,205 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(contract["issues"][0]["produced_field"], "oxygen")
         self.assertGreater(semantic_field_similarity("oxygen", "oxygen_level"), 0.9)
 
+    def test_pipeline_detects_nested_schema_mismatch(self):
+        produced = {
+            "type": "object", "required": ["shipments"], "properties": {
+                "shipments": {"type": "array", "items": {
+                    "type": "object", "required": ["id", "weight"],
+                    "properties": {"id": {"type": "string"}, "weight": {"type": "number"}},
+                }},
+            },
+        }
+        required = {
+            "type": "object", "required": ["shipments"], "properties": {
+                "shipments": {"type": "array", "items": {
+                    "type": "object", "required": ["shipment_id", "weight", "distance_km"],
+                    "properties": {
+                        "shipment_id": {"type": "string"},
+                        "weight": {"type": "number"},
+                        "distance_km": {"type": "number"},
+                    },
+                }},
+            },
+        }
+        contract = analyze_pipeline_contracts(
+            ["Simulate", "Risk"],
+            [
+                {"id": "Simulate", "outputs": {"shipment_snapshot": produced}},
+                {"id": "Risk", "inputs": {"shipment_snapshot": required}},
+            ],
+        )
+        self.assertFalse(contract["valid"])
+        self.assertEqual(contract["issues"][0]["code"], "contract_schema_mismatch")
+        paths = {item["path"] for item in contract["issues"][0]["schema_mismatches"]}
+        self.assertIn("shipment_snapshot.shipments[].shipment_id", paths)
+        self.assertIn("shipment_snapshot.shipments[].distance_km", paths)
+
+    def test_runtime_nested_schema_validation_reports_exact_path(self):
+        schema = {
+            "shipment_snapshot": {
+                "type": "object", "required": ["shipments"], "properties": {
+                    "shipments": {"type": "array", "items": {
+                        "type": "object", "required": ["id", "distance_km"],
+                        "properties": {
+                            "id": {"type": "string"}, "distance_km": {"type": "number"},
+                        },
+                    }},
+                },
+            },
+        }
+        errors = validate_contract_data(
+            {"shipment_snapshot": {"shipments": [{"id": "SHIP001"}]}}, schema,
+        )
+        self.assertEqual(errors, ["$.shipment_snapshot.shipments[0].distance_km: required field is missing"])
+
+    def test_model_contract_validates_nested_dataclass_fields(self):
+        model_path = f"{__name__}.TestShipmentSnapshot"
+        errors = validate_contract_data(
+            {"snapshot": {"shipments": [{"id": "SHIP001"}]}},
+            {"snapshot": {"model": model_path}},
+        )
+        self.assertEqual(
+            errors,
+            ["$.snapshot.shipments[0].distance_km: required field is missing"],
+        )
+        sample = sample_value("snapshot", {"model": model_path})
+        self.assertIsInstance(sample, TestShipmentSnapshot)
+        self.assertIsInstance(sample.shipments[0], TestShipment)
+
+    def test_pipeline_requires_the_same_shared_model(self):
+        contract = analyze_pipeline_contracts(
+            ["Producer", "Consumer"],
+            [
+                {"id": "Producer", "outputs": {
+                    "snapshot": {"model": f"{__name__}.TestShipmentSnapshot"},
+                }},
+                {"id": "Consumer", "inputs": {
+                    "snapshot": {"model": f"{__name__}.OtherShipmentSnapshot"},
+                }},
+            ],
+        )
+        self.assertFalse(contract["valid"])
+        self.assertEqual(contract["issues"][0]["code"], "contract_schema_mismatch")
+
+    def test_component_runtime_rejects_invalid_declared_model_output(self):
+        from ai_pod_cli.container import _ComponentRef
+
+        class Producer:
+            def execute(self, ctx):
+                return {"snapshot": {"shipments": [{"id": "SHIP001"}]}}
+
+        ref = _ComponentRef(
+            "Producer", Producer(),
+            outputs={"snapshot": {"model": f"{__name__}.TestShipmentSnapshot"}},
+        )
+        with self.assertRaisesRegex(ValueError, "distance_km"):
+            ref.execute_all(PipelineContext())
+
+    def test_service_allows_legacy_boundary_metadata_with_sqlmodel_runtime(self):
+        code = (
+            "from ai_pod_cli.context import PipelineContext\n"
+            "class Producer:\n"
+            "    def execute(self, ctx: PipelineContext):\n"
+            "        ctx.set('items', [])\n"
+            "        return {'items': []}\n"
+        )
+        violations = validate_component_contract(
+            code, "Producer", "service", {}, {"items": {"type": "array"}},
+        )
+        self.assertEqual(violations, [])
+        named_type_violations = validate_component_contract(
+            code, "Producer", "service", {}, {"items": "TelemetryBatch — generated batch"},
+        )
+        self.assertEqual(named_type_violations, [])
+        scalar_array_violations = validate_component_contract(
+            code, "Producer", "service", {},
+            {"items": {"type": "array", "items": {"type": "str"}}},
+        )
+        self.assertEqual(scalar_array_violations, [])
+        map_violations = validate_component_contract(
+            code, "Producer", "service", {},
+            {"items": {"type": "object", "additionalProperties": {"type": "float"}}},
+        )
+        self.assertEqual(map_violations, [])
+        optional_violations = validate_component_contract(
+            code, "Producer", "service", {"note": "str | None"},
+            {"items": {"type": "array", "items": {"type": "str"}}},
+        )
+        self.assertEqual(optional_violations, [])
+
+    def test_service_rejects_raw_sql(self):
+        code = (
+            "class SqlService:\n"
+            "    def execute(self, ctx):\n"
+            "        query = 'SELECT * FROM telemetry'\n"
+            "        return {}\n"
+        )
+        violations = validate_component_contract(code, "SqlService", "service", {}, {})
+        self.assertTrue(any("ModelRepository" in item for item in violations))
+
+    def test_provider_method_allows_opaque_infrastructure_output(self):
+        code = "class Store:\n    def load(self):\n        return None\n"
+        violations = validate_component_contract(
+            code, "Store", "provider", methods={
+                "load": {"inputs": {}, "outputs": "TelemetryBatch — result"},
+            },
+        )
+        self.assertEqual(violations, [])
+
+    def test_model_candidate_imports_from_disposable_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                (project / "modules" / "models").mkdir(parents=True)
+                (project / "modules" / "models" / "__init__.py").write_text("", encoding="utf-8")
+            finally:
+                os.chdir(previous)
+            code = (
+                "from sqlmodel import Field\n"
+                "from ai_pod_cli import Model\n"
+                "class Order(Model, table=True):\n"
+                "    id: int | None = Field(default=None, primary_key=True)\n"
+            )
+            bean = {
+                "id": "Order", "category": "model",
+                "class_path": "modules.models.order.Order", "file": "order.py",
+                "dependencies": [], "inputs": {}, "outputs": {},
+            }
+            self.assertEqual(validate_component_contract(code, "Order", "model"), [])
+            self.assertEqual(verify_component_candidate(project, bean, code, []), [])
+
+    def test_provider_candidate_smoke_tests_declared_methods(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous)
+            code = (
+                "from injector import inject\n"
+                "class BrokenSource:\n"
+                "    @inject\n"
+                "    def __init__(self): pass\n"
+                "    def generate(self, machine_id: str):\n"
+                "        raise ValueError('invalid frozen model field')\n"
+            )
+            bean = {
+                "id": "BrokenSource", "category": "provider",
+                "class_path": "modules.providers.brokensource.BrokenSource",
+                "file": "brokensource.py", "dependencies": [],
+                "methods": {"generate": {
+                    "inputs": {"machine_id": "str"}, "outputs": "dict",
+                }},
+            }
+            violations = verify_component_candidate(project, bean, code, [])
+            self.assertTrue(any("invalid frozen model field" in item for item in violations))
+
     def test_studio_composes_and_registers_visual_pipeline(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -660,6 +1044,7 @@ class StudioApiTests(unittest.TestCase):
             self.assertEqual(Path(result["project"]["project_root"]), ordinary)
             self.assertTrue((ordinary / "beans_config.json").exists())
             self.assertTrue((ordinary / "modules" / "services" / "__init__.py").exists())
+            self.assertTrue((ordinary / "modules" / "models" / "__init__.py").exists())
             self.assertTrue((ordinary / "pipelines" / "__init__.py").exists())
 
     def test_pod_reuses_existing_component_and_pipeline_without_overwrite(self):
@@ -697,9 +1082,56 @@ class StudioApiTests(unittest.TestCase):
             finally:
                 os.chdir(previous_cwd)
 
-            self.assertEqual(llm.call_count, 1)
+            self.assertEqual(llm.call_count, 5)
             self.assertIn("ExistingService (reuse)", output.getvalue())
             self.assertIn("[Pipeline 复用] existing_route", output.getvalue())
+
+    def test_pod_accepts_empty_provider_stage_and_continues_to_services(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                args = type(
+                    "Args", (),
+                    {"desc": "local app", "file": "", "yes": True, "json": True, "_pod_stage": 1},
+                )()
+                plans = [
+                    {
+                        "pod_name": "no_external_providers",
+                        "reuse_components": [], "components": [], "pipelines": [],
+                        "interfaces": [], "config_additions": {},
+                    },
+                    {
+                        "pod_name": "services",
+                        "reuse_components": ["ModelRepository"], "components": [],
+                        "pipelines": [], "interfaces": [], "config_additions": {},
+                    },
+                    {
+                        "pod_name": "pipelines",
+                        "reuse_components": ["PipelineRunner"], "components": [],
+                        "pipelines": [], "interfaces": [], "config_additions": {},
+                    },
+                    {
+                        "pod_name": "interfaces",
+                        "reuse_components": ["PipelineRunner"], "components": [],
+                        "pipelines": [], "interfaces": [], "config_additions": {},
+                    },
+                ]
+                output = io.StringIO()
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=plans) as llm,
+                    redirect_stdout(output),
+                ):
+                    handle_pod(args)
+            finally:
+                os.chdir(previous_cwd)
+
+            self.assertEqual(llm.call_count, 4)
+            self.assertIn("[providers 阶段已冻结]", output.getvalue())
+            self.assertIn("进入 services 阶段", output.getvalue())
 
     def test_studio_discovers_cli_interface_and_connected_routes(self):
         with tempfile.TemporaryDirectory() as tmp:

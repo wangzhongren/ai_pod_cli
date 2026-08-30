@@ -5,8 +5,9 @@ import os
 import sys
 
 from ai_pod_cli.client import call_llm
-from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path
+from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
+from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
 from ai_pod_cli.sandbox import verify_component_candidate
 
 
@@ -57,6 +58,7 @@ def handle_create(args):
     - 每个组件的 import 路径见上方组件池，文件名（括号里的 .py 文件）必须**原样使用**！
     - **禁止 `from modules import X`！禁止 `from modules import X, Y, Z`！** 每个组件必须从自己的子目录导入。
     - ConfigStore 必须从 ai_pod_cli.config_store 导入，禁止从 modules 导入！
+    - ModelRepository 必须从 ai_pod_cli.repository 导入，禁止从 modules 导入！
     - ai_pod_cli.config_store.ConfigStore → from ai_pod_cli.config_store import ConfigStore
     - modules.providers.xxx.XXX → from modules.providers.xxx import XXX
     - modules.services.xxx.XXX → from modules.services.xxx import XXX
@@ -66,7 +68,30 @@ def handle_create(args):
     - 不需要则返回空数组。
     """
 
-    if args.category == "provider":
+    if args.category == "model":
+        system_prompt = common_context + f"""
+    你的任务：生成一个共享 **data model**，类似 Java DTO，供多个组件共同引用。
+
+    【model 规范】：
+    - 只生成一个 SQLModel 表类，类名必须是 {args.name}。
+    - 必须 `from sqlmodel import Field` 和 `from ai_pod_cli import Model`。
+    - 必须使用 `class {args.name}(Model, table=True)`，并定义主键字段。
+    - 字段必须有完整类型注解。
+    - 嵌套结构拆成独立 Model 时，本次仍只返回主 Model 文件所需的完整代码。
+    - 不使用 injector、PipelineContext、execute、ctx、Provider 或业务逻辑。
+
+    返回 JSON（不要 Markdown 块标记）：
+    {{
+        "dependencies": [],
+        "inputs": {{}},
+        "outputs": {{}},
+        "ai_spec": "模型字段及语义说明",
+        "code": "完整 Python 源代码",
+        "config_additions": {{}},
+        "extra_deps": []
+    }}
+    """
+    elif args.category == "provider":
         system_prompt = common_context + f"""
     你的任务：生成一个 **provider（基础设施提供者）** 组件。
 
@@ -74,6 +99,8 @@ def handle_create(args):
     - provider 是基础设施组件（如 DB、缓存、HTTP 客户端、邮件发送器等），不需要 execute 方法。
     - 只需要提供业务方法（如 query、send、get、set 等），每个方法有明确的入参和返回值。
     - 组件名称: {args.name}，类名必须与此一致。
+    - str/int/float/bool 可使用简写；dict/list 必须使用包含 type、required、properties、items 的嵌套 Schema。
+    - 必需字段缺失时必须抛出异常，禁止使用空默认值或 continue 静默忽略。
 
     【provider 模板】（RedisStore，依赖 ConfigStore 读取配置）：
     ```python
@@ -121,6 +148,7 @@ def handle_create(args):
     - 组件名称: {args.name}，类名必须与此一致。
 
     【service 模板】（StockChecker，依赖 ConfigStore）：
+    - 数据库存取必须注入 ModelRepository；严禁编写任何原始 SQL 字符串。
     ```python
     from injector import inject
     from ai_pod_cli.context import PipelineContext
@@ -151,8 +179,8 @@ def handle_create(args):
     返回 JSON（不要 Markdown 块标记）：
     {{
         "dependencies": ["依赖ID"],
-        "inputs": {{"参数名": "类型 — 说明"}},
-        "outputs": {{"输出键": "类型 — 说明"}},
+        "inputs": {{"参数名": "类型 — 说明", "对象参数": {{"type": "object", "required": ["items"], "properties": {{"items": {{"type": "array", "items": {{"type": "object", "required": ["id"], "properties": {{"id": {{"type": "string"}}}}}}}}}}}}}},
+        "outputs": {{"输出键": "类型 — 说明；对象和数组使用相同的嵌套 Schema"}},
         "ai_spec": "对 execute 方法的技术规格描述",
         "code": "完整 Python 源代码",
         "config_additions": {{"section": {{"key": {{"value": "", "comment": ""}}}}}},
@@ -163,11 +191,16 @@ def handle_create(args):
 
     user_content = f"新组件名称: {args.name}\n组件分类: {args.category}\n人类诉求描述: {args.desc}"
 
-    max_attempts = 3
+    max_attempts = 5
     feedback = ""
+    candidate_result = None
     for attempt in range(1, max_attempts + 1):
         try:
-            result = call_llm(system_prompt, user_content + feedback, json_mode=True, temperature=0.1)
+            if candidate_result is None:
+                result = call_llm(system_prompt, user_content + feedback, json_mode=True, temperature=0.1)
+            else:
+                result = candidate_result
+                candidate_result = None
 
             dependencies = result.get("dependencies", [])
             ai_spec = result.get("ai_spec", "")
@@ -186,7 +219,7 @@ def handle_create(args):
                 return
 
             violations = validate_component_contract(
-                generated_code, args.name, args.category, inputs, outputs,
+                generated_code, args.name, args.category, inputs, outputs, methods,
             )
             known_ids = {bean.get("id") for bean in beans.get("beans", [])}
             for dependency in dependencies:
@@ -212,6 +245,24 @@ def handle_create(args):
             if violations:
                 if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return
+                failure_kind = classify_failures(violations)
+                if can_patch_code(failure_kind):
+                    try:
+                        patch_result = call_llm(
+                            "你是严格的 Python 最小补丁生成器，只能按要求返回 JSON patches。",
+                            patch_prompt(generated_code, violations, failure_kind),
+                            json_mode=True, temperature=0.0, max_tokens=8192,
+                        )
+                        candidate_result = dict(result)
+                        candidate_result["code"] = apply_code_patches(
+                            generated_code, patch_result.get("patches"),
+                            args.name, failure_kind,
+                        )
+                        feedback = ""
+                        print(f"   🩹 已应用 {failure_kind} 最小补丁；保留其余候选内容并重新验证。")
+                        continue
+                    except Exception as patch_error:
+                        print(f"   ⚠️  最小补丁无效 ({patch_error})，回退到结构化重生成。")
                 feedback = repair_feedback(violations)
                 continue
             break
@@ -307,6 +358,12 @@ def handle_create(args):
             "methods": methods,
             "description": f"人类诉求: {args.desc}。技术规格: {ai_spec}",
         }
+        if args.category == "model":
+            new_bean["fields"] = extract_model_fields(generated_code, args.name)
+        if args.category == "provider":
+            resources = extract_sql_resources(generated_code)
+            if resources:
+                new_bean["resources"] = resources
 
         beans["beans"] = [b for b in beans["beans"] if b["id"] != args.name]
         beans["beans"].append(new_bean)

@@ -1,7 +1,9 @@
 """Bean configuration registry — init, load, and save the beans_config.json file."""
 
 import json
+import ast
 import os
+import re
 
 CONFIG_FILE = "beans_config.json"
 CONFIG_TOML = "config.toml"
@@ -9,10 +11,12 @@ ROUTES_TOML = "routes.toml"
 MODULES_DIR = "modules"
 PROVIDERS_DIR = "modules/providers"
 SERVICES_DIR = "modules/services"
+MODELS_DIR = "modules/models"
 
 CATEGORY_DIR = {
     "provider": PROVIDERS_DIR,
     "service": SERVICES_DIR,
+    "model": MODELS_DIR,
 }
 
 
@@ -33,6 +37,9 @@ DEFAULT_CONFIG_TOML = """\
 # AIPodCli 项目配置
 # 组件通过注入 ConfigStore 读取此文件
 # 你可以自由添加自己的 [section] 和 key
+
+[database]
+url = "sqlite:///database.db"
 
 """
 
@@ -116,6 +123,23 @@ def init_config_if_not_exists():
                     "description": "集中式配置组件。从 config.toml 读取配置，通过 get('section.key') 访问。其他组件应注入 ConfigStore 来获取配置值，而非直接读环境变量。",
                 },
                 {
+                    "id": "ModelRepository",
+                    "category": "provider",
+                    "type": "human_added",
+                    "class_path": "ai_pod_cli.repository.ModelRepository",
+                    "file": "repository.py",
+                    "dependencies": ["ConfigStore"],
+                    "methods": {
+                        "init_db": {"inputs": {}, "outputs": "null"},
+                        "save": {"inputs": {"instance": "model"}, "outputs": "model"},
+                        "get": {"inputs": {"model": "type", "object_id": "any"}, "outputs": "model|null"},
+                        "list": {"inputs": {"model": "type"}, "outputs": "list[model]"},
+                        "find": {"inputs": {"model": "type", "filters": "dict"}, "outputs": "list[model]"},
+                        "delete": {"inputs": {"instance": "model"}, "outputs": "null"}
+                    },
+                    "description": "SQLModel 通用仓库。自动导入全部项目 Model 并建表；Service 只能通过它保存和读取持久化 Model，禁止手写 SQL。"
+                },
+                {
                     "id": "PipelineRunner",
                     "category": "provider",
                     "type": "human_added",
@@ -142,11 +166,23 @@ def init_config_if_not_exists():
 def load_beans_summary() -> str:
     """Return a categorized summary of all beans with method signatures for AI prompts."""
     config = load_beans()
+    models_changed = hydrate_model_fields(config)
+    resources_changed = hydrate_provider_resources(config)
+    if models_changed or resources_changed:
+        save_config(config)
     providers = []
     services = []
+    models = []
     for b in config.get("beans", []):
+        if b.get("status") == "invalid":
+            continue
         desc = b.get("description", "")[:100]
-        if b.get("category") == "provider":
+        if b.get("category") == "model":
+            entry = f"  - {b['id']} ({b.get('class_path', '')})"
+            if b.get("fields"):
+                entry += f"\n      冻结字段: {b['fields']}"
+            models.append(entry)
+        elif b.get("category") == "provider":
             entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
             methods = b.get("methods", {})
             if methods:
@@ -155,6 +191,9 @@ def load_beans_summary() -> str:
                     m_outputs = m_info.get("outputs", "")
                     sig = ", ".join(f"{k}: {v}" for k, v in m_inputs.items())
                     entry += f"\n      .{m_name}({sig}) -> {m_outputs}"
+            resources = b.get("resources", {})
+            if resources:
+                entry += f"\n      冻结资源: {resources}"
             providers.append(entry)
         else:
             entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
@@ -166,12 +205,89 @@ def load_beans_summary() -> str:
                 entry += f"\n      输出: { {k: v for k, v in list(outputs.items())[:5]} }"
             services.append(entry)
 
-    lines = ["当前组件池：", "", "  【provider（可注入的依赖，附方法签名）】"]
+    lines = ["当前组件池：", "", "  【model（不可注入；字段类型已冻结）】"]
+    lines.extend(models if models else ["  (无)"])
+    lines.append("")
+    lines.append("  【provider（可注入的依赖，附方法签名）】")
     lines.extend(providers if providers else ["  (无)"])
     lines.append("")
     lines.append("  【service（有 execute，可放入管线）】")
     lines.extend(services if services else ["  (无)"])
     return "\n".join(lines)
+
+
+def extract_model_fields(code: str, class_name: str) -> dict[str, str]:
+    """Extract a stable field map from a generated Model dataclass."""
+    tree = ast.parse(code)
+    model = next(
+        (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name),
+        None,
+    )
+    if model is None:
+        return {}
+    return {
+        node.target.id: ast.unparse(node.annotation)
+        for node in model.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+
+
+def hydrate_model_fields(config: dict) -> bool:
+    """Backfill schemas for Models created before registry field metadata existed."""
+    changed = False
+    for bean in config.get("beans", []):
+        if bean.get("category") != "model" or bean.get("fields"):
+            continue
+        path = os.path.join(MODULES_DIR, "models", bean.get("file", ""))
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as source:
+                fields = extract_model_fields(source.read(), bean.get("id", ""))
+        except (OSError, SyntaxError):
+            continue
+        if fields:
+            bean["fields"] = fields
+            changed = True
+    return changed
+
+
+def extract_sql_resources(code: str) -> dict:
+    """Extract literal CREATE TABLE schemas exposed by an infrastructure Provider."""
+    tables = {}
+    pattern = re.compile(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][\w]*)\s*\((.*?)\)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(code):
+        columns = {}
+        for raw_column in match.group(2).split(","):
+            parts = raw_column.strip().split()
+            if len(parts) < 2 or parts[0].upper() in {"PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"}:
+                continue
+            columns[parts[0].strip('`"[]')] = parts[1].upper()
+        tables[match.group(1)] = {"columns": columns}
+    return {"tables": tables} if tables else {}
+
+
+def hydrate_provider_resources(config: dict) -> bool:
+    """Backfill literal infrastructure resource contracts from Provider source."""
+    changed = False
+    for bean in config.get("beans", []):
+        if bean.get("category") != "provider" or bean.get("resources"):
+            continue
+        path = os.path.join(MODULES_DIR, "providers", bean.get("file", ""))
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as source:
+                resources = extract_sql_resources(source.read())
+        except OSError:
+            continue
+        if resources:
+            bean["resources"] = resources
+            changed = True
+    return changed
 
 
 def load_beans() -> dict:

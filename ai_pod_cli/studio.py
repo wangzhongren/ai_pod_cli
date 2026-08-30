@@ -175,12 +175,13 @@ class StudioApi:
                 previous = Path.cwd()
                 os.chdir(root)
                 try:
-                    for directory in (Path("modules/providers"), Path("modules/services"), Path("pipelines")):
+                    for directory in (Path("modules/models"), Path("modules/providers"), Path("modules/services"), Path("pipelines")):
                         directory.mkdir(parents=True, exist_ok=True)
                     for init_file, description in (
                         (Path("modules/__init__.py"), "AIPod project components."),
                         (Path("modules/providers/__init__.py"), "Infrastructure provider components."),
                         (Path("modules/services/__init__.py"), "Business service components."),
+                        (Path("modules/models/__init__.py"), "Shared typed data models."),
                         (Path("pipelines/__init__.py"), "AIPod pipelines."),
                     ):
                         if not init_file.exists():
@@ -321,9 +322,9 @@ class StudioApi:
                 unknown = [item for item in services if item not in by_id]
                 if unknown:
                     raise StudioError(f"组件不存在：{', '.join(unknown)}")
-                providers = [item for item in services if by_id[item].get("category") == "provider"]
-                if providers:
-                    raise StudioError(f"Provider 不能进入 Pipeline：{', '.join(providers)}")
+                invalid = [item for item in services if by_id[item].get("category") != "service"]
+                if invalid:
+                    raise StudioError(f"只有 Service 能进入 Pipeline：{', '.join(invalid)}")
 
                 contract = analyze_pipeline_contracts(services, components)
                 if not contract["valid"]:
@@ -333,6 +334,12 @@ class StudioApi:
                             f"疑似同义字段漂移：{issue['component']} 需要 '{issue['field']}'，"
                             f"但上游提供 '{issue['produced_field']}'。请统一字段名后再保存。"
                         )
+                    if issue["code"] == "contract_schema_mismatch":
+                        details = ", ".join(
+                            f"{item['path']} ({item['produced']} -> {item['required']})"
+                            for item in issue["schema_mismatches"]
+                        )
+                        raise StudioError(f"嵌套 Schema 不兼容：{details}")
                     raise StudioError(
                         f"契约不兼容：{issue['component']}.{issue['field']} "
                         f"需要 {issue['required']}，上游提供 {issue['produced']}"
@@ -827,9 +834,9 @@ class StudioApi:
         from ai_pod_cli.client import call_llm
 
         plan = call_llm(
-            "你是 AIPod 组件架构师。根据需求判断应创建 service（业务逻辑）还是 provider（基础设施），"
+            "你是 AIPod 架构师。根据需求判断应创建 model（共享数据结构）、service（业务逻辑）还是 provider（基础设施），"
             "并给出简洁、合法、以大写字母开头的 Python 类名。只返回 JSON。",
-            f"组件需求：{description}\n返回格式：{{\"name\":\"ClassName\",\"category\":\"service|provider\"}}",
+            f"组件需求：{description}\n返回格式：{{\"name\":\"ClassName\",\"category\":\"model|service|provider\"}}",
             json_mode=True,
             temperature=0.1,
         )
@@ -839,8 +846,8 @@ class StudioApi:
     def _validate_component_identity(name: str, category: str) -> None:
         if not re.fullmatch(r"[A-Z][A-Za-z0-9_]*", name):
             raise StudioError("组件名必须是以大写字母开头的 Python 类名")
-        if category not in {"service", "provider"}:
-            raise StudioError("组件类型必须是 service 或 provider")
+        if category not in {"model", "service", "provider"}:
+            raise StudioError("类型必须是 model、service 或 provider")
 
     def _import_component(self, spec: dict, description: str) -> dict:
         name = str(spec.get("name", "")).strip()

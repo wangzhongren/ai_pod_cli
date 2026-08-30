@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "AIPodCli"
-version = "0.7.2"
+version = "0.7.3"
 description = "AI-native application framework where AI builds software and a DI runtime executes it"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
     "tomlkit>=0.12",
+    "sqlmodel>=0.0.24",
     "tomli>=2.0; python_version < '3.11'",
 ]
 license = {text = "MIT"}

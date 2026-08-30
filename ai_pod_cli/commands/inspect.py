@@ -23,7 +23,7 @@ def handle_inspect(args) -> None:
     summary = result.get("summary", {})
     if summary:
         print("📋 AIPod Project Model")
-        print(f"   组件: {summary['component_count']} | provider: {summary['provider_count']} | service: {summary['service_count']}")
+        print(f"   元素: {summary['component_count']} | model: {summary.get('model_count', 0)} | provider: {summary['provider_count']} | service: {summary['service_count']}")
         print(f"   Pipeline: {summary['pipeline_count']} | 校验: {'通过' if result['validation']['valid'] else '发现问题'}")
     else:
         print(json.dumps(result, ensure_ascii=False, indent=2))

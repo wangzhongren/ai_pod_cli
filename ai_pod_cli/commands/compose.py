@@ -254,6 +254,14 @@ def handle_compose(args):
                         f"字段类型不兼容：{issue['component']}.{issue['field']} 需要 "
                         f"{issue['required']}，上游提供 {issue['produced']}"
                     )
+                elif issue["code"] == "contract_schema_mismatch":
+                    details = ", ".join(
+                        f"{item['path']} ({item['produced']} -> {item['required']})"
+                        for item in issue["schema_mismatches"]
+                    )
+                    violations.append(
+                        f"嵌套 Schema 不兼容：{issue['component']}.{issue['field']}：{details}"
+                    )
             if not violations:
                 violations.extend(
                     verify_pipeline_candidate(

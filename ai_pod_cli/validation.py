@@ -6,12 +6,37 @@ executed only when a developer runs a pipeline.
 """
 
 import ast
+import re
 
 from ai_pod_cli.security import validate_code
-from ai_pod_cli.contracts import semantic_field_similarity
+from ai_pod_cli.contracts import normalize_type, semantic_field_similarity
 
 
 _CONTROL_OUTPUT_KEYS = {"status", "error", "message", "reason", "ok"}
+
+
+def _contains_model_ref(spec) -> bool:
+    if not isinstance(spec, dict):
+        return False
+    if isinstance(spec.get("model"), str) and spec["model"].strip():
+        return True
+    return any(_contains_model_ref(value) for value in spec.values())
+
+
+def _is_valid_boundary_schema(spec) -> bool:
+    """Allow scalars, Models, and explicitly typed arrays of those values."""
+    scalar_types = {"any", "str", "bool", "int", "float", "datetime", "datetime.datetime", "none", "null"}
+    if isinstance(spec, dict) and spec.get("model"):
+        return True
+    field_type = normalize_type(spec)
+    if all(item in scalar_types for item in field_type.split("|")):
+        return True
+    if field_type == "list" and isinstance(spec, dict) and "items" in spec:
+        return _is_valid_boundary_schema(spec["items"])
+    if field_type == "dict" and isinstance(spec, dict):
+        additional = spec.get("additionalProperties")
+        return additional is not None and _is_valid_boundary_schema(additional)
+    return False
 
 
 def extract_component_fields(code: str) -> dict[str, list[str]]:
@@ -97,13 +122,22 @@ def repair_feedback(violations: list[str]) -> str:
     return (
         "\n\n上一轮生成未通过本地预检。请只返回修正后的完整 JSON，"
         "并确保 code 字段的代码解决以下问题：\n"
-        f"{details}"
+        f"{details}\n\n"
+        "Contract 修复规则（必须照此输出 JSON 对象，不要写类型说明字符串）：\n"
+        "- 单个 Model：{\"model\":\"modules.models.<module>.<Class>\"}\n"
+        "- Model 数组：{\"type\":\"array\",\"items\":{\"model\":"
+        "\"modules.models.<module>.<Class>\"}}\n"
+        "- 标量数组：{\"type\":\"array\",\"items\":{\"type\":\"str\"}}\n"
+        "- 动态 Map：{\"type\":\"object\",\"additionalProperties\":{\"type\":\"float\"}}\n"
+        "- 禁止使用 \"list\"、\"list[Foo]\"、\"Foo — description\" 代替上述结构。\n"
+        "- code 实际写入 ctx 的值必须满足该结构及冻结 Model 的每个字段类型。"
     )
 
 
 def validate_component_contract(
     code: str, class_name: str, category: str,
     inputs: dict | None = None, outputs: dict | None = None,
+    methods: dict | None = None,
 ) -> list[str]:
     """Return violations when generated component code misses its AIPod contract."""
     violations = validate_code(code)
@@ -127,6 +161,11 @@ def validate_component_contract(
                 violations.append(
                     "ConfigStore 必须使用 `from ai_pod_cli.config_store import ConfigStore` 导入"
                 )
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "ModelRepository" for alias in node.names):
+            if node.module != "ai_pod_cli.repository":
+                violations.append(
+                    "ModelRepository 必须使用 `from ai_pod_cli.repository import ModelRepository` 导入"
+                )
     if violations:
         return list(dict.fromkeys(violations))
     component = next(
@@ -136,7 +175,37 @@ def validate_component_contract(
     if component is None:
         return [f"未找到名称为 '{class_name}' 的组件类"]
 
+    if category == "model":
+        bases = {
+            base.id for base in component.bases if isinstance(base, ast.Name)
+        }
+        if "Model" not in bases:
+            violations.append(f"model '{class_name}' 必须继承 ai_pod_cli.Model")
+        table_enabled = any(
+            keyword.arg == "table" and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True for keyword in component.keywords
+        )
+        if not table_enabled:
+            violations.append(f"model '{class_name}' 必须使用 class {class_name}(Model, table=True)")
+        return list(dict.fromkeys(violations))
+
+    if category == "provider":
+        # Provider APIs may return opaque infrastructure handles (sessions,
+        # engines, clients). Model-specific enforcement is registry-aware and
+        # therefore happens in the Pod generation loop.
+        return list(dict.fromkeys(violations))
+
     if category == "service":
+        sql_pattern = re.compile(
+            r"^\s*(?:CREATE\s+(?:TABLE|INDEX)|INSERT\s+INTO|SELECT\s+.+\s+FROM|"
+            r"UPDATE\s+\w+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+(?:TABLE|INDEX))\b",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for node in ast.walk(component):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and sql_pattern.search(node.value):
+                violations.append(
+                    "Service 禁止编写原始 SQL；请注入 ModelRepository 并使用 save/get/list/find/delete"
+                )
         execute = next(
             (node for node in component.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "execute"),
             None,

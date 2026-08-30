@@ -103,10 +103,13 @@ def build_project_model() -> dict:
             issues.append({**issue, "pipeline": pipeline["name"]})
 
     provider_count = sum(component.get("category") == "provider" for component in components)
+    model_count = sum(component.get("category") == "model" for component in components)
+    service_count = sum(component.get("category") == "service" for component in components)
     summary = {
         "component_count": len(components),
         "provider_count": provider_count,
-        "service_count": len(components) - provider_count,
+        "model_count": model_count,
+        "service_count": service_count,
         "pipeline_count": len(pipelines),
     }
     return {

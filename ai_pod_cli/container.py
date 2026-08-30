@@ -10,6 +10,7 @@ from time import perf_counter
 from injector import Injector, Module, singleton
 
 from ai_pod_cli.context import PipelineContext
+from ai_pod_cli.contracts import validate_contract_data
 from ai_pod_cli.result import Failure, Success, normalize_result, serialize_result
 
 
@@ -23,10 +24,13 @@ class DynamicAIContainerModule(Module):
     def configure(self, binder):
         # Ensure the cwd is on sys.path so dynamic imports from modules/ work
         cwd = os.getcwd()
-        if cwd not in sys.path:
-            sys.path.append(cwd)
+        if cwd in sys.path:
+            sys.path.remove(cwd)
+        sys.path.insert(0, cwd)
 
         for bean in self._config["beans"]:
+            if bean.get("category") == "model":
+                continue
             module_path, class_name = bean["class_path"].rsplit(".", 1)
             module = importlib.import_module(module_path)
             cls = getattr(module, class_name)
@@ -36,6 +40,7 @@ class DynamicAIContainerModule(Module):
 def build_container(config: dict) -> Injector:
     """Build and return a fully-wired Injector container from the bean config."""
     container = Injector([DynamicAIContainerModule(config)])
+    container._aipod_config = config
     return container
 
 
@@ -49,13 +54,18 @@ class _ExecutionPolicy:
 class _ComponentRef:
     """Wraps a DI-resolved component instance for pipe chaining."""
 
-    __slots__ = ("_id", "_instance", "_container", "_policy")
+    __slots__ = ("_id", "_instance", "_container", "_policy", "_inputs", "_outputs")
 
-    def __init__(self, component_id: str, instance, container: Injector | None = None, policy=None):
+    def __init__(
+        self, component_id: str, instance, container: Injector | None = None,
+        policy=None, inputs=None, outputs=None,
+    ):
         self._id = component_id
         self._instance = instance
         self._container = container
         self._policy = policy or _ExecutionPolicy()
+        self._inputs = inputs or {}
+        self._outputs = outputs or {}
 
     def __or__(self, other):
         """Chain to the next component via |."""
@@ -88,6 +98,8 @@ class _ComponentRef:
             self._instance,
             self._container,
             replace(self._policy, **changes),
+            self._inputs,
+            self._outputs,
         )
 
     def _fallback_ref(self):
@@ -109,8 +121,19 @@ class _ComponentRef:
         for attempt in range(self._policy.retries + 1):
             attempts = attempt + 1
             try:
+                input_errors = validate_contract_data(
+                    {**ctx.params, **ctx.data}, self._inputs, self._id,
+                )
+                if input_errors:
+                    raise ValueError("inputs schema validation failed: " + "; ".join(input_errors))
                 raw_result = self.execute(ctx)
                 normalized = normalize_result(raw_result)
+                if isinstance(normalized, Success):
+                    output_errors = validate_contract_data(
+                        {**ctx.data, **normalized.output}, self._outputs, self._id,
+                    )
+                    if output_errors:
+                        raise ValueError("outputs schema validation failed: " + "; ".join(output_errors))
                 if isinstance(normalized, Success):
                     break
                 last_error = normalized.error
@@ -209,7 +232,15 @@ class Pod:
     def __call__(self, cls) -> _ComponentRef:
         """Resolve a component from the container and wrap it for pipe chaining."""
         instance = self._container.get(cls)
-        return _ComponentRef(cls.__name__, instance, self._container)
+        config = getattr(self._container, "_aipod_config", {})
+        bean = next(
+            (item for item in config.get("beans", []) if item.get("id") == cls.__name__),
+            {},
+        )
+        return _ComponentRef(
+            cls.__name__, instance, self._container,
+            inputs=bean.get("inputs"), outputs=bean.get("outputs"),
+        )
 
     def get(self, cls):
         """Direct access (same as container.get) for non-pipe usage."""

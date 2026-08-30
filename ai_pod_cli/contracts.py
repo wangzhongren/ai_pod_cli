@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import importlib
+from datetime import datetime
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 from typing import Any
@@ -18,12 +20,19 @@ _TYPE_ALIASES = {
 def normalize_type(spec: Any) -> str:
     """Extract a stable type token from legacy or structured field metadata."""
     if isinstance(spec, dict):
+        if spec.get("model"):
+            return "model"
         spec = spec.get("type", "any")
     if not isinstance(spec, str) or not spec.strip():
         return "any"
     token = re.split(r"\s*(?:—|–|-|:)\s*", spec.strip(), maxsplit=1)[0]
     token = re.sub(r"\s+", "", token).lower()
     token = re.sub(r"\((?:optional|required)\)$", "", token)
+    scalar_with_qualifier = re.match(
+        r"^(str|string|int|integer|float|number|bool|boolean)\([^)]*\)$", token,
+    )
+    if scalar_with_qualifier:
+        token = scalar_with_qualifier.group(1)
     return _TYPE_ALIASES.get(token, token or "any")
 
 
@@ -36,31 +45,161 @@ def types_compatible(produced: str, required: str) -> bool:
     return produced == "int" and required == "float"
 
 
+def _required_properties(spec: Any) -> set[str]:
+    if not isinstance(spec, dict):
+        return set()
+    required = spec.get("required", [])
+    return set(required) if isinstance(required, list) else set()
+
+
+def schema_compatibility(produced: Any, required: Any, path: str = "") -> list[dict]:
+    """Return nested schema mismatches using a small, backwards-compatible JSON Schema subset."""
+    mismatches: list[dict] = []
+    produced_type, required_type = normalize_type(produced), normalize_type(required)
+    if not types_compatible(produced_type, required_type):
+        return [{"path": path or "$", "produced": produced_type, "required": required_type}]
+    if required_type == "model":
+        produced_model = produced.get("model") if isinstance(produced, dict) else None
+        required_model = required.get("model") if isinstance(required, dict) else None
+        if produced_model != required_model:
+            return [{
+                "path": path or "$", "produced": produced_model or "unknown model",
+                "required": required_model or "unknown model",
+            }]
+        return []
+    if not isinstance(required, dict) or not isinstance(produced, dict):
+        return mismatches
+
+    if required_type == "dict":
+        produced_props = produced.get("properties", {})
+        required_props = required.get("properties", {})
+        if not isinstance(produced_props, dict) or not isinstance(required_props, dict):
+            return mismatches
+        produced_required = _required_properties(produced)
+        for name in _required_properties(required):
+            child_path = f"{path}.{name}" if path else name
+            if name not in produced_props or name not in produced_required:
+                mismatches.append({
+                    "path": child_path, "produced": "missing", "required": "required field",
+                })
+            else:
+                mismatches.extend(schema_compatibility(
+                    produced_props[name], required_props.get(name, {}), child_path,
+                ))
+    elif required_type == "list" and "items" in required:
+        mismatches.extend(schema_compatibility(
+            produced.get("items", {}), required["items"], f"{path}[]" if path else "$[]",
+        ))
+    return mismatches
+
+
+def validate_contract_value(value: Any, spec: Any, path: str = "$") -> list[str]:
+    """Validate a runtime value against the supported contract schema subset."""
+    expected = normalize_type(spec)
+    if expected == "model" and isinstance(spec, dict):
+        model_path = spec.get("model", "")
+        try:
+            module_name, class_name = model_path.rsplit(".", 1)
+            model_class = getattr(importlib.import_module(module_name), class_name)
+            return model_class.validate(value, path)
+        except (ImportError, AttributeError, ValueError) as error:
+            return [f"{path}: cannot load model {model_path}: {error}"]
+    checks = {
+        "str": lambda item: isinstance(item, str),
+        "bool": lambda item: isinstance(item, bool),
+        "int": lambda item: isinstance(item, int) and not isinstance(item, bool),
+        "float": lambda item: isinstance(item, (int, float)) and not isinstance(item, bool),
+        "dict": lambda item: isinstance(item, dict),
+        "list": lambda item: isinstance(item, list),
+        "null": lambda item: item is None,
+        "datetime": lambda item: isinstance(item, datetime),
+        "datetime.datetime": lambda item: isinstance(item, datetime),
+    }
+    if expected != "any" and expected in checks and not checks[expected](value):
+        return [f"{path}: expected {expected}, got {type(value).__name__}"]
+    if not isinstance(spec, dict):
+        return []
+    errors: list[str] = []
+    if expected == "dict" and isinstance(value, dict):
+        properties = spec.get("properties", {})
+        for name in _required_properties(spec):
+            child_path = f"{path}.{name}"
+            if name not in value:
+                errors.append(f"{child_path}: required field is missing")
+            elif isinstance(properties, dict) and name in properties:
+                errors.extend(validate_contract_value(value[name], properties[name], child_path))
+        if isinstance(properties, dict):
+            for name in value.keys() & properties.keys() - _required_properties(spec):
+                errors.extend(validate_contract_value(value[name], properties[name], f"{path}.{name}"))
+        additional = spec.get("additionalProperties")
+        if additional is not None:
+            for name in value.keys() - set(properties):
+                errors.extend(validate_contract_value(value[name], additional, f"{path}.{name}"))
+    elif expected == "list" and isinstance(value, list) and "items" in spec:
+        for index, item in enumerate(value):
+            errors.extend(validate_contract_value(item, spec["items"], f"{path}[{index}]"))
+    return errors
+
+
+def validate_contract_data(data: dict, fields: Any, prefix: str = "$") -> list[str]:
+    """Validate named context fields, including required top-level values."""
+    if not isinstance(fields, dict):
+        return []
+    errors: list[str] = []
+    for name, spec in fields.items():
+        required_flag = spec.get("required") if isinstance(spec, dict) else None
+        required = (
+            required_flag if isinstance(required_flag, bool)
+            else not isinstance(spec, dict) or "default" not in spec
+        )
+        if name not in data:
+            if required:
+                errors.append(f"{prefix}.{name}: required field is missing")
+            continue
+        errors.extend(validate_contract_value(data[name], spec, f"{prefix}.{name}"))
+    return errors
+
+
 @dataclass(frozen=True)
 class ContractField:
     name: str
     type: str = "any"
     required: bool = True
     description: str = ""
+    schema: Any = None
 
     @classmethod
     def from_spec(cls, name: str, spec: Any) -> "ContractField":
         if isinstance(spec, dict):
+            required_flag = spec.get("required")
             return cls(
                 name=name,
                 type=normalize_type(spec),
-                required=bool(spec.get("required", "default" not in spec)),
+                required=(
+                    required_flag if isinstance(required_flag, bool)
+                    else "default" not in spec
+                ),
                 description=str(spec.get("description", "")),
+                schema=spec,
             )
         text = str(spec or "")
         parts = re.split(r"\s*(?:—|–)\s*", text, maxsplit=1)
-        return cls(name=name, type=normalize_type(text), description=parts[1] if len(parts) > 1 else "")
+        return cls(
+            name=name, type=normalize_type(text),
+            description=parts[1] if len(parts) > 1 else "", schema=spec,
+        )
 
     def as_dict(self) -> dict:
-        return {
+        result = {
             "name": self.name, "type": self.type,
             "required": self.required, "description": self.description,
         }
+        if isinstance(self.schema, dict):
+            result.update({
+                key: value for key, value in self.schema.items()
+                if key not in {"name", "type", "required", "description"}
+            })
+        return result
 
 
 def fields_from_metadata(metadata: Any) -> dict[str, ContractField]:
@@ -138,7 +277,19 @@ def analyze_pipeline_contracts(service_ids: list[str], components: list[dict]) -
                         missing.append(name)
                 continue
             if types_compatible(produced.type, required.type):
-                matched.append(name)
+                nested = schema_compatibility(produced.schema, required.schema, name)
+                if nested:
+                    mismatch = {
+                        "field": name, "produced": produced.type,
+                        "required": required.type, "schema_mismatches": nested,
+                    }
+                    mismatches.append(mismatch)
+                    issues.append({
+                        "code": "contract_schema_mismatch", "component": service_id,
+                        "field": name, "schema_mismatches": nested,
+                    })
+                else:
+                    matched.append(name)
             else:
                 mismatch = {"field": name, "produced": produced.type, "required": required.type}
                 mismatches.append(mismatch)
