@@ -20,8 +20,14 @@ from ai_pod_cli.contracts import (
     validate_contract_data,
 )
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
-from ai_pod_cli.commands.pod import handle_pod
-from ai_pod_cli.sandbox import sample_value
+from ai_pod_cli.commands.pod import (
+    _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status, handle_pod,
+)
+from ai_pod_cli.commands.verify import _bounded_output, _project_traceback_locations, verify_project
+from ai_pod_cli.sandbox import (
+    materialize_path_fixtures, sample_value, verify_component_candidate,
+)
+from ai_pod_cli.decision import reduce_decision_fragments, reduce_evidence
 from ai_pod_cli.agent_output import execute_json_command
 from ai_pod_cli.project_model import inspect_project
 from ai_pod_cli.runner import PipelineRunner
@@ -34,7 +40,6 @@ from ai_pod_cli.result import Effect, Failure, Success
 from ai_pod_cli.repair import apply_code_patches, classify_failures
 from ai_pod_cli.run_store import get_run_trace, list_run_traces, write_run_trace
 from ai_pod_cli.studio import StudioApi, StudioError, _ProgressCapture, studio_asset_path
-from ai_pod_cli.sandbox import sample_value, verify_component_candidate
 from ai_pod_cli.validation import (
     extract_component_fields,
     repair_feedback,
@@ -66,12 +71,123 @@ class DatedSample(Model):
     day: date
 
 
+class VectorValue(Model):
+    x: float
+    y: float
+
+
+class OptionalValue(Model):
+    label: str | None
+
+
 class RepositoryItem(Model, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
 
 
 class RuntimeIntegrationTests(unittest.TestCase):
+    def test_verify_reports_real_failure_and_project_location(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                init_config_if_not_exists()
+                script = Path("broken_check.py")
+                script.write_text(
+                    "raise RuntimeError('integration failed')\n", encoding="utf-8",
+                )
+                result = verify_project([sys.executable, str(script)], timeout=10)
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(result["checks"]["execution"]["exit_code"], 1)
+                self.assertEqual(result["repair"]["suggested_files"], ["broken_check.py"])
+            finally:
+                os.chdir(previous_cwd)
+
+    def test_verify_ignores_traceback_files_outside_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            output = f'  File "{root / "inside.py"}", line 7\n  File "C:/outside.py", line 2'
+            self.assertEqual(
+                _project_traceback_locations(output, root),
+                [{"file": "inside.py", "line": 7}],
+            )
+
+    def test_verify_redacts_common_credentials(self):
+        output = _bounded_output("Authorization: Bearer abc.def-123 token=sk-exampleSECRET123")
+        self.assertNotIn("abc.def-123", output)
+        self.assertNotIn("sk-exampleSECRET123", output)
+
+    def test_model_sample_prefers_none_for_optional_fields(self):
+        self.assertIsNone(OptionalValue.sample_instance().label)
+
+    def test_sandbox_materializes_only_safe_synthetic_input_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            materialize_path_fixtures(
+                {"input_path": "sample.log", "output_path": "report.json"}, tmp,
+            )
+            content = (Path(tmp) / "sample.log").read_text(encoding="utf-8")
+            self.assertIn("latency_ms=42", content)
+            self.assertFalse((Path(tmp) / "report.json").exists())
+
+    def test_plan_reducer_detects_unknown_dependency_and_cycle(self):
+        plan = {"components": [
+            {"name": "A", "category": "service", "depends_on": ["B"]},
+            {"name": "B", "category": "service", "depends_on": ["A", "Missing"]},
+        ]}
+        result = reduce_decision_fragments(plan, [], "services")
+        codes = {item["code"] for item in result["conflicts"]}
+        self.assertIn("UNKNOWN_DEPENDENCY", codes)
+        self.assertIn("DEPENDENCY_CYCLE", codes)
+
+    def test_plan_mapper_normalizes_legacy_model_dependencies(self):
+        plan = {"components": [{
+            "name": "MoveService", "category": "service",
+            "depends_on": ["Transform", "InputProvider"],
+        }]}
+        existing = [
+            {"id": "Transform", "category": "model"},
+            {"id": "InputProvider", "category": "provider"},
+        ]
+        result = reduce_decision_fragments(plan, existing, "services")
+        self.assertEqual(result["status"], "accepted")
+        fragment = result["fragments"][0]
+        self.assertEqual(fragment["dependencies"], ["InputProvider"])
+        self.assertEqual(fragment["models"], ["Transform"])
+
+    def test_evidence_reducer_never_expands_repair_scope(self):
+        self.assertEqual(reduce_evidence([])["status"], "accepted")
+        reduced = reduce_evidence(["runtime failed", "runtime failed"])
+        self.assertEqual(reduced["status"], "repair_current")
+        self.assertEqual(reduced["repair_scope"], "current_candidate")
+        self.assertEqual(reduced["evidence"], ["runtime failed"])
+
+    def test_canonical_plan_resumes_without_losing_frozen_stage_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                state = _load_decision_plan("build game")
+                state["stages"]["models"]["plan"] = {"pod_name": "models", "components": []}
+                _save_decision_plan(state)
+                loaded = _load_decision_plan("build game")
+                self.assertEqual(loaded["stages"]["models"]["plan"]["pod_name"], "models")
+                self.assertEqual(_resume_stage(loaded), 0)
+                _set_stage_status(loaded, 0, "complete")
+                self.assertEqual(_resume_stage(_load_decision_plan("build game")), 1)
+            finally:
+                os.chdir(previous_cwd)
+
+    def test_value_model_does_not_require_database_table(self):
+        value = VectorValue(x=1, y=2)
+        self.assertEqual(value.model_dump(), {"x": 1.0, "y": 2.0})
+        self.assertEqual(
+            validate_component_contract(
+                "from ai_pod_cli import Model\nclass VectorValue(Model):\n    x: float\n    y: float\n",
+                "VectorValue", "model",
+            ),
+            [],
+        )
+
     def test_model_sample_supports_date(self):
         self.assertEqual(DatedSample.sample_instance().day, date(2024, 1, 1))
 
@@ -271,6 +387,7 @@ class GeneratedArtifactValidationTests(unittest.TestCase):
             "IN",
         )
         self.assertEqual(sample_value("status", {"type": "string", "enum": ["open", "closed"]}), "open")
+        self.assertEqual(sample_value("background_color", "str"), "#ffffff")
 
     def test_model_repository_find_accepts_filter_dict(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -25,7 +25,9 @@ def _sample_type(annotation: Any) -> Any:
     if origin is dict:
         return {}
     if origin in (Union, UnionType):
-        option = next((item for item in args if item is not type(None)), type(None))
+        if type(None) in args:
+            return None
+        option = next(iter(args), type(None))
         return None if option is type(None) else _sample_type(option)
     if isinstance(annotation, type) and issubclass(annotation, Model):
         return annotation.sample_instance()

@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import load_beans, load_beans_summary, save_config, MODULES_DIR, load_config_toml_safe, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
@@ -10,7 +11,60 @@ from ai_pod_cli.validation import (
     repair_feedback, request_repair, validate_component_contract, validate_entry_contract,
 )
 from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
-from ai_pod_cli.sandbox import verify_component_candidate
+from ai_pod_cli.decision import reduce_decision_fragments, reduce_evidence
+
+
+DECISION_PLAN_FILE = Path("aipod_plan.json")
+STAGE_NAMES = ("models", "providers", "services", "pipelines", "interfaces")
+
+
+def _load_decision_plan(desc: str, explicit_stage: int | None = None) -> dict:
+    """Load resumable design decisions, or start a new objective state."""
+    state = None
+    if DECISION_PLAN_FILE.exists():
+        try:
+            candidate = json.loads(DECISION_PLAN_FILE.read_text(encoding="utf-8"))
+            if candidate.get("objective") == desc:
+                state = candidate
+        except (OSError, json.JSONDecodeError):
+            state = None
+    if state is None:
+        state = {
+            "version": 1,
+            "objective": desc,
+            "current_stage": STAGE_NAMES[explicit_stage or 0],
+            "stages": {
+                name: {"status": "pending", "plan": None}
+                for name in STAGE_NAMES
+            },
+        }
+        if explicit_stage is not None:
+            for name in STAGE_NAMES[:explicit_stage]:
+                state["stages"][name]["status"] = "complete"
+    for name in STAGE_NAMES:
+        state.setdefault("stages", {}).setdefault(name, {"status": "pending", "plan": None})
+    return state
+
+
+def _save_decision_plan(state: dict) -> None:
+    """Atomically persist compact decisions; never persist hidden reasoning text."""
+    temporary = DECISION_PLAN_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, DECISION_PLAN_FILE)
+
+
+def _resume_stage(state: dict) -> int | None:
+    for index, name in enumerate(STAGE_NAMES):
+        if state["stages"][name].get("status") != "complete":
+            return index
+    return None
+
+
+def _set_stage_status(state: dict, stage: int, status: str) -> None:
+    name = STAGE_NAMES[stage]
+    state["current_stage"] = name
+    state["stages"][name]["status"] = status
+    _save_decision_plan(state)
 
 
 def _save_pod_plan(
@@ -243,14 +297,26 @@ def handle_pod(args):
     # 确保 requirements.txt 存在（空依赖触发 header 写入）
     append_deps_to_requirements([])
 
+    explicit_stage = int(args._pod_stage) if hasattr(args, "_pod_stage") else None
+    decision_state = _load_decision_plan(desc, explicit_stage)
+    if explicit_stage is None:
+        resumed_stage = _resume_stage(decision_state)
+        if resumed_stage is None:
+            print("✅ 当前需求的 Canonical Plan 已全部完成，无需重新规划。")
+            return
+        stage = resumed_stage
+        if stage > 0 or decision_state["stages"][STAGE_NAMES[stage]].get("plan"):
+            print(f"♻️  [恢复计划] 从阶段 {stage + 1}/5 · {STAGE_NAMES[stage]} 继续。")
+    else:
+        stage = explicit_stage
+
     beans = load_beans()
     existing_beans = load_beans_summary()
     toml_keys = load_config_toml_safe()
-    stage = int(getattr(args, "_pod_stage", 0))
-    stage_names = ("models", "providers", "services", "pipelines", "interfaces")
+    stage_names = STAGE_NAMES
     stage_name = stage_names[min(stage, len(stage_names) - 1)]
     stage_instructions = {
-        0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类，禁止把多个类打包进 LogisticsModels 一类聚合组件。",
+        0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类。明确区分运行时 Value Model（不持久化）和 Persistent Model（需要 ModelRepository/数据库）；禁止把 Vector2、Transform、事件、碰撞结果等瞬时值规划成数据库表。",
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
         2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。复杂输入输出必须引用已生成 Model 的完整类路径。Model 只能普通 import，不能写入 depends_on。",
         3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。",
@@ -296,7 +362,11 @@ def handle_pod(args):
                 "name": "组件类名（PascalCase）",
                 "category": "model、service 或 provider",
                 "description": "详细的组件描述，包括方法签名、输入输出、依赖说明",
-                "depends_on": ["依赖的组件ID_1", "依赖的组件ID_2"]
+                "depends_on": ["需要注入的组件ID_1", "组件ID_2"],
+                "models": ["作为数据引用的 Model Bean ID，不注入"],
+                "requires": ["执行前必须存在的语义字段"],
+                "provides": ["执行后产生的语义字段"],
+                "invariants": ["必须始终成立且可验证的架构约束"]
             }}
         ],
         "pipelines": [
@@ -321,19 +391,43 @@ def handle_pod(args):
     config_additions 为建议新增到 config.toml 的配置项，不需要则为空对象 {{}}。
     """
 
-    try:
-        plan = call_llm(
-            system_prompt,
-            f"需求: {desc}",
-            json_mode=True,
-            temperature=0.2,
-            max_tokens=8192,
-            progress_callback=progress_callback,
-            progress_label=f"Planning stage {stage + 1}/5: {stage_name}",
-        )
-    except Exception as e:
-        print(f"❌ AI 拆解失败: {e}")
-        return
+    stage_record = decision_state["stages"][stage_name]
+    if isinstance(stage_record.get("plan"), dict):
+        plan = stage_record["plan"]
+        print(f"📌 [复用冻结规划] {stage_name} 阶段不再调用规划器。")
+    else:
+        try:
+            plan = call_llm(
+                system_prompt,
+                f"需求: {desc}",
+                json_mode=True,
+                temperature=0.2,
+                max_tokens=8192,
+                progress_callback=progress_callback,
+                progress_label=f"Planning stage {stage + 1}/5: {stage_name}",
+            )
+        except Exception as e:
+            print(f"❌ AI 拆解失败: {e}")
+            return
+        stage_record["plan"] = plan
+        stage_record["status"] = "in_progress"
+        decision_state["current_stage"] = stage_name
+        _save_decision_plan(decision_state)
+
+    reduction = reduce_decision_fragments(plan, beans.get("beans", []), stage_name)
+    stage_record["reduction"] = reduction
+    _save_decision_plan(decision_state)
+    if reduction["warnings"]:
+        print(f"⚠️  [Plan Reduce] {len(reduction['warnings'])} 个架构警告：")
+        for warning in reduction["warnings"]:
+            print(f"   ⚠️  {warning['code']}: {warning['message']} ({warning.get('component', '')})")
+    if reduction["conflicts"]:
+        print(f"❌ [Plan Reduce] {len(reduction['conflicts'])} 个决策冲突，代码生成已停止：")
+        for conflict in reduction["conflicts"]:
+            print(f"   ❌ {conflict['code']}: {conflict['message']}")
+        stage_record["status"] = "conflict"
+        _save_decision_plan(decision_state)
+        raise SystemExit(1)
 
     pod_name = plan.get("pod_name", "unnamed_pod")
     components = plan.get("components", [])
@@ -515,6 +609,10 @@ def handle_pod(args):
     # 逐个生成组件
     generated = []
     failed = []
+    reduced_fragments = {
+        item.get("id"): item for item in reduction.get("fragments", [])
+        if item.get("id")
+    }
 
     for i, comp in enumerate(components, 1):
         name = comp["name"]
@@ -527,6 +625,11 @@ def handle_pod(args):
         beans = load_beans()
         beans_context = load_beans_summary()
         toml_keys = load_config_toml_safe()
+        referenced_model_ids = reduced_fragments.get(name, {}).get("models", [])
+        referenced_models = [
+            bean for bean in beans.get("beans", [])
+            if bean.get("id") in referenced_model_ids and bean.get("category") == "model"
+        ]
 
         common = f"""
         当前系统组件池：
@@ -545,6 +648,11 @@ def handle_pod(args):
 
         当前 config.toml 中的配置项（敏感值已隐藏）：
         {toml_keys}
+
+        当前组件由 Plan Reducer 绑定的 Models（数据引用，不注入）：
+        {json.dumps(referenced_models, ensure_ascii=False, indent=2)}
+        - 如果代码读取或输出上述 Model 对象，对应 Contract 必须使用
+          {{"model": "精确 class_path"}}，或对列表元素使用包含该 class_path 的类型。
 
         请生成: {name} ({category}) — {description}
 
@@ -570,9 +678,11 @@ def handle_pod(args):
         if category == "model":
             create_prompt = common + f"""
         【model 规范】：
-        - 必须 `from sqlmodel import Field` 和 `from ai_pod_cli import Model`
-        - 使用 `class {name}(Model, table=True)`，所有字段必须有类型注解
-        - 必须定义 `id: int | None = Field(default=None, primary_key=True)` 主键（已有明确业务主键时可将其设为 primary_key）
+        - 必须 `from ai_pod_cli import Model`；只有持久化实体需要 `from sqlmodel import Field`
+        - 运行时值对象使用 `class {name}(Model)`，不建表、不定义数据库主键
+        - 需要 ModelRepository 持久化的实体使用 `class {name}(Model, table=True)`，并定义 `id: int | None = Field(default=None, primary_key=True)` 主键
+        - 根据组件描述选择一种，禁止把 Vector2、Transform、InputState、CollisionResult、事件等瞬时数据变成数据库表
+        - 所有字段必须有类型注解
         - 只定义数据，不使用 injector、PipelineContext、execute 或业务逻辑
 
         返回 JSON：
@@ -589,6 +699,7 @@ def handle_pod(args):
         - 不涉及 PipelineContext
         - 优先使用 Python 标准库；除非需求明确不可替代，否则 extra_deps 必须为空
         - UTC 时间直接使用 datetime.timezone.utc；不要假设 Windows 已安装 IANA tzdata
+        - import pygame 时，extra_deps 必须填写发行包名 pygame-ce，而不是 pygame
 
         返回 JSON：
         {{
@@ -690,20 +801,9 @@ def handle_pod(args):
                             f"Model '{dependency}' 不能作为注入依赖；请从其 class_path "
                             f"'{known_beans[dependency].get('class_path')}' 直接 import，并从 dependencies 删除"
                         )
-                if not violations:
-                    _module_dir, candidate_class_path = get_module_path(category, name)
-                    candidate_bean = {
-                        "id": name, "category": category, "type": "ai_created",
-                        "class_path": candidate_class_path, "file": f"{name.lower()}.py",
-                        "dependencies": dependencies, "inputs": inputs, "outputs": outputs,
-                        "methods": methods,
-                        "description": f"{description}。技术规格: {ai_spec}",
-                    }
-                    violations.extend(
-                        verify_component_candidate(
-                            os.getcwd(), candidate_bean, code, [],
-                        )
-                    )
+                evidence = reduce_evidence(violations)
+                stage_record["last_evidence"] = evidence
+                _save_decision_plan(decision_state)
                 if violations:
                     if request_repair(
                         violations, attempt, max_attempts,
@@ -791,11 +891,13 @@ def handle_pod(args):
     print(f"🧩 [Pod 阶段组件完成] {pod_name}")
     print(f"   ✅ 组件成功: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")
     if failed:
+        _set_stage_status(decision_state, stage, "in_progress")
         print(f"   ❌ 组件失败: {len(failed)} 个 — {', '.join(failed)}")
         print("   ⛔ Pod 已停止：核心组件未通过，保留此前已验证组件，不生成下游 Pipeline 或入口。")
         raise SystemExit(1)
 
     if stage < 3:
+        _set_stage_status(decision_state, stage, "complete")
         print(f"\n✅ [{stage_name} 阶段已冻结] 重新读取 Bean Pool 后进入 {stage_names[stage + 1]} 阶段。")
         args._pod_stage = stage + 1
         args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
@@ -844,8 +946,10 @@ def handle_pod(args):
 
     if stage == 3:
         if failed_pipelines:
+            _set_stage_status(decision_state, stage, "in_progress")
             print("   ⛔ Pipeline 阶段未完全通过，不规划 Interface。")
             raise SystemExit(1)
+        _set_stage_status(decision_state, stage, "complete")
         print("\n✅ [pipelines 阶段已冻结] 重新读取 routes.toml 后进入 interfaces 阶段。")
         args._pod_stage = 4
         args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
@@ -870,6 +974,7 @@ def handle_pod(args):
                 interface=interface,
             )
             if not entry_info:
+                _set_stage_status(decision_state, stage, "in_progress")
                 print("   ⛔ Interface 阶段失败，已验证的前四阶段保持冻结。")
                 raise SystemExit(1)
             entry_file, extra_deps = entry_info
@@ -879,6 +984,8 @@ def handle_pod(args):
                 print(f"   📦 额外依赖: {', '.join(extra_deps)}")
 
     # 输出汇总
+    if stage == 4:
+        _set_stage_status(decision_state, stage, "complete")
     print(f"\n{'='*50}")
     print(f"🧩 [Pod 生成完毕] {pod_name}")
     print(f"   ✅ 组件: {len(generated)} 个 — {', '.join(generated) if generated else '(无)'}")

@@ -8,7 +8,6 @@ from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
 from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
-from ai_pod_cli.sandbox import verify_component_candidate
 
 
 def handle_create(args):
@@ -73,9 +72,11 @@ def handle_create(args):
     你的任务：生成一个共享 **data model**，类似 Java DTO，供多个组件共同引用。
 
     【model 规范】：
-    - 只生成一个 SQLModel 表类，类名必须是 {args.name}。
+    - 只生成一个 Model 类，类名必须是 {args.name}。
     - 必须 `from sqlmodel import Field` 和 `from ai_pod_cli import Model`。
-    - 必须使用 `class {args.name}(Model, table=True)`，并定义主键字段。
+    - 运行时值对象（Vector2、Transform、CollisionResult、命令/事件）使用 `class {args.name}(Model)`，不建表、不需要主键。
+    - 需要通过 ModelRepository 持久化的实体才使用 `class {args.name}(Model, table=True)`，并定义主键字段。
+    - 根据描述选择其中一种，禁止为了统一形式把瞬时运行数据变成数据库表。
     - 字段必须有完整类型注解。
     - 嵌套结构拆成独立 Model 时，本次仍只返回主 Model 文件所需的完整代码。
     - 不使用 injector、PipelineContext、execute、ctx、Provider 或业务逻辑。
@@ -101,6 +102,7 @@ def handle_create(args):
     - 组件名称: {args.name}，类名必须与此一致。
     - str/int/float/bool 可使用简写；dict/list 必须使用包含 type、required、properties、items 的嵌套 Schema。
     - 必需字段缺失时必须抛出异常，禁止使用空默认值或 continue 静默忽略。
+    - import pygame 时，extra_deps 必须填写发行包名 pygame-ce，而不是 pygame。
 
     【provider 模板】（RedisStore，依赖 ConfigStore 读取配置）：
     ```python
@@ -228,20 +230,6 @@ def handle_create(args):
                         f"依赖 ID '{dependency}' 不存在；必须原样使用组件池中的 ID："
                         + ", ".join(sorted(item for item in known_ids if item))
                     )
-            if not violations:
-                _module_dir, candidate_class_path = get_module_path(args.category, args.name)
-                candidate_bean = {
-                    "id": args.name, "category": args.category, "type": "ai_created",
-                    "class_path": candidate_class_path, "file": f"{args.name.lower()}.py",
-                    "dependencies": dependencies, "inputs": inputs, "outputs": outputs,
-                    "methods": methods,
-                    "description": f"{args.desc}。技术规格: {ai_spec}",
-                }
-                violations.extend(
-                    verify_component_candidate(
-                        os.getcwd(), candidate_bean, generated_code, [],
-                    )
-                )
             if violations:
                 if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return

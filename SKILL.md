@@ -1,246 +1,83 @@
-# AIPod — AI Agent Skill Reference
+---
+name: aipod-development
+description: Build, inspect, compose, run, and repair Python applications managed by AIPod. Use when a project contains beans_config.json, routes.toml, or aipod_plan.json, or when the user asks to use ai-pod-cli or aipod commands.
+---
 
-## What Is This
+# AIPod Development
 
-AIPod is an **AI-native application framework** where AI builds software and a dependency-injected runtime executes it.
+Use AIPod as the architecture and execution protocol. Use your normal code-editing
+tools for implementation repair. Do not embed or invoke another coding agent.
 
-AI generates **reusable components** (not one-off scripts) and **execution pipelines** (not glue code). The runtime assembles and executes them deterministically.
+## Discover the project
 
-**Core principle: generation and execution are separated.** AI generates → developer reviews → runtime executes.
-
-## Installation
+When `beans_config.json` exists, read machine state before making architectural
+decisions:
 
 ```bash
-# Python 3.10+
-pip install aipodcli
+aipod inspect --summary --json
+aipod inspect project --json
 ```
 
-CLI entry point: `aipod`
+Use exact Bean IDs, `class_path` values, Contract fields, and route names returned by
+AIPod. Do not infer them from filenames. If the directory is not initialized and the
+user asked to build an AIPod project, run `aipod init` first.
 
-## Command Decision Tree
+## Build
 
-```
-User wants to...                        → Command
-─────────────────────────────────────────────────────
-Start a new project                     → aipod init
-Create a new component                  → aipod create --category service|provider --name Y --desc "Z"
-Register hand-written component         → aipod add --name X --class-path Y --desc "Z"
-Generate a pipeline (no execution)      → aipod compose "instruction" --name X
-List generated pipelines               → aipod compose --list
-Run a pipeline                          → User runs their entry point (e.g. python app.py route_name)
-Inspect components and pipelines visually → aipod visualize [--open]
-Read project state for planning         → aipod inspect [scope] --json
-Run a pipeline and inspect its outcome  → aipod run route --params '{}' --json
+For a complete requirement, prefer a requirements file so the objective remains stable:
+
+```bash
+aipod pod --file requirements.md --yes --json
 ```
 
-## Commands
+For focused changes:
 
-### `aipod init`
-
-- Creates `modules/`, `pipelines/`, `config.toml`, `routes.toml`, `beans_config.json`
-- Does not call AI and does not generate an entry point
-- Use `aipod entry "project description"` to generate an entry point, or use `aipod pod "requirement"` for the full flow
-
-### `aipod create --category service --name ComponentName --desc "description"`
-
-- `--category service`: business component with `execute(ctx)`; services can be placed in pipelines
-- `--category provider`: infrastructure entity with custom methods (no `execute`); providers are injected into services
-- AI auto-selects dependencies from bean pool
-- AI auto-suggests config.toml entries via `config_additions`
-- AST security check before writing
-- When generation fails local validation, AIPod displays the errors and asks before retrying with that feedback (maximum three attempts)
-- Generated to `modules/<name>.py`, registered in `beans_config.json`
-- Add `--json` for AI Agent use: stdout becomes one JSON envelope with `status`, `changes`, `project`, `error`, and `diagnostics`
-
-### `aipod add --name ClassName --class-path package.module.ClassName --desc "description"`
-
-- Register manually-written components so AI knows about them
-
-### `aipod compose "business instruction" --name pipeline_name`
-
-- AI analyzes instruction, plans component execution chain
-- Generates `pipelines/<name>.py` with pipe syntax
-- Registers route in `routes.toml`
-- **Does NOT execute** — developer runs via entry point
-
-### `aipod compose --list`
-
-- List all saved pipelines
-
-`aipod compose "instruction" --name flow --json` returns the same machine-readable command envelope.
-
-`aipod pod "requirement" --yes --json` is the non-interactive Agent form of Pod generation. Always pass `--yes` with `--json` so the command does not pause for confirmation.
-
-### `aipod visualize [--output FILE] [--open]`
-
-- Generates a standalone interactive HTML graph of providers, services, DI dependencies, routes, and statically detected `S(Service)` pipeline calls
-- Click nodes to inspect their contracts and source paths
-- Reads metadata and pipeline source only; it never imports or executes generated components
-
-### `aipod inspect [project|components|pipelines|component|pipeline|runs|run] [name] --json`
-
-- Primary machine interface for AI agents; outputs the stable Agent Project Model
-- `aipod inspect --summary --json` returns compact counts and validation state for context-limited planning
-- `component`, `pipeline`, and `run` scopes require a name, for example `aipod inspect component SqliteStore --json`
-- Reports missing dependencies and missing pipeline files without importing or executing generated code
-
-### `aipod run route --params '{"key": "value"}' --json`
-
-- Executes a route through `PipelineRunner` and persists a redacted trace in `.aipod/runs/`
-- Returns structured success or failure data, including total duration and per-component durations
-- Inspect recorded executions with `aipod inspect runs --json` or `aipod inspect run RUN_ID --json`
-
-## Code Templates
-
-### Service Component (has `execute`)
-
-```python
-from injector import inject
-from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.config_store import ConfigStore
-
-class MyComponent:
-    @inject
-    def __init__(self, dep_a: DepA, config_store: ConfigStore):
-        self.dep_a = dep_a
-        self.setting = config_store.get("section.key", "default")
-
-    def execute(self, ctx: PipelineContext) -> dict:
-        value = ctx.params.get("key")
-        upstream = ctx.get("upstream_key")
-        result = self.dep_a.process(value)
-        ctx.set("my_output", result)
-        return {"status": "success"}
+```bash
+aipod create --category model --name NAME --desc "DESCRIPTION" --json
+aipod create --category provider --name NAME --desc "DESCRIPTION" --json
+aipod create --category service --name NAME --desc "DESCRIPTION" --json
+aipod compose "INSTRUCTION" --name ROUTE --json
 ```
 
-### Provider Component (no `execute`, custom methods)
+Let `pod` resume `aipod_plan.json`; do not delete or recreate a frozen plan merely to
+retry an incomplete stage.
 
-```python
-from injector import inject
-from ai_pod_cli.config_store import ConfigStore
+## Respect the five layers
 
-class MyProvider:
-    @inject
-    def __init__(self, config_store: ConfigStore):
-        path = config_store.get("my.path", "/default")
+- Models define runtime or persistent data. Import Models; never inject them.
+- Providers expose infrastructure capabilities and may be injected.
+- Services implement focused transformations through `execute(ctx)`.
+- Pipelines compose registered Services.
+- Interfaces expose registered Pipeline routes.
 
-    def query(self, ...) -> ...:
-        ...
+Preserve validated upstream layers when a downstream layer fails. Do not rename Contract
+fields or Bean IDs without concrete evidence that the frozen definition is wrong.
+
+## Verify with real evidence
+
+Generation performs deterministic structural and Contract checks. Validate behavior with
+the project's real test, smoke, or entry command:
+
+```bash
+aipod verify --json -- python -m unittest
+aipod verify --json -- python app.py --smoke
 ```
 
-### Pipeline File
+Run commands as argument arrays after `--`; do not wrap them in a shell string. If no real
+command is known, run `aipod verify --json` for structural checks and inspect discovered
+routes or entry files before choosing one.
 
-```python
-from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.config import load_beans
-from ai_pod_cli.container import build_container, Pod
-from modules.services.component_a import ComponentA
-from modules.services.component_b import ComponentB
+## Repair loop
 
-def run(ctx: PipelineContext):
-    beans = load_beans()
-    S = Pod(build_container(beans))
+When verification fails:
 
-    # Pipe syntax: A → B → C
-    (S(ComponentA) | S(ComponentB) | S(ComponentC)).execute_all(ctx)
+1. Read `checks.structure`, `checks.execution`, and `repair.suggested_files`.
+2. Identify the smallest component supported by the traceback and project model.
+3. Modify that component and directly related tests only.
+4. Do not modify credentials, publish packages, commit, or push unless explicitly asked.
+5. Repeat the same `aipod verify` command.
+6. Stop when it passes, when the same external blocker repeats, or when repair requires
+   changing a frozen architectural decision. Ask the user before expanding scope.
 
-    # Conditional
-    if ctx.get("alert_needed"):
-        (S(Notifier)).execute_all(ctx)
-
-    return ctx.summary()
-```
-
-### Entry Point (using PipelineRunner)
-
-```python
-from ai_pod_cli.runner import PipelineRunner
-
-runner = PipelineRunner()  # reads routes.toml
-result = runner.run("route_name", {"key": "value"})
-```
-
-## Rules — DO and DON'T
-
-### DO
-
-- ✅ Use `@inject` on all `__init__` methods
-- ✅ Only component types in `@inject` constructor params
-- ✅ Use `ConfigStore` for configuration values
-- ✅ Use `ctx.params` for service input parameters
-- ✅ Use `ctx.set()` / `ctx.get()` for inter-component data
-- ✅ Return `ctx.summary()` from pipeline `run()` functions
-- ✅ Import components from correct paths (`modules.xxx` or `ai_pod_cli.xxx`)
-
-### DON'T
-
-- ❌ Put `str`, `int`, `bool` in `@inject` constructor params
-- ❌ Use `os.environ.get()` for config (use ConfigStore)
-- ❌ Manually instantiate dependencies (let DI handle it)
-- ❌ Use `eval()`, `exec()`, `compile()`, `__import__()` (AST blocks these)
-- ❌ Access dunder attributes (`__subclasses__`, `__mro__`, `__globals__`)
-
-## Key APIs
-
-| Class | Key Methods |
-|-------|------------|
-| `PipelineContext` | `ctx.params`, `ctx.set(k,v)`, `ctx.get(k,d)`, `ctx.summary()` |
-| `ConfigStore` | `get("section.key", default)`, `get_section("name")`, `sections()`, `reload()` |
-| `Pod` | `S = Pod(container)`, `S(Class)`, `(S(A) \| S(B)).execute_all(ctx)` |
-| `PipelineRunner` | `PipelineRunner()`, `route_names()`, `run("name", params)` |
-
-## Configuration Files
-
-| File | Purpose | Maintained by |
-|------|---------|---------------|
-| `.env` | LLM API credentials | Developer |
-| `config.toml` | Project settings | Developer + AI |
-| `routes.toml` | Pipeline → route mapping | AI + Developer |
-| `beans_config.json` | Component registry | AI |
-
-## Architecture
-
-```
-Generation (AI)                    Execution (Runtime)
-─────────────────                  ─────────────────────
-init          → project skeleton    python app.py
-create       → components            ↓
-compose      → pipeline + route    PipelineRunner
-entry "desc" → entry point
-                                     ↓
-Developer reviews & commits        routes.toml lookup
-                                     ↓
-                                   load pipeline.run(ctx)
-                                     ↓
-                                   DI container assembles
-                                     ↓
-                                   Pipe chain executes
-                                     ↓
-                                   PipelineContext flows data
-```
-
-## Project Structure (user's project)
-
-```
-project/
-├── app.py / cli.py / consumer.py   ← generated by `entry` or `pod`
-├── config.toml                      ← Project config
-├── routes.toml                      ← Route → pipeline mapping
-├── beans_config.json                ← Component registry
-├── .env                             ← LLM API config (not committed)
-├── modules/                         ← AI-generated components
-│   ├── providers/                   ← infrastructure components
-│   └── services/                    ← business components with execute(ctx)
-└── pipelines/                       ← AI-generated pipelines
-    └── *.py
-```
-
-## Troubleshooting
-
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| `TypeError: 'str' cannot be int` | Param value is string, code expects int | Values auto-convert via `json.loads` |
-| `KeyError: Route not found` | Pipeline not registered | Run `compose` first |
-| `ModuleNotFoundError` | `modules/` not on path | Run from project root |
-| Empty `data.db` | `@inject` has `str` param → injector passes empty string | Use ConfigStore, not constructor params |
-| AST security block | Code uses eval/exec/dunder | Rewrite to avoid blocked patterns |
+Use `aipod inspect run RUN_ID --json` when a registered route has already produced a trace.
+Treat generated code as ordinary Python and review it before production use.

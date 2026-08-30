@@ -48,6 +48,9 @@ def get_client() -> OpenAI:
             api_key=os.environ.get("OPENAI_API_KEY"),
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             timeout=float(os.environ.get("OPENAI_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)),
+            # call_llm owns the visible retry policy.  Leaving SDK retries enabled
+            # nests several silent 120-second attempts inside one displayed attempt.
+            max_retries=0,
         )
     return _client
 

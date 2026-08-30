@@ -181,12 +181,8 @@ def validate_component_contract(
         }
         if "Model" not in bases:
             violations.append(f"model '{class_name}' 必须继承 ai_pod_cli.Model")
-        table_enabled = any(
-            keyword.arg == "table" and isinstance(keyword.value, ast.Constant)
-            and keyword.value.value is True for keyword in component.keywords
-        )
-        if not table_enabled:
-            violations.append(f"model '{class_name}' 必须使用 class {class_name}(Model, table=True)")
+        # Both value objects and persistent entities are first-class Models.
+        # Only persistent Models opt into SQLModel mapping with ``table=True``.
         return list(dict.fromkeys(violations))
 
     if category == "provider":

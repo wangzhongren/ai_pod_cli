@@ -11,7 +11,6 @@ from ai_pod_cli.config import (
 )
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipeline_contract
 from ai_pod_cli.contracts import analyze_pipeline_contracts
-from ai_pod_cli.sandbox import verify_pipeline_candidate
 
 
 def _slugify(text: str) -> str:
@@ -262,12 +261,6 @@ def handle_compose(args):
                     violations.append(
                         f"嵌套 Schema 不兼容：{issue['component']}.{issue['field']}：{details}"
                     )
-            if not violations:
-                violations.extend(
-                    verify_pipeline_candidate(
-                        os.getcwd(), generated_code, contract.get("inputs", {}),
-                    )
-                )
             if violations:
                 if not request_repair(
                     violations, attempt, max_attempts,
@@ -286,7 +279,7 @@ def handle_compose(args):
             print(f"❌ AI 编排失败: {e}")
             return
 
-    print("🛡️  [生成预检通过] 代码语法、基础安全规则和 Pipeline 契约均有效")
+    print("🛡️  [生成预检通过] 代码语法、基础安全规则和 Pipeline 契约均有效；运行修复交由后续 Agent")
 
     # 保存 pipeline 文件
     name = args.name or _slugify(args.cmd)

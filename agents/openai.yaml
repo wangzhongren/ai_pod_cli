@@ -1,0 +1,7 @@
+interface:
+  display_name: "AIPod Development"
+  short_description: "Build and repair governed AIPod applications"
+  default_prompt: "Use $aipod-development to inspect this project, make the requested change, and verify it with real execution evidence."
+
+policy:
+  allow_implicit_invocation: true

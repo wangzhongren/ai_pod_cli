@@ -58,6 +58,11 @@ REQUIREMENTS_HEADER = """\
 # 基础依赖已随 aipodcli 安装，此处列出 AI 生成组件引入的第三方包
 """
 
+DEPENDENCY_ALIASES = {
+    # pygame-ce intentionally keeps the ``pygame`` import namespace.
+    "pygame": "pygame-ce",
+}
+
 
 def append_deps_to_requirements(deps: list[str]):
     """将第三方依赖追加写入根 requirements.txt，已存在的跳过，文件不存在时自动创建。"""
@@ -75,7 +80,7 @@ def append_deps_to_requirements(deps: list[str]):
 
     with open(REQUIREMENTS_FILE, "a", encoding="utf-8") as f:
         for dep in deps:
-            dep = dep.strip()
+            dep = DEPENDENCY_ALIASES.get(dep.strip().lower(), dep.strip())
             if dep and dep not in existing:
                 f.write(f"{dep}\n")
                 existing.add(dep)

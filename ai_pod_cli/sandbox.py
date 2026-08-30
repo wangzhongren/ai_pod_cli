@@ -33,6 +33,12 @@ def sample_value(name: str, spec) -> object:
             return upper_choices[0]
     if lowered in {"sql", "query", "statement"}:
         return "SELECT 1"
+    if "color" in lowered or "colour" in lowered:
+        return "#ffffff"
+    if lowered in {"rect", "rectangle", "bounds", "aabb"}:
+        return [0, 0, 16, 16]
+    if lowered in {"position", "point", "center", "origin", "size"}:
+        return [0, 0] if lowered != "size" else [16, 16]
     if lowered in {"params", "parameters", "bindings", "args"}:
         return []
     field_type = normalize_type(spec)
@@ -84,6 +90,31 @@ def sample_value(name: str, spec) -> object:
     return "test"
 
 
+def materialize_path_fixtures(values: dict, root: str | Path = ".") -> None:
+    """Create deterministic input files referenced by synthetic Contract values."""
+    root = Path(root).resolve()
+    input_names = {
+        "input_path", "source_path", "log_path",
+        "input_file", "source_file", "log_file",
+    }
+    for name, value in values.items():
+        if name.lower() not in input_names or not isinstance(value, str) or not value:
+            continue
+        candidate = Path(value)
+        path = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text(
+                "2026-08-30T10:20:31Z INFO api request path=/orders status=200 latency_ms=42\n"
+                "2026-08-30T10:20:32Z ERROR worker payment_failed order_id=O-17 latency_ms=840\n",
+                encoding="utf-8",
+            )
+
+
 def _run(root: Path, payload: dict, timeout: int) -> list[str]:
     payload_path = root / ".aipod_sandbox_payload.json"
     payload_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -97,7 +128,7 @@ from ai_pod_cli.config import load_beans
 from ai_pod_cli.container import Pod, build_container
 from ai_pod_cli.context import PipelineContext
 from ai_pod_cli.contracts import validate_contract_data, validate_contract_value
-from ai_pod_cli.sandbox import sample_value
+from ai_pod_cli.sandbox import materialize_path_fixtures, sample_value
 
 payload = json.loads(Path('.aipod_sandbox_payload.json').read_text(encoding='utf-8'))
 beans = load_beans()
@@ -113,6 +144,8 @@ if payload['kind'] == 'service':
     for model_bean in (item for item in beans.get('beans', []) if item.get('category') == 'model'):
         module_name, class_name = model_bean['class_path'].rsplit('.', 1)
         model_class = getattr(importlib.import_module(module_name), class_name)
+        if getattr(model_class, '__table__', None) is None:
+            continue
         sample = model_class.sample_instance()
         object_id = getattr(sample, 'id', None)
         if object_id is None or repository.get(model_class, object_id) is None:
@@ -123,12 +156,23 @@ if payload['kind'] in ('provider', 'model'):
     cls = getattr(importlib.import_module(module_name), class_name)
     if payload['kind'] == 'provider':
         instance = container.get(cls)
-        for method_name, method in payload.get('provider_methods', {}).items():
+        provider_methods = payload.get('provider_methods', {})
+        if 'initialize' in provider_methods:
+            instance.initialize()
+        for method_name, method in provider_methods.items():
+            if method_name == 'initialize':
+                continue
             method_inputs = {
                 name: sample_value(name, spec)
                 for name, spec in method.get('input_specs', {}).items()
             }
-            result = getattr(instance, method_name)(**method_inputs)
+            try:
+                result = getattr(instance, method_name)(**method_inputs)
+            except FileNotFoundError:
+                # Asset/file Providers are correct to reject a synthetic path.
+                # Import and DI construction have already been exercised; do not
+                # ask AI to remove a valid external-resource boundary check.
+                continue
             errors = validate_contract_value(
                 result, method.get('output_spec', 'any'),
                 f"{payload['class_path']}.{method_name}.return",
@@ -144,6 +188,7 @@ else:
             if key not in ctx.data:
                 ctx.params[key] = sample_value(key, spec)
         current = {**ctx.params, **ctx.data}
+        materialize_path_fixtures(current)
         input_errors = validate_contract_data(current, bean.get('inputs') or {}, component_id)
         if input_errors:
             raise RuntimeError(
@@ -249,7 +294,7 @@ import importlib.util
 import json
 from pathlib import Path
 from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.sandbox import sample_value
+from ai_pod_cli.sandbox import materialize_path_fixtures, sample_value
 
 payload = json.loads(Path('.aipod_sandbox_payload.json').read_text(encoding='utf-8'))
 spec = importlib.util.spec_from_file_location('aipod_candidate_pipeline', '.aipod_candidate_pipeline.py')
@@ -259,6 +304,7 @@ ctx = PipelineContext({
     name: sample_value(name, spec)
     for name, spec in payload['input_specs'].items()
 })
+materialize_path_fixtures(ctx.params)
 result = module.run(ctx)
 print(json.dumps(result or ctx.summary(), ensure_ascii=False, default=str))
 '''

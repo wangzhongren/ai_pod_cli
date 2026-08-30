@@ -16,6 +16,7 @@ from ai_pod_cli.commands.pod import handle_pod
 from ai_pod_cli.commands.run import handle_run
 from ai_pod_cli.commands.studio import handle_studio
 from ai_pod_cli.commands.visualize import handle_visualize
+from ai_pod_cli.commands.verify import handle_verify
 
 
 def main():
@@ -109,6 +110,12 @@ def main():
     studio_parser.add_argument("path", nargs="?", default=".", help="AIPod project directory (default: current directory)")
     studio_parser.add_argument("--debug", action="store_true", help="Enable webview developer tools")
 
+    # 12. verify
+    verify_parser = subparsers.add_parser("verify", help="Run structural checks and an optional real project command")
+    verify_parser.add_argument("--timeout", type=int, default=120, help="Command timeout in seconds")
+    verify_parser.add_argument("--json", action="store_true", help="Emit structured repair evidence")
+    verify_parser.add_argument("check", nargs=argparse.REMAINDER, help="Command to run after --, e.g. -- python app.py --smoke")
+
     args = parser.parse_args()
 
     handlers = {
@@ -123,6 +130,7 @@ def main():
         "inspect": handle_inspect,
         "visualize": handle_visualize,
         "studio": handle_studio,
+        "verify": handle_verify,
     }
     if args.command in {"create", "compose", "pod"} and args.json:
         execute_json_command(args.command, handlers[args.command], args)
@@ -148,6 +156,8 @@ def main():
         handle_visualize(args)
     elif args.command == "studio":
         handle_studio(args)
+    elif args.command == "verify":
+        handle_verify(args)
 
 
 def _apply_global_env():
