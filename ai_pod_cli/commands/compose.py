@@ -246,13 +246,15 @@ def handle_compose(args):
                         + ", ".join(sorted(item for item in known_services if item))
                     )
             contract = analyze_pipeline_contracts(pipeline_ids, beans.get("beans", []))
-            for issue in contract["issues"]:
-                if issue["code"] == "semantic_field_drift":
-                    violations.append(
-                        f"疑似同义字段漂移：{issue['component']} 需要 '{issue['field']}'，"
-                        f"上游提供 '{issue['produced_field']}'；请复用上游字段名"
+            for warning in contract.get("warnings", []):
+                if warning["code"] == "semantic_field_drift":
+                    print(
+                        f"⚠️  疑似同义字段漂移：{warning['component']} 需要 "
+                        f"'{warning['field']}'，上游提供 '{warning['produced_field']}'；"
+                        "Pipeline 仍可保存，建议使用显式映射。"
                     )
-                elif issue["code"] == "contract_type_mismatch":
+            for issue in contract["issues"]:
+                if issue["code"] == "contract_type_mismatch":
                     violations.append(
                         f"字段类型不兼容：{issue['component']}.{issue['field']} 需要 "
                         f"{issue['required']}，上游提供 {issue['produced']}"

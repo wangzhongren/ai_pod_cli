@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from pathlib import PureWindowsPath
 
 from ai_pod_cli.project_model import ProjectModelError, inspect_project
 
@@ -18,6 +19,8 @@ def _project_traceback_locations(output: str, root: Path) -> list[dict]:
     locations: list[dict] = []
     seen: set[tuple[str, int]] = set()
     for raw_path, raw_line in _TRACEBACK_FILE.findall(output):
+        if PureWindowsPath(raw_path).is_absolute() and not Path(raw_path).is_absolute():
+            continue
         candidate = Path(raw_path)
         path = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
         try:

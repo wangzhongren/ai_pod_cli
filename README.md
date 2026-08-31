@@ -215,16 +215,25 @@ The `|` operator expresses deterministic left-to-right composition.
 
 Interfaces expose Pipeline routes as a CLI, website, desktop application, worker, or
 message consumer. They depend on routes through `PipelineRunner` instead of duplicating
-business logic.
+business logic. Every generated Interface declares its own non-interactive proof command:
+
+```json
+{
+  "name": "server.py",
+  "kind": "web",
+  "verify": {"command": ["python", "server.py", "--smoke"], "timeout": 30}
+}
+```
 
 ## Five-Stage Generation and Runtime Closure
 
-`aipod pod` now runs a resumable build-time Agent. The Agent observes the Canonical State,
-selects one governed Build Tool, executes it, and observes the result before deciding the
-next action:
+`aipod pod` runs a resumable build-time Agent. A local state machine observes the
+Canonical State and deterministically selects the Build Tool for the earliest incomplete
+stage. The configured model is used inside that tool to plan or generate the artifact; it
+is not called to choose an already-determined stage:
 
 ```text
-Observe → Select Tool → Execute → Observe evidence
+Observe → Policy Select → Execute → Observe evidence
    ↑                                  |
    └──── repair current artifact ─────┘
 ```
@@ -246,9 +255,10 @@ The Agent cannot skip the earliest incomplete stage. Each tool plans, generates,
 and freezes only its current layer. A failed tool may retry its own unfinished layer but
 cannot rewrite a completed upstream layer.
 
-After all five layers are complete, `verify_application` runs the frozen Interface's
-non-interactive smoke command (or the project's test command) through the same structured
-verifier exposed by `aipod verify`. A failure does not reopen planning. The next permitted
+After all five layers are complete, `verify_application` runs every frozen Interface's
+explicitly declared command and timeout through the same structured verifier exposed by
+`aipod verify`; it does not guess from filenames or natural-language instructions. A
+failure does not reopen planning. The next permitted
 action is `repair_current_artifact`, which uses project-local traceback evidence to select
 one Python file and applies bounded exact-text patches. The same command then runs again.
 Three applied repair cycles are allowed before the Agent stops as blocked.
@@ -256,7 +266,9 @@ Three applied repair cycles are allowed before the Agent stops as blocked.
 `aipod_plan.json` is both the resumable Canonical Plan and the Agent's public memory. It
 stores selected actions, compact decision summaries, observations, validation outcomes,
 and stage status—not hidden chain-of-thought. If generation is interrupted, running the
-same Pod request resumes the first incomplete tool and reuses frozen components.
+same Pod request resumes the first incomplete tool and reuses frozen components. Plan
+version upgrades are applied by `load_and_upgrade_plan()` so older state receives typed
+defaults and explicit Interface verification metadata without losing unknown fields.
 
 ## Code Is Composable; Chain-of-Thought Is Not
 
@@ -531,8 +543,11 @@ $env:PYTHONUTF8 = "1"
 
 - Pipeline composition is currently sequential.
 - Contract analysis cannot prove arbitrary Python semantics.
+- Similar field names are advisory warnings; only explicit type, Model, required-field,
+  and nested-Schema incompatibilities invalidate composition.
 - Privileged Effect approval and denial policies are not yet enforced.
-- Generated code is not a substitute for review, real tests, or deployment isolation.
+- AIPod governs model behavior and repair scope; it is not a security sandbox for
+  untrusted Python code. Generated code still requires review and deployment isolation.
 - External model providers may impose output and reasoning-token limits.
 
 ## Roadmap

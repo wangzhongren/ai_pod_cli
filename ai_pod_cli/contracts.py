@@ -262,6 +262,7 @@ def analyze_pipeline_contracts(service_ids: list[str], components: list[dict]) -
     external: dict[str, ContractField] = {}
     links: list[dict] = []
     issues: list[dict] = []
+    warnings: list[dict] = []
 
     for index, service_id in enumerate(service_ids):
         component = by_id.get(service_id)
@@ -285,7 +286,7 @@ def analyze_pipeline_contracts(service_ids: list[str], components: list[dict]) -
                             "similarity": round(candidate[2], 3),
                         }
                         semantic_drifts.append(drift)
-                        issues.append({
+                        warnings.append({
                             "code": "semantic_field_drift", "component": service_id,
                             "field": name, "produced_field": candidate[0],
                             "produced": candidate[1].type, "required": required.type,
@@ -330,4 +331,5 @@ def analyze_pipeline_contracts(service_ids: list[str], components: list[dict]) -
         "links": links,
         "valid": not issues,
         "issues": issues,
+        "warnings": warnings,
     }

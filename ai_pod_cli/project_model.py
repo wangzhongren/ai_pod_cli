@@ -10,6 +10,7 @@ import tomlkit
 from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
 from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.run_store import get_run_trace, list_run_traces
+from ai_pod_cli.pod.state import load_current_plan
 
 
 SCHEMA_VERSION = "1.0"
@@ -78,9 +79,8 @@ def load_project_graph() -> tuple[list[dict], list[dict]]:
 
 def load_pod_agent_state() -> dict | None:
     """Return compact, public Pod Agent state without frozen plan prompt content."""
-    try:
-        state = json.loads(POD_PLAN_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    state = load_current_plan()
+    if state is None:
         return None
     agent = state.get("agent", {})
     return {
@@ -118,6 +118,7 @@ def build_project_model() -> dict:
     components = [{field: bean[field] for field in component_fields if field in bean} for bean in beans]
     component_ids = {component.get("id") for component in components}
     issues = []
+    warnings = []
     for component in components:
         for dependency in component.get("dependencies", []):
             if dependency not in component_ids:
@@ -137,6 +138,8 @@ def build_project_model() -> dict:
         pipeline["contract"] = contract
         for issue in contract["issues"]:
             issues.append({**issue, "pipeline": pipeline["name"]})
+        for warning in contract.get("warnings", []):
+            warnings.append({**warning, "pipeline": pipeline["name"]})
 
     provider_count = sum(component.get("category") == "provider" for component in components)
     model_count = sum(component.get("category") == "model" for component in components)
@@ -155,7 +158,7 @@ def build_project_model() -> dict:
         "pod_agent": load_pod_agent_state(),
         "components": components,
         "pipelines": pipelines,
-        "validation": {"valid": not issues, "issues": issues},
+        "validation": {"valid": not issues, "issues": issues, "warnings": warnings},
     }
 
 

@@ -21,7 +21,8 @@ from ai_pod_cli.contracts import (
 )
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import (
-    _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status, handle_pod,
+    _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status,
+    handle_pod, load_and_upgrade_plan,
 )
 from ai_pod_cli.commands.verify import _bounded_output, _project_traceback_locations, verify_project
 from ai_pod_cli.cli import _apply_global_env
@@ -1010,10 +1011,32 @@ class StudioApiTests(unittest.TestCase):
             {"id": "LifeSupport", "inputs": {"oxygen_level": "float"}},
         ]
         contract = analyze_pipeline_contracts(["Telemetry", "LifeSupport"], components)
-        self.assertFalse(contract["valid"])
-        self.assertEqual(contract["issues"][0]["code"], "semantic_field_drift")
-        self.assertEqual(contract["issues"][0]["produced_field"], "oxygen")
+        self.assertTrue(contract["valid"])
+        self.assertEqual(contract["issues"], [])
+        self.assertEqual(contract["warnings"][0]["code"], "semantic_field_drift")
+        self.assertEqual(contract["warnings"][0]["produced_field"], "oxygen")
         self.assertGreater(semantic_field_similarity("oxygen", "oxygen_level"), 0.9)
+
+    def test_plan_upgrade_adds_explicit_interface_verification(self):
+        legacy = {
+            "version": 3, "objective": "serve app", "current_stage": "interfaces",
+            "stages": {
+                name: {"status": "complete", "plan": None}
+                for name in ("models", "providers", "services", "pipelines", "interfaces")
+            },
+            "agent": {"status": "idle", "step": 0, "history": []},
+        }
+        legacy["stages"]["interfaces"]["plan"] = {
+            "interfaces": [{"name": "server", "kind": "web", "instruction": "Serve HTTP"}],
+        }
+
+        upgraded = load_and_upgrade_plan(legacy, "serve app")
+        interface = upgraded["stages"]["interfaces"]["plan"]["interfaces"][0]
+
+        self.assertEqual(upgraded["version"], 4)
+        self.assertEqual(interface["name"], "server.py")
+        self.assertEqual(interface["verify"]["command"], ["python", "server.py", "--smoke"])
+        self.assertEqual(interface["verify"]["timeout"], 30)
 
     def test_pipeline_detects_nested_schema_mismatch(self):
         produced = {
@@ -1293,26 +1316,21 @@ class StudioApiTests(unittest.TestCase):
                     "config_additions": {},
                 }
                 args = type("Args", (), {"desc": "reuse", "file": "", "yes": True, "json": True})()
-                responses = []
-                for action in (
-                    "generate_models", "generate_providers", "generate_services",
-                    "compose_pipelines", "generate_interfaces",
-                ):
-                    responses.extend([
-                        {"action": action, "summary": f"run {action}", "success_criteria": ["frozen"]},
-                        plan,
-                    ])
+                state = _load_decision_plan("reuse")
+                state["agent"]["verification"]["command"] = [sys.executable, "-c", "pass"]
+                _save_decision_plan(state)
+                responses = [plan] * 5
                 output = io.StringIO()
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=responses) as llm,
+                    patch("ai_pod_cli.pod.build.call_llm", side_effect=responses) as llm,
                     redirect_stdout(output),
                 ):
                     handle_pod(args)
             finally:
                 os.chdir(previous_cwd)
 
-            self.assertEqual(llm.call_count, 10)
+            self.assertEqual(llm.call_count, 5)
             self.assertIn("ExistingService (reuse)", output.getvalue())
             self.assertIn("[Pipeline 复用] existing_route", output.getvalue())
             state = json.loads((project / "aipod_plan.json").read_text(encoding="utf-8"))
@@ -1336,6 +1354,9 @@ class StudioApiTests(unittest.TestCase):
                     "Args", (),
                     {"desc": "local app", "file": "", "yes": True, "json": True, "_pod_stage": 1},
                 )()
+                state = _load_decision_plan("local app", 1)
+                state["agent"]["verification"]["command"] = [sys.executable, "-c", "pass"]
+                _save_decision_plan(state)
                 plans = [
                     {
                         "pod_name": "no_external_providers",
@@ -1371,24 +1392,18 @@ class StudioApiTests(unittest.TestCase):
                     stage_name = next((name for name in action_by_stage if name in label), None)
                     if stage_name is None:
                         raise AssertionError(f"unexpected model call: {label}")
-                    if label.startswith("Pod Agent selecting"):
-                        action = action_by_stage[stage_name]
-                        return {
-                            "action": action, "summary": f"run {action}",
-                            "success_criteria": ["frozen"],
-                        }
                     return plan_by_stage[stage_name]
                 output = io.StringIO()
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=respond) as llm,
+                    patch("ai_pod_cli.pod.build.call_llm", side_effect=respond) as llm,
                     redirect_stdout(output),
                 ):
                     handle_pod(args)
             finally:
                 os.chdir(previous_cwd)
 
-            self.assertEqual(llm.call_count, 8)
+            self.assertEqual(llm.call_count, 4)
             self.assertIn("[providers 阶段已冻结]", output.getvalue())
             self.assertIn("generate_services (services)", output.getvalue())
 
@@ -1412,16 +1427,15 @@ class StudioApiTests(unittest.TestCase):
                     state = _load_decision_plan("agent retry")
                     for name in state["stages"]:
                         state["stages"][name]["status"] = "complete"
+                    state["agent"]["verification"]["command"] = [
+                        sys.executable, "-c", "pass",
+                    ]
                     _save_decision_plan(state)
 
-                decisions = [
-                    {"action": "generate_models", "summary": "start models"},
-                    {"action": "retry_current", "summary": "retry failed models"},
-                ]
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", side_effect=decisions),
-                    patch("ai_pod_cli.commands.pod._execute_pod_build_tool", side_effect=fake_build_tool),
+                    patch("ai_pod_cli.pod.build.call_llm") as llm,
+                    patch("ai_pod_cli.pod.agent._execute_pod_build_tool", side_effect=fake_build_tool),
                 ):
                     handle_pod(args)
                 inspected = inspect_project()
@@ -1434,7 +1448,9 @@ class StudioApiTests(unittest.TestCase):
                 [item["status"] for item in state["agent"]["history"]],
                 ["failed", "succeeded", "succeeded"],
             )
-            self.assertEqual(state["agent"]["history"][1]["requested_action"], "retry_current")
+            self.assertEqual(state["agent"]["history"][0]["decision_status"], "policy_selected")
+            self.assertEqual(state["agent"]["history"][1]["decision_status"], "policy_retry")
+            llm.assert_not_called()
             self.assertNotIn("chain_of_thought", json.dumps(state))
 
             self.assertEqual(inspected["pod_agent"]["status"], "complete")
@@ -1481,7 +1497,7 @@ class StudioApiTests(unittest.TestCase):
 
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
-                    patch("ai_pod_cli.commands.pod.call_llm", return_value={
+                    patch("ai_pod_cli.pod.verification.call_llm", return_value={
                         "patches": [{"old": failing_line, "new": 'print("SMOKE OK")'}],
                     }) as llm,
                 ):

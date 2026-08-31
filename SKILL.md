@@ -78,24 +78,27 @@ to solve global-config visibility; it cannot change the sandbox boundary.
 - Providers expose infrastructure capabilities and may be injected.
 - Services implement focused transformations through `execute(ctx)`.
 - Pipelines compose registered Services.
-- Interfaces expose registered Pipeline routes.
+- Interfaces expose registered Pipeline routes and declare `verify.command` plus a
+  bounded `verify.timeout`.
 
 Preserve validated upstream layers when a downstream layer fails. Do not rename Contract
 fields or Bean IDs without concrete evidence that the frozen definition is wrong.
 
 ## Verify with real evidence
 
-Generation performs deterministic structural and Contract checks. Validate behavior with
-the project's real test, smoke, or entry command:
+Generation performs deterministic structural and Contract checks. Prefer each frozen
+Interface's declared verification command. For manual verification, run the exact command
+as an argument array:
 
 ```bash
 aipod verify --json -- python -m unittest
 aipod verify --json -- python app.py --smoke
 ```
 
-Run commands as argument arrays after `--`; do not wrap them in a shell string. If no real
-command is known, run `aipod verify --json` for structural checks and inspect discovered
-routes or entry files before choosing one.
+Run commands as argument arrays after `--`; do not wrap them in a shell string. Do not
+guess a long-running Interface command from its filename. If no declared command exists,
+run `aipod verify --json` for structural checks and add an explicit non-interactive smoke
+mode before runtime verification.
 
 ## Repair loop
 
