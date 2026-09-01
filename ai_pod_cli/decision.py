@@ -16,24 +16,55 @@ def map_decision_fragments(plan: dict, existing_beans: list[dict]) -> list[dict]
         if component.get("category") == "model" and component.get("name")
     }
     model_ids = set(known_models) | planned_model_ids
+    model_alias_candidates: dict[str, set[str]] = {}
+    for model_id, bean in known_models.items():
+        aliases = {model_id}
+        class_path = str(bean.get("class_path", "")).strip()
+        if class_path:
+            aliases.add(class_path)
+            aliases.add(class_path.rsplit(".", 1)[-1])
+        for alias in aliases:
+            model_alias_candidates.setdefault(alias, set()).add(model_id)
+    for model_id in planned_model_ids:
+        model_alias_candidates.setdefault(model_id, set()).add(model_id)
+
+    def resolve_model_reference(reference: str) -> str:
+        """Resolve a Bean ID, exact class path, or unambiguous class name."""
+        candidates = model_alias_candidates.get(reference, set())
+        if len(candidates) == 1:
+            return next(iter(candidates))
+        if "." in reference:
+            candidates = model_alias_candidates.get(reference.rsplit(".", 1)[-1], set())
+            if len(candidates) == 1:
+                return next(iter(candidates))
+        return reference
+
     fragments: list[dict] = []
     for component in plan.get("components", []):
         description = str(component.get("description", ""))
-        explicit_models = [str(item) for item in component.get("models", [])]
+        explicit_models = [
+            resolve_model_reference(str(item)) for item in component.get("models", [])
+        ]
         raw_dependencies = [str(item) for item in component.get("depends_on", [])]
+        resolved_dependencies = [resolve_model_reference(item) for item in raw_dependencies]
         legacy_model_dependencies = [
-            item for item in raw_dependencies if item in model_ids
+            item for item in resolved_dependencies if item in model_ids
         ]
         inferred_models = [
             model_id for model_id in model_ids
-            if model_id in description and model_id not in explicit_models
+            if any(
+                alias in description
+                for alias, candidates in model_alias_candidates.items()
+                if candidates == {model_id}
+            ) and model_id not in explicit_models
         ]
         fragments.append({
             "id": str(component.get("name", "")),
             "kind": str(component.get("category", "")),
             "decision": description,
             "dependencies": [
-                item for item in raw_dependencies if item not in model_ids
+                raw for raw, resolved in zip(raw_dependencies, resolved_dependencies)
+                if resolved not in model_ids
             ],
             "models": list(dict.fromkeys(
                 explicit_models + legacy_model_dependencies + inferred_models

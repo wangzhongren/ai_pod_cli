@@ -95,7 +95,7 @@ def _execute_pod_build_tool(args):
     stage_instructions = {
         0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类。明确区分运行时 Value Model（不持久化）和 Persistent Model（需要 ModelRepository/数据库）；禁止把 Vector2、Transform、事件、碰撞结果等瞬时值规划成数据库表。",
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
-        2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。复杂输入输出必须引用已生成 Model 的完整类路径。Model 只能普通 import，不能写入 depends_on。",
+        2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。components.models 必须填写 Bean Pool 中已有 Model 的精确 Bean ID，禁止填写或猜测 class_path；后续代码生成器会从冻结注册表取得精确 class_path。Model 只能普通 import，不能写入 depends_on。",
         3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。默认同步串行；只有需求明确需要时才声明 async、parallel 或 stream。并发分支必须给出 merge、failure_policy 和 concurrency，流式执行必须给出 concurrency、batch_size 和 failure_policy。",
         4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。复杂 Adapter 必须拆成 adapter_entry 和多个 adapter_module，每个文件只承担一个输入适配职责。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
@@ -131,6 +131,9 @@ def _execute_pod_build_tool(args):
     5. 每个组件的 description 要足够详细，让后续 AI 生成时能写出完整代码。
     6. 当前阶段组件数量控制在 0~8 个；一个数组项必须严格对应一个 Python 类。
     7. 如果新组件需要 config.toml 中的新配置项，在 config_additions 中说明。
+    8. components.models 只接受 Model Bean ID（例如 `Transform`），不接受
+       `modules.models.transform.Transform`。不得根据类名猜测文件路径；精确 class_path
+       将由本地 Reducer 从冻结 Bean Pool 解析。
 
     【Pipeline 规划规则（仅 pipelines 阶段适用）】：
     1. 为每个 service 类型的组件规划至少一条 pipeline。
@@ -149,7 +152,7 @@ def _execute_pod_build_tool(args):
                 "category": "model、service 或 provider",
                 "description": "详细的组件描述，包括方法签名、输入输出、依赖说明",
                 "depends_on": ["需要注入的组件ID_1", "组件ID_2"],
-                "models": ["作为数据引用的 Model Bean ID，不注入"],
+                "models": ["Bean Pool 中精确的 Model Bean ID，不是 class_path；仅作为数据引用，不注入"],
                 "requires": ["执行前必须存在的语义字段"],
                 "provides": ["执行后产生的语义字段"],
                 "invariants": ["必须始终成立且可验证的架构约束"]
@@ -246,8 +249,22 @@ def _execute_pod_build_tool(args):
         print(f"❌ [Plan Reduce] {len(reduction['conflicts'])} 个决策冲突，代码生成已停止：")
         for conflict in reduction["conflicts"]:
             print(f"   ❌ {conflict['code']}: {conflict['message']}")
-        stage_record["status"] = "conflict"
+        stage_record["status"] = "pending"
+        stage_record["plan"] = None
+        stage_record["last_evidence"] = {
+            "status": "rejected",
+            "repair_scope": stage_name,
+            "evidence": [
+                {
+                    key: conflict.get(key)
+                    for key in ("code", "component", "dependency", "model", "message")
+                    if conflict.get(key) is not None
+                }
+                for conflict in reduction["conflicts"]
+            ],
+        }
         _save_decision_plan(decision_state)
+        print(f"🔄 [{stage_name} 规划已丢弃] 下一次重试将根据冲突证据重新规划。")
         raise SystemExit(1)
 
     pod_name = plan.get("pod_name", "unnamed_pod")

@@ -212,6 +212,81 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertEqual(fragment["dependencies"], ["InputProvider"])
         self.assertEqual(fragment["models"], ["Transform"])
 
+    def test_plan_reducer_resolves_generated_model_class_paths_to_frozen_ids(self):
+        model_names = (
+            "Transform", "GameObject", "Component", "InputEvent",
+            "Scene", "CollisionEvent",
+        )
+        existing = [
+            {
+                "id": name,
+                "category": "model",
+                "class_path": f"modules.models.{name.lower()}.{name}",
+            }
+            for name in model_names
+        ]
+        plan = {"components": [{
+            "name": "PhysicsService",
+            "category": "service",
+            "models": [
+                "modules.models.game_object.GameObject",
+                "modules.models.transform.Transform",
+                "modules.models.collision_event.CollisionEvent",
+            ],
+            "depends_on": [],
+            "description": "Update GameObject Transform and emit CollisionEvent.",
+        }]}
+
+        result = reduce_decision_fragments(plan, existing, "services")
+
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["conflicts"], [])
+        self.assertEqual(
+            set(result["fragments"][0]["models"]),
+            {"GameObject", "Transform", "CollisionEvent"},
+        )
+
+    def test_conflicting_stage_plan_is_discarded_before_agent_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                init_config_if_not_exists()
+                state = _load_decision_plan("build invalid service")
+                state["stages"]["services"]["plan"] = {
+                    "pod_name": "invalid",
+                    "reuse_components": [],
+                    "components": [{
+                        "name": "BrokenService", "category": "service",
+                        "description": "Uses MissingState", "depends_on": [],
+                        "models": ["modules.models.missing.MissingState"],
+                    }],
+                    "pipelines": [], "interfaces": [], "config_additions": {},
+                }
+                _save_decision_plan(state)
+                args = type("Args", (), {
+                    "desc": "build invalid service", "file": "", "yes": True,
+                    "json": True, "_pod_stage": 2,
+                })()
+
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    self.assertRaises(SystemExit),
+                ):
+                    _execute_pod_build_tool(args)
+
+                updated = _load_decision_plan("build invalid service")
+            finally:
+                os.chdir(previous_cwd)
+
+        service_stage = updated["stages"]["services"]
+        self.assertEqual(service_stage["status"], "pending")
+        self.assertIsNone(service_stage["plan"])
+        self.assertEqual(
+            service_stage["last_evidence"]["evidence"][0]["code"],
+            "UNKNOWN_MODEL_REFERENCE",
+        )
+
     def test_evidence_reducer_never_expands_repair_scope(self):
         self.assertEqual(reduce_evidence([])["status"], "accepted")
         reduced = reduce_evidence(["runtime failed", "runtime failed"])
