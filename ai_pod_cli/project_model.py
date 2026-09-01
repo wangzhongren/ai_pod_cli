@@ -84,6 +84,7 @@ def load_pod_agent_state() -> dict | None:
         return None
     agent = state.get("agent", {})
     return {
+        "objective": state.get("objective", ""),
         "status": agent.get("status", "idle"),
         "step": agent.get("step", 0),
         "current_stage": state.get("current_stage"),
@@ -91,6 +92,11 @@ def load_pod_agent_state() -> dict | None:
             name: record.get("status", "pending")
             for name, record in state.get("stages", {}).items()
             if isinstance(record, dict)
+        },
+        "stage_evidence": {
+            name: list(record.get("runtime_checks", []))
+            for name, record in state.get("stages", {}).items()
+            if isinstance(record, dict) and record.get("runtime_checks")
         },
         "last_action": agent.get("last_action"),
         "last_observation": agent.get("last_observation", {}),

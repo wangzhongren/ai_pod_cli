@@ -1,5 +1,10 @@
 """Human-readable snapshots of frozen Pod stage plans."""
 
+import re
+from pathlib import Path
+
+
+POD_DOCUMENTS_DIR = Path("docs/aipod")
 
 def save_pod_plan(
     pod_name: str, desc: str, components: list, pipelines: list,
@@ -46,6 +51,14 @@ def save_pod_plan(
             lines.append(f"### {i}. {interface.get('name', '')} ({interface.get('kind', '')})")
             lines.append(f"> {interface.get('instruction', '')}")
             lines.append("")
+            lines.append(f"- Platform: {interface.get('platform', 'cross-platform')}")
+            lines.append(f"- Support: {(interface.get('support') or {}).get('level', 'unknown')}")
+            for artifact in interface.get("artifacts", []):
+                if isinstance(artifact, dict):
+                    lines.append(
+                        f"- Artifact: `{artifact.get('path', '')}` ({artifact.get('role', '')})"
+                    )
+            lines.append("")
 
     if config_additions:
         lines.append("## 建议新增配置")
@@ -63,7 +76,10 @@ def save_pod_plan(
         lines.append("```")
         lines.append("")
 
-    filename = f"{pod_name}_plan.md"
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(pod_name)).strip("_")
+    safe_name = safe_name or "pod"
+    POD_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = POD_DOCUMENTS_DIR / f"{safe_name}_plan.md"
     with open(filename, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    print(f"📋 [方案已保存] {filename}\n")
+    print(f"📋 [方案已保存] {filename.as_posix()}\n")

@@ -7,17 +7,24 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from ai_pod_cli.project_model import ProjectModelError, build_project_model
+from ai_pod_cli.pod.state import load_current_plan
 from ai_pod_cli.studio_common import (
     PodCancelled, ProgressCapture, StudioError, redirect_current_thread_stdout,
 )
 
 
 class StudioPodService:
-    def start_pod_build(self, description: str) -> dict:
+    def start_pod_build(self, description: str, stage: str = "") -> dict:
         """Start one Pod build in the background and return its task id."""
         description = str(description).strip()
         if not description:
             return self._error(StudioError("请描述你想构建的程序"))
+        stage = str(stage or "").strip().lower()
+        if not stage:
+            with self._in_project():
+                current = load_current_plan()
+            if current is not None and current.get("objective") != description:
+                stage = "auto"
         with self._pod_task_lock:
             active = next(
                 (task for task in self._pod_tasks.values() if task["status"] in {"running", "cancelling"}),
@@ -31,12 +38,13 @@ class StudioPodService:
                 "percent": 2, "message": "Preparing project context…", "logs": [],
                 "result": None, "error": None, "cancel_requested": False,
                 "received_characters": 0,
+                "requested_stage": str(stage or ""),
                 "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None,
             }
             self._pod_tasks[build_id] = task
         threading.Thread(
             target=self._run_pod_task,
-            args=(build_id, description),
+            args=(build_id, description, str(stage or "")),
             name=f"aipod-build-{build_id}",
             daemon=True,
         ).start()
@@ -62,7 +70,9 @@ class StudioPodService:
                 task["message"] = "Cancellation requested; waiting for the current model call…"
             return {"ok": True, "task": self._pod_task_snapshot(task)}
 
-    def build_pod(self, description: str, _progress=None, _cancelled=None) -> dict:
+    def build_pod(
+        self, description: str, _progress=None, _cancelled=None, stage: str = "",
+    ) -> dict:
         """Run the canonical Pod workflow from one natural-language requirement."""
         try:
             description = str(description).strip()
@@ -75,7 +85,7 @@ class StudioPodService:
                 output = ProgressCapture(_progress, _cancelled)
                 args = SimpleNamespace(
                     desc=description, file="", yes=True, json=True,
-                    auto_repair=True,
+                    auto_repair=True, stage=str(stage or ""),
                     progress_callback=getattr(_progress, "event", None),
                 )
                 with redirect_current_thread_stdout(output):
@@ -123,7 +133,7 @@ class StudioPodService:
         except (OSError, StudioError, ValueError, ProjectModelError) as error:
             return self._error(error)
 
-    def _run_pod_task(self, build_id: str, description: str) -> None:
+    def _run_pod_task(self, build_id: str, description: str, stage: str = "") -> None:
         def cancelled():
             with self._pod_task_lock:
                 return bool(self._pod_tasks[build_id]["cancel_requested"])
@@ -139,7 +149,10 @@ class StudioPodService:
         progress.event = event
 
         try:
-            result = self.build_pod(description, progress, cancelled)
+            result = (
+                self.build_pod(description, progress, cancelled, stage)
+                if stage else self.build_pod(description, progress, cancelled)
+            )
             with self._pod_task_lock:
                 task = self._pod_tasks[build_id]
                 if task["cancel_requested"]:

@@ -42,6 +42,11 @@ aipod compose "INSTRUCTION" --name ROUTE --json
 Let `pod` resume `aipod_plan.json`; do not delete or recreate a frozen plan merely to
 retry an incomplete stage.
 
+For a change to an existing Pod, use `aipod pod --stage auto "change request"`. AI
+classifies the earliest affected layer once; the local scheduler then freezes upstream
+and rebuilds that layer plus downstream. Use an explicit stage only when the user asks to
+override the impact boundary.
+
 ## Use one task-level authorization
 
 When the user explicitly asks to use AIPod's AI generation to build or modify an
@@ -78,17 +83,22 @@ to solve global-config visibility; it cannot change the sandbox boundary.
 - Providers expose infrastructure capabilities and may be injected.
 - Services implement focused transformations through `execute(ctx)`.
 - Pipelines compose registered Services.
-- Interfaces expose registered Pipeline routes and declare `verify.command` plus a
-  bounded `verify.timeout`.
+- Interfaces are multi-Artifact delivery units. Inspect `artifacts`, `lifecycle`,
+  `permissions`, `support`, and every item in `verify`; required checks determine pass or
+  fail while optional installation checks remain visible evidence.
+- `AIPodCli` is the distribution name, but generated Python imports must use
+  `ai_pod_cli`. Reject Interface imports of the project name, Pod name, `modules`, or
+  `pipelines`.
 
 Preserve validated upstream layers when a downstream layer fails. Do not rename Contract
 fields or Bean IDs without concrete evidence that the frozen definition is wrong.
 
 ## Verify with real evidence
 
-Generation performs deterministic structural and Contract checks. Prefer each frozen
-Interface's declared verification command. For manual verification, run the exact command
-as an argument array:
+Generation performs deterministic structural, Contract, and disposable runtime checks at
+every layer. A structure-only `aipod verify --json` result is `unverified`, not `passed`.
+Prefer each frozen Interface's required verification commands. For manual verification,
+run the exact command as an argument array:
 
 ```bash
 aipod verify --json -- python -m unittest

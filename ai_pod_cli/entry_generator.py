@@ -4,6 +4,7 @@ import os
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.security import validate_code
+from ai_pod_cli.validation import validate_entry_imports
 
 
 def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_context: dict | None = None) -> tuple[str, list[str]] | None:
@@ -57,7 +58,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
 
     system_prompt = f"""
     你是一个资深的 Python 架构师。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
-    包名为 `ai_pod_cli`，已安装并可 import。
+    PyPI 发行名为 `AIPodCli`，Python 导入名只能是 `ai_pod_cli`。
 
     你的任务是：根据人类的项目描述，自主完成以下决策和代码生成：
 
@@ -81,6 +82,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
       runner.route_names()  — 列出所有路由
       runner.run("route_name", {{"key": "value"}})  — 执行管线
     - 禁止手动 new PipelineRunner()，必须通过 container.get() 获取。
+    - 禁止 import AIPodCli、项目名、Pod 名、modules 或 pipelines。
     - 入口文件不需要 import 任何 modules/ 下的底层 Bean，只通过管线完成业务。
     - 生成的代码必须是完整可运行的，包含所有必要的 import。
     - 加上清晰的中文注释。
@@ -110,6 +112,7 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
 
         # 安全检查
         violations = validate_code(generated_code, allow_file_io=True)
+        violations.extend(validate_entry_imports(generated_code, extra_deps))
         if violations:
             print(f"🛡️  [安全检查失败] 入口文件包含 {len(violations)} 处违规:")
             for v in violations:

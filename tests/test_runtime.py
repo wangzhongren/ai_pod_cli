@@ -24,6 +24,12 @@ from ai_pod_cli.commands.pod import (
     _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status,
     handle_pod, load_and_upgrade_plan,
 )
+from ai_pod_cli.pod.planning import save_pod_plan
+from ai_pod_cli.pod.revision import select_revision_stage
+from ai_pod_cli.pod.state import prepare_stage_rebuild
+from ai_pod_cli.pod.tools.components import generate_components, verify_reused_components
+from ai_pod_cli.pod.tools.interfaces import generate_interface_delivery
+from ai_pod_cli.pod.verification import _verify_application
 from ai_pod_cli.commands.verify import _bounded_output, _project_traceback_locations, verify_project
 from ai_pod_cli.cli import _apply_global_env
 from ai_pod_cli.commands.env import print_missing_model_config, record_global_config_load_error
@@ -49,6 +55,7 @@ from ai_pod_cli.validation import (
     request_repair,
     validate_component_contract,
     validate_entry_contract,
+    validate_entry_imports,
     validate_pipeline_contract,
 )
 
@@ -825,12 +832,17 @@ class StudioApiTests(unittest.TestCase):
 
     def test_studio_frontend_is_packaged(self):
         page = studio_asset_path().read_text(encoding="utf-8")
+        brand = studio_asset_path().with_name("brand.css").read_text(encoding="utf-8")
         self.assertIn("AIPod Studio", page)
         self.assertIn("pywebview.api", page)
-        self.assertIn("Build a Pod with AI", page)
+        self.assertIn("Build or modify a Pod with AI", page)
+        self.assertIn("earliest affected layer", page)
         self.assertIn("Run pipeline", page)
         self.assertIn("pod_build_status", page)
         self.assertIn("podProgressBar", page)
+        self.assertIn("#podDialog .modal-body", brand)
+        self.assertIn("overflow-x: hidden", brand)
+        self.assertIn("overflow-wrap: anywhere", brand)
         self.assertIn("Application verification", page)
         self.assertIn("agentStatus", page)
         self.assertIn("Repairs applied", page)
@@ -868,6 +880,27 @@ class StudioApiTests(unittest.TestCase):
             self.assertTrue(any("verify_application" in line for line in task["logs"]))
             self.assertTrue(any("repair_current_artifact" in line for line in task["logs"]))
             self.assertTrue(task["result"]["ok"])
+
+    def test_studio_uses_ai_impact_selection_for_existing_pod_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                state = _load_decision_plan("existing todo app")
+                for record in state["stages"].values():
+                    record["status"] = "complete"
+                _save_decision_plan(state)
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+
+            with patch("ai_pod_cli.studio_pod.threading.Thread.start"):
+                started = api.start_pod_build("add task priorities")
+
+            task = api.pod_build_status(started["build_id"])["task"]
+            self.assertEqual(task["requested_stage"], "auto")
 
     def test_studio_accepts_verification_only_pod_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1017,6 +1050,71 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(contract["warnings"][0]["produced_field"], "oxygen")
         self.assertGreater(semantic_field_similarity("oxygen", "oxygen_level"), 0.9)
 
+    def test_entry_imports_reject_invented_project_packages(self):
+        invalid = (
+            "import AIPodCli\n"
+            "from generated_project.app import create_app\n"
+            "from ai_pod_cli.config import load_beans\n"
+        )
+        valid = (
+            "from fastapi import FastAPI\n"
+            "from ai_pod_cli.config import load_beans\n"
+        )
+
+        violations = validate_entry_imports(invalid, [])
+
+        self.assertEqual(len(violations), 2)
+        self.assertIn("ai_pod_cli", violations[0])
+        self.assertEqual(validate_entry_imports(valid, ["fastapi>=0.100"]), [])
+
+    def test_selected_rebuild_freezes_upstream_and_invalidates_downstream(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                state = _load_decision_plan("existing app")
+                for name, record in state["stages"].items():
+                    record.update(status="complete", plan={"stage": name})
+                state["agent"]["verification"] = {
+                    "status": "passed", "attempts": 1, "repairs": 0,
+                }
+                _save_decision_plan(state)
+
+                revised = prepare_stage_rebuild("services", "change pricing rules")
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(revised["stages"]["models"]["status"], "complete")
+        self.assertEqual(revised["stages"]["providers"]["status"], "complete")
+        for name in ("services", "pipelines", "interfaces"):
+            self.assertEqual(revised["stages"][name]["status"], "pending")
+            self.assertIsNone(revised["stages"][name]["plan"])
+        self.assertEqual(revised["revision"]["from_stage"], "services")
+
+    def test_revision_ai_selects_earliest_affected_layer(self):
+        with patch("ai_pod_cli.pod.revision.call_llm", return_value={
+            "stage": "models", "summary": "The request adds a persisted field.",
+        }) as llm:
+            decision = select_revision_stage(
+                "add task priority", {"objective": "todo app"}, {"stages": {}},
+            )
+
+        self.assertEqual(decision["stage"], "models")
+        self.assertEqual(llm.call_count, 1)
+
+    def test_pod_plan_documents_are_kept_out_of_project_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                save_pod_plan("todo app", "build todos", [], [], {}, [])
+                document = Path("docs/aipod/todo_app_plan.md")
+                root_document = Path("todo app_plan.md")
+                self.assertTrue(document.is_file())
+                self.assertFalse(root_document.exists())
+            finally:
+                os.chdir(previous_cwd)
+
     def test_plan_upgrade_adds_explicit_interface_verification(self):
         legacy = {
             "version": 3, "objective": "serve app", "current_stage": "interfaces",
@@ -1033,10 +1131,15 @@ class StudioApiTests(unittest.TestCase):
         upgraded = load_and_upgrade_plan(legacy, "serve app")
         interface = upgraded["stages"]["interfaces"]["plan"]["interfaces"][0]
 
-        self.assertEqual(upgraded["version"], 4)
-        self.assertEqual(interface["name"], "server.py")
-        self.assertEqual(interface["verify"]["command"], ["python", "server.py", "--smoke"])
-        self.assertEqual(interface["verify"]["timeout"], 30)
+        self.assertEqual(upgraded["version"], 5)
+        self.assertEqual(interface["name"], "server")
+        self.assertEqual(interface["artifacts"][0]["path"], "interfaces/server/main.py")
+        self.assertEqual(interface["artifacts"][0]["role"], "runtime")
+        self.assertEqual(
+            interface["verify"][0]["command"],
+            ["python", "interfaces/server/main.py", "--smoke"],
+        )
+        self.assertEqual(interface["verify"][0]["timeout"], 30)
 
     def test_pipeline_detects_nested_schema_mismatch(self):
         produced = {
@@ -1209,6 +1312,273 @@ class StudioApiTests(unittest.TestCase):
             self.assertEqual(validate_component_contract(code, "Order", "model"), [])
             self.assertEqual(verify_component_candidate(project, bean, code, []), [])
 
+    def test_model_candidate_rejects_unannotated_pydantic_constants(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                (project / "modules/models").mkdir(parents=True, exist_ok=True)
+                code = (
+                    "from ai_pod_cli import Model\n"
+                    "class ErrorCodes(Model):\n"
+                    "    FILE_EXISTS = 'FILE_EXISTS'\n"
+                )
+                bean = {
+                    "id": "ErrorCodes", "category": "model",
+                    "class_path": "modules.models.errorcodes.ErrorCodes",
+                    "file": "errorcodes.py", "dependencies": [],
+                    "inputs": {}, "outputs": {},
+                }
+                violations = verify_component_candidate(project, bean, code, [])
+            finally:
+                os.chdir(previous)
+
+        self.assertTrue(any("non-annotated attribute" in item for item in violations))
+
+    def test_pod_component_cannot_freeze_when_forward_runtime_check_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                state = _load_decision_plan("runtime checked model")
+                stage_record = state["stages"]["models"]
+                component = {
+                    "name": "ErrorCodes", "category": "model",
+                    "description": "Error code constants", "depends_on": [],
+                }
+                generated_response = {
+                    "code": (
+                        "from ai_pod_cli import Model\n"
+                        "class ErrorCodes(Model):\n"
+                        "    BROKEN = 'BROKEN'\n"
+                    ),
+                    "dependencies": [], "inputs": {}, "outputs": {},
+                    "methods": {}, "ai_spec": "constants", "extra_deps": [],
+                }
+                args = SimpleNamespace(json=True, yes=True, auto_repair=False)
+                with (
+                    patch(
+                        "ai_pod_cli.pod.tools.components.call_llm",
+                        return_value=generated_response,
+                    ),
+                    patch(
+                        "ai_pod_cli.pod.tools.components.verify_component_candidate",
+                        return_value=["sandbox import failed"],
+                    ) as runtime_check,
+                    patch(
+                        "ai_pod_cli.pod.tools.components.request_repair",
+                        return_value=False,
+                    ),
+                ):
+                    generated, failed = generate_components(
+                        components=[component], reduction={"fragments": []},
+                        decision_state=state, stage_record=stage_record, args=args,
+                    )
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(generated, [])
+        self.assertEqual(failed, ["ErrorCodes"])
+        self.assertEqual(runtime_check.call_count, 1)
+        self.assertFalse((project / "modules/models/errorcodes.py").exists())
+
+    def test_reused_component_is_revalidated_after_upstream_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                source = project / "modules/providers/store.py"
+                source.parent.mkdir(parents=True)
+                source.write_text("class Store: pass\n", encoding="utf-8")
+                bean = {
+                    "id": "Store", "category": "provider",
+                    "class_path": "modules.providers.store.Store", "file": "store.py",
+                }
+                with patch(
+                    "ai_pod_cli.pod.tools.components.verify_component_candidate",
+                    return_value=[],
+                ) as runtime_check:
+                    checks, violations = verify_reused_components(
+                        ["Store"], {"Store": bean}, "provider",
+                    )
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(violations, [])
+        self.assertEqual(checks[0]["check"], "reused_component_revalidation")
+        self.assertEqual(runtime_check.call_count, 1)
+
+    def test_verify_without_execution_is_unverified_not_passed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = Path.cwd()
+            os.chdir(tmp)
+            try:
+                init_config_if_not_exists()
+                result = verify_project([])
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(result["status"], "unverified")
+
+    def test_interface_delivery_generates_and_commits_multiple_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                runtime_code = (
+                    "import sys\n"
+                    "from ai_pod_cli.config import load_beans\n"
+                    "from ai_pod_cli.container import build_container\n"
+                    "def main():\n"
+                    "    build_container(load_beans())\n"
+                    "    return 0 if '--smoke' in sys.argv else 0\n"
+                    "if __name__ == '__main__':\n"
+                    "    raise SystemExit(main())\n"
+                )
+                plist = (
+                    '<?xml version="1.0" encoding="UTF-8"?>\n'
+                    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+                    '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+                    '<plist version="1.0"><dict><key>name</key><string>demo</string></dict></plist>\n'
+                )
+                responses = {
+                    "interfaces/demo/main.py": runtime_code,
+                    "interfaces/demo/install.sh": "#!/bin/sh\nexit 0\n",
+                    "interfaces/demo/Info.plist": plist,
+                }
+                interface = {
+                    "name": "demo", "kind": "macos_quick_action", "platform": "macos",
+                    "instruction": "Install one Finder Quick Action",
+                    "artifacts": [
+                        {"path": path, "role": role, "format": fmt, "instruction": role}
+                        for path, role, fmt in (
+                            ("interfaces/demo/main.py", "runtime", "python"),
+                            ("interfaces/demo/install.sh", "installer", "shell"),
+                            ("interfaces/demo/Info.plist", "metadata", "plist"),
+                        )
+                    ],
+                    "lifecycle": {
+                        "run": ["python", "interfaces/demo/main.py"],
+                        "install": ["sh", "interfaces/demo/install.sh"],
+                        "uninstall": [],
+                    },
+                    "permissions": ["finder_automation"],
+                    "support": {"level": "supported_with_manual_step", "manual_steps": ["Enable it"]},
+                    "verify": [{
+                        "name": "runtime_smoke", "kind": "runtime", "required": True,
+                        "command": ["python", "interfaces/demo/main.py", "--smoke"],
+                        "timeout": 30,
+                    }],
+                }
+
+                def respond(_system, _user, **kwargs):
+                    path = kwargs["progress_label"].split(": ", 1)[1]
+                    return {"path": path, "content": responses[path], "extra_deps": []}
+
+                with patch(
+                    "ai_pod_cli.pod.tools.interfaces.call_llm", side_effect=respond,
+                ) as llm:
+                    result = generate_interface_delivery(
+                        "finder helper", interface, auto_repair=True,
+                    )
+                created = {
+                    path: (project / path).is_file() for path in responses
+                }
+                manifest = json.loads(
+                    (project / "interfaces/demo/interface.json").read_text(encoding="utf-8")
+                )
+            finally:
+                os.chdir(previous)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(llm.call_count, 3)
+        self.assertTrue(all(created.values()))
+        self.assertEqual(manifest["support"]["level"], "supported_with_manual_step")
+
+    def test_interface_delivery_does_not_commit_partial_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                interface = {
+                    "name": "atomic", "kind": "cli",
+                    "artifacts": [
+                        {"path": "interfaces/atomic/main.py", "role": "runtime",
+                         "format": "python", "instruction": "runtime"},
+                        {"path": "interfaces/atomic/install.sh", "role": "installer",
+                         "format": "shell", "instruction": "installer"},
+                    ],
+                    "verify": [{"name": "runtime", "kind": "runtime", "required": True,
+                                "command": ["python", "interfaces/atomic/main.py", "--smoke"]}],
+                }
+                runtime = (
+                    "import sys\n"
+                    "from ai_pod_cli.config import load_beans\n"
+                    "from ai_pod_cli.container import build_container\n"
+                    "build_container(load_beans())\n"
+                    "assert '--smoke' in sys.argv or True\n"
+                )
+
+                def respond(_system, _user, **kwargs):
+                    path = kwargs["progress_label"].split(": ", 1)[1]
+                    return {"path": path, "content": runtime if path.endswith("main.py") else ""}
+
+                with patch(
+                    "ai_pod_cli.pod.tools.interfaces.call_llm", side_effect=respond,
+                ):
+                    result = generate_interface_delivery(
+                        "atomic delivery", interface, auto_repair=True,
+                    )
+                committed = (project / "interfaces/atomic").exists()
+            finally:
+                os.chdir(previous)
+
+        self.assertIsNone(result)
+        self.assertFalse(committed)
+
+    def test_optional_interface_check_does_not_fail_required_runtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                state = _load_decision_plan("optional integration")
+                for record in state["stages"].values():
+                    record["status"] = "complete"
+                state["stages"]["interfaces"]["plan"] = {
+                    "interfaces": [{
+                        "name": "demo", "kind": "cli",
+                        "artifacts": [{
+                            "path": "interfaces/demo/main.py", "role": "runtime",
+                            "format": "python", "instruction": "demo",
+                        }],
+                        "verify": [
+                            {"name": "runtime", "kind": "runtime", "required": True,
+                             "command": [sys.executable, "-c", "pass"], "timeout": 10},
+                            {"name": "installed", "kind": "installation", "required": False,
+                             "command": [sys.executable, "-c", "raise SystemExit(1)"], "timeout": 10},
+                        ],
+                    }],
+                }
+                _save_decision_plan(state)
+                result = _verify_application("optional integration", state)
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(result["status"], "passed")
+        checks = result["checks"]["interfaces"]
+        self.assertEqual([item["status"] for item in checks], ["passed", "failed"])
+
     def test_provider_candidate_smoke_tests_declared_methods(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -1301,6 +1671,19 @@ class StudioApiTests(unittest.TestCase):
                     "inputs": {}, "outputs": {"ok": "bool"},
                 })
                 save_config(config)
+                service = project / "modules/services/existing.py"
+                service.parent.mkdir(parents=True, exist_ok=True)
+                service.write_text(
+                    "from injector import inject\n"
+                    "from ai_pod_cli.context import PipelineContext\n"
+                    "class ExistingService:\n"
+                    "    @inject\n"
+                    "    def __init__(self): pass\n"
+                    "    def execute(self, ctx: PipelineContext):\n"
+                    "        ctx.set('ok', True)\n"
+                    "        return {'ok': True}\n",
+                    encoding="utf-8",
+                )
                 (project / "routes.toml").write_text(
                     '[existing_route]\npipeline = "pipelines/existing_route.py"\n', encoding="utf-8"
                 )
@@ -1456,6 +1839,55 @@ class StudioApiTests(unittest.TestCase):
             self.assertEqual(inspected["pod_agent"]["status"], "complete")
             self.assertEqual(inspected["pod_agent"]["last_action"], "verify_application")
             self.assertEqual(inspected["pod_agent"]["verification"]["status"], "passed")
+
+    def test_pod_auto_revision_starts_at_ai_selected_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                state = _load_decision_plan("existing app")
+                for name, record in state["stages"].items():
+                    record.update(status="complete", plan={"stage": name})
+                _save_decision_plan(state)
+                args = type("Args", (), {
+                    "desc": "change the CLI colors", "file": "", "yes": True,
+                    "json": True, "stage": "auto", "_pod_agent_max_steps": 2,
+                })()
+                tool_calls = []
+
+                def fake_build_tool(_args):
+                    tool_calls.append(_args._pod_stage)
+                    current = _load_decision_plan("existing app")
+                    current["stages"]["interfaces"]["status"] = "complete"
+                    current["agent"]["verification"]["command"] = [
+                        sys.executable, "-c", "pass",
+                    ]
+                    _save_decision_plan(current)
+
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    patch("ai_pod_cli.pod.revision.call_llm", return_value={
+                        "stage": "interfaces", "summary": "Presentation-only change.",
+                    }) as classifier,
+                    patch(
+                        "ai_pod_cli.pod.agent._execute_pod_build_tool",
+                        side_effect=fake_build_tool,
+                    ),
+                ):
+                    handle_pod(args)
+            finally:
+                os.chdir(previous_cwd)
+
+            final_state = json.loads(
+                (project / "aipod_plan.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(tool_calls, [4])
+            self.assertEqual(classifier.call_count, 1)
+            self.assertEqual(final_state["stages"]["models"]["plan"], {"stage": "models"})
+            self.assertEqual(final_state["agent"]["status"], "complete")
+            self.assertNotIn("revision", final_state)
 
     def test_pod_agent_verifies_repairs_current_artifact_and_reverifies(self):
         with tempfile.TemporaryDirectory() as tmp:

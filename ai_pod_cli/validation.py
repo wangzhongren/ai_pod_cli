@@ -7,6 +7,7 @@ executed only when a developer runs a pipeline.
 
 import ast
 import re
+import sys
 
 from ai_pod_cli.security import validate_code
 from ai_pod_cli.contracts import normalize_type, semantic_field_similarity
@@ -309,4 +310,52 @@ def validate_entry_contract(code: str, route_names: list[str] | None = None) -> 
         for name in unknown:
             violations.append(f"入口调用了未注册的 Pipeline 路由 '{name}'")
 
+    return list(dict.fromkeys(violations))
+
+
+_DISTRIBUTION_IMPORT_ALIASES = {
+    "pywebview": "webview",
+    "pygame_ce": "pygame",
+    "python_dotenv": "dotenv",
+    "kafka_python": "kafka",
+    "opencv_python": "cv2",
+    "pillow": "PIL",
+    "pyyaml": "yaml",
+}
+
+
+def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> list[str]:
+    """Reject invented project/package imports in generated Interface files."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+
+    allowed = {"ai_pod_cli"}
+    for raw in extra_deps or []:
+        distribution = re.split(r"[<>=!~\[\];\s]", str(raw), maxsplit=1)[0]
+        normalized = distribution.strip().lower().replace("-", "_")
+        if not normalized:
+            continue
+        allowed.add(normalized)
+        allowed.add(_DISTRIBUTION_IMPORT_ALIASES.get(normalized, normalized))
+
+    violations = []
+    for node in ast.walk(tree):
+        module = ""
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""] if node.level == 0 else []
+        else:
+            continue
+        for name in names:
+            root = name.split(".", 1)[0]
+            if not root or root in sys.stdlib_module_names or root in allowed:
+                continue
+            violations.append(
+                f"入口导入了未声明或不存在的包 '{root}'；"
+                "AIPod 的 Python 导入名固定为 'ai_pod_cli'，"
+                "入口不得导入项目名、Pod 名、modules 或 pipelines"
+            )
     return list(dict.fromkeys(violations))

@@ -103,8 +103,13 @@ def verify_project(command: list[str], timeout: int = 120) -> dict:
             }
 
     structural_ok = bool(validation.get("valid"))
-    execution_ok = execution is None or execution["status"] == "passed"
-    status = "passed" if structural_ok and execution_ok else "failed"
+    execution_ok = execution is not None and execution["status"] == "passed"
+    if not structural_ok or (execution is not None and not execution_ok):
+        status = "failed"
+    elif execution is None:
+        status = "unverified"
+    else:
+        status = "passed"
     locations = execution.get("locations", []) if execution else []
     return {
         "schema_version": VERIFY_SCHEMA_VERSION,
@@ -150,5 +155,5 @@ def handle_verify(args) -> None:
                 print(execution["stderr"])
         else:
             print("   Execution: skipped (pass a command after --)")
-    if result["status"] != "passed":
+    if result["status"] == "failed":
         raise SystemExit(1)

@@ -244,8 +244,30 @@ def verify_component_candidate(
         modules_init.touch(exist_ok=True)
         registry_path = root / "beans_config.json"
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        registry["beans"] = [item for item in registry["beans"] if item.get("id") != bean["id"]]
-        registry["beans"].append(bean)
+        existing = [item for item in registry["beans"] if item.get("id") != bean["id"]]
+        if bean["category"] == "model":
+            existing = [item for item in existing if item.get("category") == "model"]
+        elif bean["category"] == "provider":
+            existing = [
+                item for item in existing
+                if item.get("category") in {"model", "provider"}
+            ]
+        else:
+            by_id = {item.get("id"): item for item in existing}
+            allowed_services = set(service_ids) | set(bean.get("dependencies") or [])
+            pending = list(allowed_services)
+            while pending:
+                dependency = pending.pop()
+                for nested in (by_id.get(dependency, {}).get("dependencies") or []):
+                    if nested not in allowed_services:
+                        allowed_services.add(nested)
+                        pending.append(nested)
+            existing = [
+                item for item in existing
+                if item.get("category") in {"model", "provider"}
+                or item.get("id") in allowed_services
+            ]
+        registry["beans"] = [*existing, bean]
         registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
         category_dir = {
             "model": "models", "provider": "providers", "service": "services",

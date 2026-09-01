@@ -1,193 +1,307 @@
-"""Interface generation with explicit, non-interactive proof commands."""
+"""Multi-artifact Interface delivery generation and validation."""
 
+from __future__ import annotations
+
+import json
 import os
+import plistlib
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import append_deps_to_requirements
 from ai_pod_cli.pod.routes import load_routes_map
-from ai_pod_cli.pod.state import set_stage_status
+from ai_pod_cli.pod.state import normalize_interface_plan, set_stage_status
+from ai_pod_cli.security import validate_code
 from ai_pod_cli.validation import (
-    repair_feedback, request_repair, validate_entry_contract,
+    repair_feedback, request_repair, validate_entry_contract, validate_entry_imports,
 )
+
+
+def _artifact_path(raw_path: str, interface_name: str) -> Path:
+    """Return one safe path rooted in interfaces/<interface-id>."""
+    path = Path(str(raw_path))
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"Interface artifact path is unsafe: {raw_path}")
+    expected_root = Path("interfaces") / interface_name
+    try:
+        path.relative_to(expected_root)
+    except ValueError as error:
+        raise ValueError(
+            f"Interface artifact must be inside {expected_root.as_posix()}/: {raw_path}"
+        ) from error
+    return path
+
+
+def _runtime_artifact(interface: dict) -> str:
+    return next(
+        (
+            str(item.get("path")) for item in interface.get("artifacts", [])
+            if isinstance(item, dict) and item.get("role") == "runtime"
+        ),
+        "",
+    )
+
+
+def _artifact_prompt(
+    desc: str, interface: dict, artifact: dict, routes_map: dict[str, str],
+) -> tuple[str, str]:
+    path = str(artifact["path"])
+    role = str(artifact.get("role", "resource"))
+    artifact_format = str(artifact.get("format", "text"))
+    runtime_path = _runtime_artifact(interface)
+    verification = [
+        item for item in interface.get("verify", [])
+        if isinstance(item, dict) and path in (item.get("command") or [])
+    ]
+    delivery_context = {
+        key: interface.get(key)
+        for key in (
+            "name", "kind", "platform", "instruction", "lifecycle",
+            "permissions", "support",
+        )
+    }
+    system_prompt = f"""
+    You generate exactly one artifact of an AIPod Interface delivery unit.
+    Never generate another artifact and never return Markdown fences.
+
+    Interface manifest:
+    {json.dumps(delivery_context, ensure_ascii=False, indent=2)}
+
+    Current artifact:
+    - path: {path}
+    - role: {role}
+    - format: {artifact_format}
+    - instruction: {artifact.get('instruction', '')}
+    - verification checks using this artifact:
+      {json.dumps(verification, ensure_ascii=False)}
+
+    Frozen routes:
+    {json.dumps(routes_map, ensure_ascii=False, indent=2)}
+
+    Rules:
+    - Return strict JSON: {{"path":"{path}","content":"complete text","extra_deps":[]}}
+    - PyPI distribution name is AIPodCli; Python import name is ai_pod_cli.
+    - Never import AIPodCli, the project name, the Pod name, modules, or pipelines.
+    - Runtime Python gets PipelineRunner only through
+      build_container(load_beans()).get(PipelineRunner).
+    - Runtime code must implement every declared runtime verification mode, including
+      --smoke when present, without starting a long-running server or touching user data.
+    - Installer and platform artifacts must call the runtime artifact at {runtime_path};
+      they must not duplicate business logic.
+    - Do not claim native integration is installed when support.manual_steps remains.
+    """
+    return system_prompt, f"Application requirement:\n{desc}\n\nGenerate only {path}."
+
+
+def _validate_artifact(
+    interface: dict, artifact: dict, content: str, extra_deps: list[str],
+    route_names: list[str],
+) -> list[str]:
+    path = Path(str(artifact["path"]))
+    role = str(artifact.get("role", "resource"))
+    artifact_format = str(artifact.get("format", "text")).lower()
+    violations: list[str] = []
+    if not content.strip():
+        return [f"Artifact {path.as_posix()} is empty"]
+
+    if artifact_format == "python" or path.suffix == ".py":
+        if role == "runtime":
+            violations.extend(validate_entry_contract(content, route_names))
+        else:
+            violations.extend(validate_code(content, allow_file_io=True))
+        violations.extend(validate_entry_imports(content, extra_deps))
+        required_smoke = any(
+            isinstance(check, dict)
+            and bool(check.get("required", True))
+            and path.as_posix() in (check.get("command") or [])
+            and "--smoke" in (check.get("command") or [])
+            for check in interface.get("verify", [])
+        )
+        if required_smoke and "--smoke" not in content:
+            violations.append(f"Runtime artifact {path.as_posix()} must implement --smoke")
+    elif artifact_format == "plist" or path.suffix == ".plist":
+        try:
+            plistlib.loads(content.encode("utf-8"))
+        except Exception as error:
+            violations.append(f"Invalid plist {path.as_posix()}: {error}")
+    elif artifact_format in {"shell", "sh"} or path.suffix == ".sh":
+        completed = subprocess.run(
+            ["sh", "-n"], input=content, capture_output=True, text=True,
+        )
+        if completed.returncode:
+            violations.append(
+                f"Invalid shell artifact {path.as_posix()}: {completed.stderr.strip()}"
+            )
+    return list(dict.fromkeys(violations))
+
+
+def _generate_artifact(
+    desc: str, interface: dict, artifact: dict, routes_map: dict[str, str],
+    progress_callback=None, auto_repair: bool = False,
+) -> tuple[str, list[str]] | None:
+    path = str(artifact["path"])
+    system_prompt, user_prompt = _artifact_prompt(desc, interface, artifact, routes_map)
+    feedback = ""
+    for attempt in range(1, 4):
+        try:
+            result = call_llm(
+                system_prompt, user_prompt + feedback,
+                json_mode=True, temperature=0.1, max_tokens=16384,
+                progress_callback=progress_callback,
+                progress_label=f"Generating Interface artifact: {path}",
+            )
+        except Exception as error:
+            if attempt < 3:
+                feedback = repair_feedback([f"Artifact model call failed: {error}"])
+                continue
+            print(f"   ❌ Artifact generation failed: {path}: {error}")
+            return None
+        returned_path = str(result.get("path", ""))
+        content = str(result.get("content", result.get("code", "")))
+        extra_deps = [str(item) for item in result.get("extra_deps", [])]
+        violations = []
+        if returned_path != path:
+            violations.append(f"Artifact path must remain exactly {path}")
+        violations.extend(_validate_artifact(
+            interface, artifact, content, extra_deps, list(routes_map),
+        ))
+        if not violations:
+            return content, extra_deps
+        if not request_repair(
+            violations, attempt, 3, interactive=not auto_repair,
+            auto_repair=auto_repair,
+        ):
+            return None
+        feedback = repair_feedback(violations)
+    return None
+
+
+def generate_interface_delivery(
+    desc: str, interface: dict, progress_callback=None,
+    auto_repair: bool = False, replace_existing: bool = False,
+) -> tuple[list[str], list[str]] | None:
+    """Generate and atomically install one complete Interface delivery unit."""
+    holder = {"interfaces": [dict(interface)]}
+    normalize_interface_plan(holder)
+    interface = holder["interfaces"][0]
+    name = str(interface["name"])
+    artifacts = interface.get("artifacts", [])
+    if not artifacts:
+        print(f"   ❌ Interface {name} has no artifacts")
+        return None
+    try:
+        paths = [_artifact_path(str(item.get("path", "")), name) for item in artifacts]
+    except ValueError as error:
+        print(f"   ❌ {error}")
+        return None
+
+    bundle = Path("interfaces") / name
+    generated: dict[Path, str] = {}
+    all_deps: list[str] = []
+    routes_map = load_routes_map()
+    for artifact, path in zip(artifacts, paths):
+        existing = Path(path)
+        if existing.is_file() and not replace_existing:
+            content = existing.read_text(encoding="utf-8")
+            violations = _validate_artifact(
+                interface, artifact, content, [], list(routes_map),
+            )
+            if violations:
+                print(f"   ❌ Existing artifact is invalid: {path.as_posix()}")
+                for violation in violations:
+                    print(f"      - {violation}")
+                return None
+            generated[path] = content
+            continue
+        result = _generate_artifact(
+            desc, interface, artifact, routes_map,
+            progress_callback=progress_callback, auto_repair=auto_repair,
+        )
+        if result is None:
+            return None
+        content, deps = result
+        generated[path] = content
+        all_deps.extend(item for item in deps if item not in all_deps)
+
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".aipod_interface_{name}_", dir=bundle.parent,
+    ) as tmp:
+        staged_bundle = Path(tmp) / name
+        if bundle.is_dir() and not replace_existing:
+            shutil.copytree(bundle, staged_bundle)
+        else:
+            staged_bundle.mkdir(parents=True)
+        for path, content in generated.items():
+            relative = path.relative_to(bundle)
+            target = staged_bundle / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        (staged_bundle / "interface.json").write_text(
+            json.dumps(interface, ensure_ascii=False, indent=2), encoding="utf-8",
+        )
+        backup = None
+        if bundle.exists():
+            backup = Path(tmp) / f"{name}.previous"
+            os.replace(bundle, backup)
+        try:
+            os.replace(staged_bundle, bundle)
+        except Exception:
+            if backup is not None and backup.exists() and not bundle.exists():
+                os.replace(backup, bundle)
+            raise
+
+    print(f"   ✅ [Interface delivery] {name}: {len(paths)} artifacts")
+    return [path.as_posix() for path in paths], all_deps
 
 
 def generate_pod_entry(
     desc: str, generated: list[str], pipe_names: list[str], progress_callback=None,
     auto_repair: bool = False, interface: dict | None = None,
+    replace_existing: bool = False,
 ) -> tuple[str, list[str]] | None:
-    """Pod 自己生成入口 prompt，包含本次生成的组件和管线的完整上下文。"""
-    from ai_pod_cli.client import call_llm
-    routes_map = load_routes_map()
+    """Backward-compatible wrapper returning the runtime artifact path."""
+    del generated, pipe_names
     interface = interface or {}
-    interface_name = str(interface.get("name", "application.py"))
-    if not interface_name.endswith(".py"):
-        interface_name += ".py"
-    interface_kind = str(interface.get("kind", "cli"))
-    interface_instruction = str(interface.get("instruction", desc))
-    required_routes = [
-        name for name in routes_map
-        if f"`{name}`" in interface_instruction
-    ]
-
-    # 构建本次生成的上下文
-    comp_summary = "\n".join(f"   - {name}" for name in generated) if generated else "   (无)"
-    pipe_summary = "\n".join(f"   - {name}" for name in pipe_names) if pipe_names else "   (无)"
-    route_lines = "\n".join(f"   - {name}: {desc}" for name, desc in routes_map.items()) if routes_map else "   (无)"
-
-    system_prompt = f"""
-    你是一个资深的 Python 入口文件生成器。以下上下文来自 aipod pod 命令：
-
-    用户需求: {desc}
-
-    本次 Pod 生成的组件：
-    {comp_summary}
-
-    本次 Pod 规划的管线：
-    {pipe_summary}
-
-    routes.toml 中已注册的路由（必须使用这些精确名称调用 runner.run()）：
-    {route_lines}
-
-    当前只生成 Interface：{interface_name}（{interface_kind}）
-    Interface 要求：{interface_instruction}
-
-    你的任务：根据上述上下文，生成这个 Interface 的一个可直接运行的 Python 入口文件。
-
-    【你必须自主决策】：
-    1. 判断项目类型（CLI 工具、FastAPI Web 服务、定时任务等）
-    2. 入口文件名必须是 `{interface_name}`
-    3. 生成完整代码
-    4. 必须实现 `--smoke` 非交互验证模式：不启动长期服务、不连接外部系统，验证关键初始化后以 0 退出
-
-    【代码规范】：
-    - 入口通过容器获取一切：
-      from ai_pod_cli.config import load_beans
-      from ai_pod_cli.container import build_container
-      beans = load_beans()
-      container = build_container(beans)
-    - PipelineRunner 通过容器获取（import: from ai_pod_cli.runner import PipelineRunner）：
-      runner = container.get(PipelineRunner)
-      runner.route_names()  — 列出所有路由
-      runner.run("路由名", {{"key": "value"}})  — 执行管线
-    - 禁止手动 new PipelineRunner()
-    - 入口不 import 任何 modules/ 下的底层 Bean
-    - 建议用 runner.route_names() 动态发现路由
-
-    返回标准 JSON（不要 Markdown 块标记）：
-    {{
-        "project_type": "项目类型",
-        "entry_file": "入口文件名",
-        "code": "完整 Python 源代码",
-        "extra_deps": ["额外 pip 包名"]
-    }}
-    """
-
-    max_attempts = 3
-    feedback = ""
-    for attempt in range(1, max_attempts + 1):
-        try:
-            result = call_llm(
-                system_prompt, f"生成入口: {desc}{feedback}", json_mode=True, temperature=0.2,
-                progress_callback=progress_callback,
-                progress_label=f"Generating {interface_kind} interface: {interface_name}",
-            )
-        except Exception as e:
-            if attempt < max_attempts:
-                feedback = repair_feedback([f"入口生成调用失败：{e}"])
-                continue
-            print(f"   ❌ 入口生成失败: {e}")
-            return None
-
-        entry_file = result.get("entry_file", "main.py")
-        generated_code = result.get("code", "")
-        extra_deps = result.get("extra_deps", [])
-        violations = (
-            validate_entry_contract(generated_code, list(routes_map))
-            if generated_code else ["AI 未返回入口代码"]
-        )
-        if entry_file != interface_name:
-            violations.append(
-                f"Interface 入口必须使用计划声明的文件名 '{interface_name}'"
-            )
-        if "--smoke" not in generated_code:
-            violations.append("Interface 必须实现 --smoke 非交互验证模式")
-        for route_name in required_routes:
-            if not any(
-                quoted in generated_code
-                for quoted in (f'"{route_name}"', f"'{route_name}'")
-            ):
-                violations.append(
-                    f"Interface 规划要求调用路由 '{route_name}'，但入口代码没有引用它"
-                )
-        if not violations:
-            break
-        if not request_repair(
-            violations, attempt, max_attempts,
-            interactive=not auto_repair, auto_repair=auto_repair,
-        ):
-            return None
-        feedback = repair_feedback(violations) + (
-            "\n只修复当前入口文件。此前通过的组件和 Pipeline 已冻结，禁止建议修改它们。"
-        )
-    else:
+    result = generate_interface_delivery(
+        desc, interface, progress_callback, auto_repair, replace_existing,
+    )
+    if result is None:
         return None
-
-    if os.path.exists(entry_file):
-        with open(entry_file, "r", encoding="utf-8") as existing:
-            existing_code = existing.read()
-        existing_violations = validate_entry_contract(existing_code, list(routes_map))
-        if "--smoke" not in existing_code:
-            existing_violations.append("现有 Interface 未实现 --smoke 非交互验证模式")
-        for route_name in required_routes:
-            if not any(
-                quoted in existing_code
-                for quoted in (f'"{route_name}"', f"'{route_name}'")
-            ):
-                existing_violations.append(
-                    f"现有入口未实现规划要求的路由 '{route_name}'"
-                )
-        if existing_violations:
-            print(f"   ❌ {entry_file} 已存在，但与当前 Interface 规划不兼容；未覆盖文件。")
-            for violation in existing_violations:
-                print(f"      - {violation}")
-            return None
-        print(f"   ♻️  {entry_file} 已存在且符合当前 Interface 规划，复用。")
-        return entry_file, extra_deps
-
-    with open(entry_file, "w", encoding="utf-8") as f:
-        f.write(generated_code)
-    print(f"   ✍️  [入口生成成功] {entry_file}")
-
-    return entry_file, extra_deps
+    paths, deps = result
+    runtime = _runtime_artifact(interface)
+    return runtime or paths[0], deps
 
 
 def generate_interfaces(
     *, desc: str, interfaces: list[dict], reused: list[str], generated: list[str],
     args, decision_state: dict, stage: int, progress_callback=None,
+    replace_existing: bool = False,
 ) -> tuple[list[str], list[str]]:
-    """Generate only declared Interfaces after all routes have been frozen."""
-    entry_files: list[str] = []
+    """Generate complete Interface delivery units after routes are frozen."""
+    all_artifacts: list[str] = []
     available_components = list(dict.fromkeys(reused + generated))
-    available_pipelines = list(load_routes_map())
-    print(f"\n🚀 [生成 Interfaces] {len(interfaces)} 个")
+    print(f"\n🚀 [生成 Interface deliveries] {len(interfaces)} 个")
     for index, interface in enumerate(interfaces, 1):
         print(
             f"   [{index}/{len(interfaces)}] {interface.get('name', '')}"
             f" ({interface.get('kind', '')})"
         )
-        entry_info = generate_pod_entry(
-            desc, available_components, available_pipelines,
-            progress_callback=progress_callback,
+        result = generate_interface_delivery(
+            desc, interface, progress_callback=progress_callback,
             auto_repair=bool(getattr(args, "auto_repair", False) or args.yes),
-            interface=interface,
+            replace_existing=replace_existing,
         )
-        if not entry_info:
+        if result is None:
             set_stage_status(decision_state, stage, "in_progress")
-            print("   ⛔ Interface 阶段失败，已验证的前四阶段保持冻结。")
+            print("   ⛔ Interface delivery 生成失败，前四阶段保持冻结。")
             raise SystemExit(1)
-        entry_file, extra_deps = entry_info
-        entry_files.append(entry_file)
-        if extra_deps:
-            append_deps_to_requirements(extra_deps)
-            print(f"   📦 额外依赖: {', '.join(extra_deps)}")
-    return entry_files, available_components
+        paths, deps = result
+        all_artifacts.extend(paths)
+        if deps:
+            append_deps_to_requirements(deps)
+            print(f"   📦 额外依赖: {', '.join(deps)}")
+    return all_artifacts, available_components

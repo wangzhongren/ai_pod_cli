@@ -213,17 +213,36 @@ The `|` operator expresses deterministic left-to-right composition.
 
 ### 5. Interface — delivery
 
-Interfaces expose Pipeline routes as a CLI, website, desktop application, worker, or
-message consumer. They depend on routes through `PipelineRunner` instead of duplicating
-business logic. Every generated Interface declares its own non-interactive proof command:
+Interfaces are delivery units for a CLI, website, desktop application, worker, native
+adapter, or message consumer. They depend on routes through `PipelineRunner` instead of
+duplicating business logic. One Interface may contain multiple independently generated
+Artifacts plus lifecycle, permission, platform-support, and verification metadata:
 
 ```json
 {
-  "name": "server.py",
-  "kind": "web",
-  "verify": {"command": ["python", "server.py", "--smoke"], "timeout": 30}
+  "name": "finder-new-file",
+  "kind": "macos_quick_action",
+  "platform": "macos",
+  "artifacts": [
+    {"path": "interfaces/finder-new-file/main.py", "role": "runtime"},
+    {"path": "interfaces/finder-new-file/install.sh", "role": "installer"},
+    {"path": "interfaces/finder-new-file/Info.plist", "role": "metadata"}
+  ],
+  "lifecycle": {
+    "run": ["python", "interfaces/finder-new-file/main.py"],
+    "install": ["sh", "interfaces/finder-new-file/install.sh"]
+  },
+  "permissions": ["finder_automation", "filesystem_write"],
+  "support": {"level": "supported_with_manual_step", "manual_steps": []},
+  "verify": [
+    {"name": "runtime_smoke", "kind": "runtime", "required": true,
+     "command": ["python", "interfaces/finder-new-file/main.py", "--smoke"], "timeout": 30}
+  ]
 }
 ```
+
+Artifacts are generated in separate model calls, validated independently, staged, and
+committed as one bundle only after every required Artifact passes.
 
 ## Five-Stage Generation and Runtime Closure
 
@@ -254,6 +273,12 @@ runtime loop:
 The Agent cannot skip the earliest incomplete stage. Each tool plans, generates, checks,
 and freezes only its current layer. A failed tool may retry its own unfinished layer but
 cannot rewrite a completed upstream layer.
+
+When a completed Pod receives a change request, one focused AI classification selects
+the earliest affected layer. This is not per-step tool selection: after the impact
+boundary is accepted, the local state machine freezes upstream layers and rebuilds that
+layer plus every downstream layer. `aipod pod --stage auto "change request"` exposes the
+same behavior in the CLI; an explicit stage remains available as a manual override.
 
 After all five layers are complete, `verify_application` runs every frozen Interface's
 explicitly declared command and timeout through the same structured verifier exposed by
@@ -379,13 +404,16 @@ AIPod checks:
 - adjacent Pipeline field names, types, and structured schemas;
 - raw SQL inside generated Services.
 
-Layer generation intentionally does not execute every candidate with invented sample data.
-Files, queues, UI events, and domain state cannot be represented reliably by a generic
-fixture. The Pod Agent therefore closes the build with a real Interface or test command.
+Validation is progressive rather than deferred to the final Interface. Model candidates
+must import and instantiate in a disposable project; Providers must construct through DI
+and smoke their declared methods; Services execute with contract-derived synthetic input;
+and Pipelines run in a disposable project before they are registered. External resources
+remain synthetic and bounded. The final Interface then supplies real application and
+platform-specific evidence.
 
 ## Real Verification and Agent Repair
 
-Run structure checks only:
+Run structure checks only (the top-level status is `unverified`, not `passed`):
 
 ```bash
 aipod verify --json
@@ -501,7 +529,11 @@ project/
 │   ├── providers/
 │   └── services/
 ├── pipelines/
-├── app.py / cli.py          generated Interface
+├── interfaces/
+│   └── <interface-id>/
+│       ├── interface.json
+│       └── generated Artifacts
+├── docs/aipod/              generated human-readable Pod plans
 └── .aipod/runs/             redacted execution traces
 ```
 
@@ -511,6 +543,7 @@ project/
 |---|---|:---:|
 | `aipod init [--install-deps]` | Initialize the current directory | No |
 | `aipod pod DESC [--file FILE] [--yes] [--json]` | Build or resume all five stages | Yes |
+| `aipod pod --stage auto DESC` | Modify from the AI-selected affected layer | Yes |
 | `aipod create --category model/provider/service --name NAME --desc DESC` | Generate one component | Yes |
 | `aipod add --category model/provider/service --name NAME --class-path PATH --desc DESC` | Register hand-written code | No |
 | `aipod compose CMD [--name NAME] [--json]` | Generate and register a Pipeline | Yes |
@@ -543,6 +576,8 @@ $env:PYTHONUTF8 = "1"
 
 - Pipeline composition is currently sequential.
 - Contract analysis cannot prove arbitrary Python semantics.
+- `AIPodCli` is the distribution name; generated Python code imports `ai_pod_cli`.
+  Interface validation rejects invented project/Pod package imports.
 - Similar field names are advisory warnings; only explicit type, Model, required-field,
   and nested-Schema incompatibilities invalidate composition.
 - Privileged Effect approval and denial policies are not yet enforced.

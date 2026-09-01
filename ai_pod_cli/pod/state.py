@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 
-PLAN_VERSION = 4
+PLAN_VERSION = 5
 DECISION_PLAN_FILE = Path("aipod_plan.json")
 STAGE_NAMES = ("models", "providers", "services", "pipelines", "interfaces")
 STAGE_BUILD_TOOLS = (
@@ -36,6 +37,34 @@ class StageState(TypedDict, total=False):
     plan: dict[str, Any] | None
     reduction: dict[str, Any]
     artifacts: list[str]
+    runtime_checks: list[dict[str, Any]]
+
+
+class InterfaceArtifact(TypedDict, total=False):
+    path: str
+    role: str
+    format: str
+    instruction: str
+
+
+class InterfaceVerification(TypedDict, total=False):
+    name: str
+    kind: str
+    required: bool
+    command: list[str]
+    timeout: int
+
+
+class InterfaceManifest(TypedDict, total=False):
+    name: str
+    kind: str
+    platform: str
+    instruction: str
+    artifacts: list[InterfaceArtifact]
+    lifecycle: dict[str, list[str]]
+    permissions: list[str]
+    support: dict[str, Any]
+    verify: list[InterfaceVerification]
 
 
 class AgentState(TypedDict, total=False):
@@ -55,12 +84,37 @@ class PodPlanState(TypedDict):
     agent: AgentState
 
 
+def stage_index(stage: str | int) -> int:
+    """Resolve a public stage name or index to the governed stage index."""
+    if isinstance(stage, int):
+        if 0 <= stage < len(STAGE_NAMES):
+            return stage
+        raise ValueError(f"Invalid Pod stage index: {stage}")
+    normalized = str(stage).strip().lower()
+    if normalized not in STAGE_NAMES:
+        raise ValueError(
+            "Pod stage must be one of: " + ", ".join(STAGE_NAMES)
+        )
+    return STAGE_NAMES.index(normalized)
+
+
 def default_interface_verification(interface: dict[str, Any]) -> dict[str, Any]:
-    """Return a portable, non-interactive proof command for one Interface."""
-    name = str(interface.get("name", "application.py")).strip() or "application.py"
-    if not name.endswith(".py"):
-        name += ".py"
-    return {"command": ["python", name, "--smoke"], "timeout": 30}
+    """Return a portable runtime proof for one Interface delivery unit."""
+    artifacts = interface.get("artifacts", [])
+    runtime = next(
+        (
+            str(item.get("path")) for item in artifacts
+            if isinstance(item, dict) and item.get("role") == "runtime" and item.get("path")
+        ),
+        "",
+    )
+    if not runtime:
+        name = str(interface.get("name", "application.py")).strip() or "application.py"
+        runtime = name if name.endswith(".py") else name + ".py"
+    return {
+        "name": "runtime_smoke", "kind": "runtime", "required": True,
+        "command": ["python", runtime, "--smoke"], "timeout": 30,
+    }
 
 
 def normalize_interface_plan(plan: dict[str, Any]) -> dict[str, Any]:
@@ -72,25 +126,85 @@ def normalize_interface_plan(plan: dict[str, Any]) -> dict[str, Any]:
     for raw in interfaces:
         if not isinstance(raw, dict):
             continue
-        name = str(raw.get("name", "application.py")).strip() or "application.py"
-        if not name.endswith(".py"):
-            name += ".py"
+        artifacts = raw.get("artifacts")
+        original_name = str(raw.get("name", "application")).strip() or "application"
+        name = re.sub(
+            r"[^A-Za-z0-9_-]+", "-", Path(original_name).stem,
+        ).strip("-") or "interface"
         raw["name"] = name
+        if not isinstance(artifacts, list) or not artifacts:
+            legacy_path = original_name if original_name.endswith(".py") else original_name + ".py"
+            runtime_path = (
+                legacy_path if Path(legacy_path).is_file()
+                else f"interfaces/{name}/main.py"
+            )
+            artifacts = [{
+                "path": runtime_path, "role": "runtime", "format": "python",
+                "instruction": str(raw.get("instruction", "")),
+            }]
+            raw["artifacts"] = artifacts
+        normalized_artifacts = []
+        for artifact in artifacts:
+            if not isinstance(artifact, dict) or not artifact.get("path"):
+                continue
+            item = dict(artifact)
+            item["path"] = str(item["path"])
+            item["role"] = str(item.get("role", "resource"))
+            item["format"] = str(item.get("format", "text"))
+            item["instruction"] = str(item.get("instruction", ""))
+            normalized_artifacts.append(item)
+        raw["artifacts"] = normalized_artifacts
+        runtime_path = next(
+            (
+                item["path"] for item in normalized_artifacts
+                if item.get("role") == "runtime"
+            ),
+            normalized_artifacts[0]["path"] if normalized_artifacts else "",
+        )
+        lifecycle = raw.get("lifecycle")
+        if not isinstance(lifecycle, dict):
+            lifecycle = {}
+        lifecycle.setdefault("run", ["python", runtime_path] if runtime_path else [])
+        lifecycle.setdefault("install", [])
+        lifecycle.setdefault("uninstall", [])
+        raw["lifecycle"] = lifecycle
+        permissions = raw.get("permissions")
+        raw["permissions"] = [str(item) for item in permissions] if isinstance(permissions, list) else []
+        support = raw.get("support")
+        if not isinstance(support, dict):
+            support = {}
+        support.setdefault("level", "supported")
+        support.setdefault("manual_steps", [])
+        raw["support"] = support
         fallback = default_interface_verification(raw)
-        verify = raw.get("verify")
-        if not isinstance(verify, dict):
-            verify = {}
-            raw["verify"] = verify
-        command = verify.get("command")
-        if not isinstance(command, list) or not command or not all(
-            isinstance(item, str) and item for item in command
-        ) or name not in command or "--smoke" not in command:
-            verify["command"] = fallback["command"]
-        try:
-            timeout = int(verify.get("timeout", fallback["timeout"]))
-        except (TypeError, ValueError):
-            timeout = fallback["timeout"]
-        verify["timeout"] = max(1, timeout)
+        checks = raw.get("verify")
+        if isinstance(checks, dict):
+            checks = [checks]
+        if not isinstance(checks, list) or not checks:
+            checks = [fallback]
+        normalized_checks = []
+        for index, check in enumerate(checks):
+            if not isinstance(check, dict):
+                continue
+            item = dict(check)
+            command = item.get("command")
+            if not isinstance(command, list) or not command or not all(
+                isinstance(part, str) and part for part in command
+            ):
+                if index == 0:
+                    item = dict(fallback)
+                else:
+                    continue
+            item.setdefault("name", f"check_{index + 1}")
+            item.setdefault("kind", "runtime")
+            item.setdefault("required", True)
+            try:
+                timeout = int(item.get("timeout", 30))
+            except (TypeError, ValueError):
+                timeout = 30
+            item["timeout"] = max(1, timeout)
+            normalized_checks.append(item)
+        raw["verify"] = normalized_checks or [fallback]
     return plan
 
 
@@ -167,6 +281,39 @@ def load_current_plan() -> PodPlanState | None:
     if not isinstance(objective, str) or not objective:
         return None
     return load_and_upgrade_plan(candidate, objective)
+
+
+def prepare_stage_rebuild(stage: str | int, instruction: str) -> PodPlanState:
+    """Invalidate one selected layer and its downstream while freezing upstream."""
+    state = load_current_plan()
+    if state is None:
+        raise ValueError("No existing Pod plan is available to modify")
+    index = stage_index(stage)
+    instruction = str(instruction).strip()
+    if not instruction:
+        raise ValueError("Describe the change required for the selected Pod layer")
+
+    for name in STAGE_NAMES[index:]:
+        record = state["stages"][name]
+        record["status"] = "pending"
+        record["plan"] = None
+        record.pop("reduction", None)
+        record.pop("last_evidence", None)
+        record.pop("runtime_checks", None)
+        if name == "interfaces":
+            record.pop("artifacts", None)
+
+    state["current_stage"] = STAGE_NAMES[index]
+    state["revision"] = {
+        "from_stage": STAGE_NAMES[index],
+        "instruction": instruction,
+    }
+    state["agent"]["status"] = "idle"
+    state["agent"]["verification"] = {
+        "status": "pending", "attempts": 0, "repairs": 0,
+    }
+    save_decision_plan(state)
+    return state
 
 
 def save_decision_plan(state: PodPlanState | dict[str, Any]) -> None:

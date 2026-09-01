@@ -5,7 +5,7 @@ from ai_pod_cli.commands.compose import handle_compose
 
 def generate_pipelines(
     *, pipelines: list[dict], generated: list[str], reused: list[str], args,
-    progress_callback=None, load_routes,
+    progress_callback=None, load_routes, replace_existing: bool = False,
 ) -> tuple[list[str], list[str], list[str]]:
     _load_routes_map = load_routes
     # 生成 pipelines
@@ -21,9 +21,11 @@ def generate_pipelines(
             instruction = pipe.get("instruction", "")
             print(f"\n   [{i}/{len(pipelines)}] {pipe_name}: {instruction}")
             if pipe_name in existing_routes:
-                reused_pipelines.append(pipe_name)
-                print(f"   ♻️  [Pipeline 复用] {pipe_name}")
-                continue
+                if not replace_existing:
+                    reused_pipelines.append(pipe_name)
+                    print(f"   ♻️  [Pipeline 复用] {pipe_name}")
+                    continue
+                print(f"   🔧 [Pipeline 重建] {pipe_name}")
 
             # 构造 compose 的 args
             class ComposeArgs:

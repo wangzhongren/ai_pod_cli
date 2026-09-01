@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
@@ -14,9 +15,43 @@ from ai_pod_cli.pod.state import save_decision_plan as _save_decision_plan
 from ai_pod_cli.repair import (
     apply_code_patches, can_patch_code, classify_failures, patch_prompt,
 )
+from ai_pod_cli.sandbox import verify_component_candidate
 from ai_pod_cli.validation import (
     repair_feedback, request_repair, validate_component_contract,
 )
+
+
+def verify_reused_components(
+    component_ids: list[str], beans_by_id: dict[str, dict], category: str,
+) -> tuple[list[dict], list[str]]:
+    """Revalidate reused project components after an upstream layer changes."""
+    checks: list[dict] = []
+    violations: list[str] = []
+    for component_id in component_ids:
+        bean = beans_by_id.get(component_id, {})
+        if bean.get("category") != category:
+            continue
+        class_path = str(bean.get("class_path", ""))
+        if not class_path.startswith("modules."):
+            continue
+        module_name = class_path.rsplit(".", 1)[0]
+        source_path = Path(*module_name.split(".")).with_suffix(".py")
+        if not source_path.is_file():
+            violations.append(f"{component_id}: source file is missing: {source_path}")
+            continue
+        candidate = dict(bean)
+        candidate.setdefault("file", source_path.name)
+        current = verify_component_candidate(
+            Path.cwd(), candidate, source_path.read_text(encoding="utf-8"), [], timeout=20,
+        )
+        if current:
+            violations.extend(f"{component_id}: {item}" for item in current)
+        else:
+            checks.append({
+                "component": component_id, "status": "passed",
+                "check": "reused_component_revalidation",
+            })
+    return checks, violations
 
 
 def generate_components(
@@ -218,6 +253,24 @@ def generate_components(
                             f"Model '{dependency}' 不能作为注入依赖；请从其 class_path "
                             f"'{known_beans[dependency].get('class_path')}' 直接 import，并从 dependencies 删除"
                         )
+                if not violations:
+                    module_dir, class_path = get_module_path(category, name)
+                    candidate_bean = {
+                        "id": name,
+                        "category": category,
+                        "type": "ai_created",
+                        "class_path": class_path,
+                        "file": f"{name.lower()}.py",
+                        "dependencies": dependencies,
+                        "inputs": inputs,
+                        "outputs": outputs,
+                        "methods": methods,
+                        "description": f"{description}。技术规格: {ai_spec}",
+                    }
+                    runtime_violations = verify_component_candidate(
+                        Path.cwd(), candidate_bean, code, [], timeout=20,
+                    )
+                    violations.extend(runtime_violations)
                 evidence = reduce_evidence(violations)
                 stage_record["last_evidence"] = evidence
                 _save_decision_plan(decision_state)
@@ -252,6 +305,11 @@ def generate_components(
                     break
 
                 generated_valid = True
+                stage_record.setdefault("runtime_checks", []).append({
+                    "component": name, "status": "passed",
+                    "check": "isolated_import_di_and_smoke",
+                })
+                _save_decision_plan(decision_state)
                 break
 
             if not generated_valid:

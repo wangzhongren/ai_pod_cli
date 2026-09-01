@@ -4,6 +4,7 @@ import json
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
@@ -11,6 +12,7 @@ from ai_pod_cli.config import (
 )
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipeline_contract
 from ai_pod_cli.contracts import analyze_pipeline_contracts
+from ai_pod_cli.sandbox import verify_pipeline_candidate
 
 
 def _slugify(text: str) -> str:
@@ -267,6 +269,10 @@ def handle_compose(args):
                     violations.append(
                         f"嵌套 Schema 不兼容：{issue['component']}.{issue['field']}：{details}"
                     )
+            if not violations:
+                violations.extend(verify_pipeline_candidate(
+                    Path.cwd(), generated_code, contract.get("inputs", {}), timeout=30,
+                ))
             if violations:
                 if not request_repair(
                     violations, attempt, max_attempts,
@@ -285,7 +291,7 @@ def handle_compose(args):
             print(f"❌ AI 编排失败: {e}")
             return False
 
-    print("🛡️  [生成预检通过] 代码语法、基础安全规则和 Pipeline 契约均有效；运行修复交由后续 Agent")
+    print("🛡️  [生成预检通过] 语法、Contract 与隔离 Pipeline 运行均已通过")
 
     # 保存 pipeline 文件
     name = args.name or _slugify(args.cmd)

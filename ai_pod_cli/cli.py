@@ -76,6 +76,10 @@ def main():
     pod_parser.add_argument("--file", "-f", default="", help="Read requirements from a file (supports long specs)")
     pod_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation, generate immediately")
     pod_parser.add_argument("--json", action="store_true", help="Emit a machine-readable command result")
+    pod_parser.add_argument(
+        "--stage", choices=("auto", "models", "providers", "services", "pipelines", "interfaces"),
+        default="", help="Modify this existing layer and rebuild its downstream layers",
+    )
 
     # 6. config
     config_parser = subparsers.add_parser("config", help="Manage global configuration (~/.aipod/config.toml)")

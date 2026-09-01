@@ -18,7 +18,7 @@ from ai_pod_cli.pod.state import (
 )
 from ai_pod_cli.pod.planning import save_pod_plan as _save_pod_plan
 from ai_pod_cli.pod.routes import load_routes_map as _load_routes_map
-from ai_pod_cli.pod.tools.components import generate_components
+from ai_pod_cli.pod.tools.components import generate_components, verify_reused_components
 from ai_pod_cli.pod.tools.interfaces import (
     generate_interfaces, generate_pod_entry as _generate_pod_entry,
 )
@@ -69,6 +69,15 @@ def _execute_pod_build_tool(args):
     else:
         stage = explicit_stage
 
+    rebuild_from = getattr(args, "_pod_rebuild_from", None)
+    rebuild_active = rebuild_from is not None and stage >= int(rebuild_from)
+    revision = decision_state.get("revision", {}) if rebuild_active else {}
+    revision_instruction = str(revision.get("instruction", "")).strip()
+    previous_stage_evidence = (
+        decision_state.get("stages", {}).get(STAGE_NAMES[stage], {}).get("last_evidence")
+        or {}
+    )
+
     beans = load_beans()
     existing_beans = load_beans_summary()
     toml_keys = load_config_toml_safe()
@@ -79,7 +88,7 @@ def _execute_pod_build_tool(args):
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
         2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。复杂输入输出必须引用已生成 Model 的完整类路径。Model 只能普通 import，不能写入 depends_on。",
         3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。",
-        4: "只规划用户入口 Interface。components 和 pipelines 必须为空。读取 routes.toml 中已经冻结的 Pipeline，为需求规划必要的 CLI、Web、Desktop、Worker 或消息消费者入口；每个 Interface 必须明确使用哪些 route。",
+        4: "只规划用户入口 Interface。components 和 pipelines 必须为空。读取已冻结 route，把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
 
     system_prompt = f"""
@@ -93,6 +102,10 @@ def _execute_pod_build_tool(args):
 
     当前处于阶段 {stage + 1}/5：{stage_name}。
     {stage_instructions}
+
+    本次局部修改要求：{revision_instruction or "无（正常构建或续跑）"}
+    {"当前层及下游已解冻。如需修改现有同层组件，可以在 components 中使用相同 Bean ID 返回替换规划。" if rebuild_active else ""}
+    上一次当前层验证证据：{json.dumps(previous_stage_evidence, ensure_ascii=False)}
 
     你的任务是只规划当前阶段。后续阶段会在当前产物生成并验证之后重新调用规划器，禁止提前规划。
 
@@ -136,13 +149,26 @@ def _execute_pod_build_tool(args):
         ],
         "interfaces": [
             {{
-                "name": "入口 Python 文件名，例如 server.py",
-                "kind": "cli|web|desktop|worker|consumer",
-                "instruction": "入口行为、使用的精确 Pipeline route 和运行方式",
-                "verify": {{
-                    "command": ["python", "server.py", "--smoke"],
-                    "timeout": 30
-                }}
+                "name": "interface-id",
+                "kind": "cli|web|desktop|worker|consumer|macos_quick_action|native_extension",
+                "platform": "cross-platform|macos|windows|linux",
+                "instruction": "交付单元的整体行为和精确 Pipeline route",
+                "artifacts": [
+                    {{"path": "interfaces/interface-id/main.py", "role": "runtime", "format": "python", "instruction": "仅生成运行时逻辑"}},
+                    {{"path": "interfaces/interface-id/install.sh", "role": "installer", "format": "shell", "instruction": "仅生成安装脚本"}},
+                    {{"path": "interfaces/interface-id/Info.plist", "role": "metadata", "format": "plist", "instruction": "仅生成平台元数据"}}
+                ],
+                "lifecycle": {{
+                    "run": ["python", "interfaces/interface-id/main.py"],
+                    "install": ["sh", "interfaces/interface-id/install.sh"],
+                    "uninstall": ["sh", "interfaces/interface-id/uninstall.sh"]
+                }},
+                "permissions": ["filesystem_write"],
+                "support": {{"level": "supported|supported_with_manual_step|prototype_only|unsupported", "manual_steps": []}},
+                "verify": [
+                    {{"name": "runtime_smoke", "kind": "runtime", "required": true, "command": ["python", "interfaces/interface-id/main.py", "--smoke"], "timeout": 30}},
+                    {{"name": "installation_check", "kind": "installation", "required": false, "command": ["python", "interfaces/interface-id/main.py", "--verify-install"], "timeout": 10}}
+                ]
             }}
         ],
         "config_additions": {{
@@ -261,7 +287,12 @@ def _execute_pod_build_tool(args):
     for component in components:
         name = component.get("name")
         if name in existing_by_id:
-            if name not in reused:
+            existing_category = existing_by_id[name].get("category")
+            if rebuild_active and existing_category == component.get("category"):
+                if name in reused:
+                    reused.remove(name)
+                create_components.append(component)
+            elif name not in reused:
                 reused.append(name)
         else:
             create_components.append(component)
@@ -385,6 +416,26 @@ def _execute_pod_build_tool(args):
         print("   ⛔ Pod 已停止：核心组件未通过，保留此前已验证组件，不生成下游 Pipeline 或入口。")
         raise SystemExit(1)
 
+    if stage <= 2:
+        expected_category = ("model", "provider", "service")[stage]
+        reused_checks, reused_violations = verify_reused_components(
+            reused, existing_by_id, expected_category,
+        )
+        if reused_violations:
+            stage_record["status"] = "in_progress"
+            stage_record["plan"] = None
+            stage_record["last_evidence"] = {
+                "status": "rejected", "evidence": reused_violations,
+                "repair_scope": STAGE_NAMES[stage],
+            }
+            _save_decision_plan(decision_state)
+            print("❌ [复用组件重新验证失败]")
+            for violation in reused_violations:
+                print(f"   ❌ {violation}")
+            raise SystemExit(1)
+        stage_record.setdefault("runtime_checks", []).extend(reused_checks)
+        _save_decision_plan(decision_state)
+
     if stage < 3:
         _set_stage_status(decision_state, stage, "complete")
         print(f"\n✅ [{stage_name} 阶段已冻结] 控制权返回 Pod Agent。")
@@ -393,12 +444,19 @@ def _execute_pod_build_tool(args):
     generated_pipelines, failed_pipelines, reused_pipelines = generate_pipelines(
         pipelines=pipelines, generated=generated, reused=reused, args=args,
         progress_callback=progress_callback, load_routes=_load_routes_map,
+        replace_existing=rebuild_active,
     )
     if stage == 3:
         if failed_pipelines:
             _set_stage_status(decision_state, stage, "in_progress")
             print("   ⛔ Pipeline 阶段未完全通过，不规划 Interface。")
             raise SystemExit(1)
+        for pipeline_name in generated_pipelines:
+            stage_record.setdefault("runtime_checks", []).append({
+                "pipeline": pipeline_name, "status": "passed",
+                "check": "isolated_pipeline_execution",
+            })
+        _save_decision_plan(decision_state)
         _set_stage_status(decision_state, stage, "complete")
         print("\n✅ [pipelines 阶段已冻结] 控制权返回 Pod Agent。")
         return
@@ -406,7 +464,7 @@ def _execute_pod_build_tool(args):
     entry_files, available_components = generate_interfaces(
         desc=desc, interfaces=interfaces, reused=reused, generated=generated,
         args=args, decision_state=decision_state, stage=stage,
-        progress_callback=progress_callback,
+        progress_callback=progress_callback, replace_existing=rebuild_active,
     )
 
     # 输出汇总

@@ -172,6 +172,14 @@ class StudioProjectService:
         for path in sorted(self._project_root.glob("*.py")):
             if path.name not in found and not path.name.startswith(("setup", "test_")):
                 found.append(path.name)
+        state = load_current_plan()
+        plan = state.get("stages", {}).get("interfaces", {}).get("plan", {}) if state else {}
+        for interface in plan.get("interfaces", []) if isinstance(plan, dict) else []:
+            for artifact in interface.get("artifacts", []) if isinstance(interface, dict) else []:
+                path = str(artifact.get("path", "")) if isinstance(artifact, dict) else ""
+                if isinstance(artifact, dict) and artifact.get("role") == "runtime" and path and (self._project_root / path).is_file():
+                    if path not in found:
+                        found.append(path)
         return found
 
     def _discover_interfaces(self, pipelines: list[dict]) -> list[dict]:
@@ -182,13 +190,49 @@ class StudioProjectService:
             state.get("stages", {}).get("interfaces", {}).get("plan", {})
             if state else {}
         )
-        declared = {
-            str(item.get("name", "")): item
-            for item in interface_plan.get("interfaces", [])
+        declared_items = [
+            item for item in interface_plan.get("interfaces", [])
             if isinstance(item, dict) and item.get("name")
-        } if isinstance(interface_plan, dict) else {}
+        ] if isinstance(interface_plan, dict) else []
         interfaces = []
+        declared_runtime_paths = set()
+        for metadata in declared_items:
+            artifacts = metadata.get("artifacts", [])
+            runtime = next((
+                str(item.get("path")) for item in artifacts
+                if isinstance(item, dict) and item.get("role") == "runtime" and item.get("path")
+            ), "")
+            if runtime:
+                declared_runtime_paths.add(runtime)
+            source = ""
+            if runtime:
+                try:
+                    source = (self._project_root / runtime).read_text(encoding="utf-8")
+                except OSError:
+                    pass
+            explicit = [
+                route for route in route_names
+                if re.search(rf"[\"']{re.escape(route)}[\"']", source)
+            ]
+            lifecycle = metadata.get("lifecycle", {})
+            run_command = lifecycle.get("run", []) if isinstance(lifecycle, dict) else []
+            interfaces.append({
+                "name": str(metadata.get("name")),
+                "kind": str(metadata.get("kind", "python")),
+                "platform": str(metadata.get("platform", "cross-platform")),
+                "entrypoint": runtime,
+                "routes": explicit,
+                "command": " ".join(str(item) for item in run_command),
+                "artifacts": artifacts,
+                "lifecycle": lifecycle,
+                "permissions": metadata.get("permissions", []),
+                "support": metadata.get("support", {}),
+                "verify": metadata.get("verify", []),
+            })
+
         for name in self._discover_entrypoints():
+            if name in declared_runtime_paths:
+                continue
             path = self._project_root / name
             try:
                 source = path.read_text(encoding="utf-8")
@@ -210,12 +254,14 @@ class StudioProjectService:
                 if re.search(rf"[\"']{re.escape(route)}[\"']", source):
                     explicit.append(route)
             dynamic_dispatch = bool(re.search(r"\.run\(\s*[A-Za-z_]\w*\s*,", source))
-            metadata = declared.get(name, {})
             interfaces.append({
                 "name": name, "kind": kind, "entrypoint": name,
                 "routes": route_names if dynamic_dispatch else explicit,
                 "command": f"python -u {name}",
-                "verify": metadata.get("verify"),
+                "artifacts": [{"path": name, "role": "runtime", "format": "python"}],
+                "lifecycle": {"run": ["python", "-u", name], "install": [], "uninstall": []},
+                "permissions": [], "support": {"level": "legacy", "manual_steps": []},
+                "verify": [],
             })
         return interfaces
 

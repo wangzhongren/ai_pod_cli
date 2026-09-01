@@ -28,23 +28,32 @@ def _application_verification_specs(state: dict) -> list[dict]:
     for interface in interfaces:
         if not isinstance(interface, dict):
             continue
-        verify = interface.get("verify")
-        if not isinstance(verify, dict):
+        checks = interface.get("verify")
+        if isinstance(checks, dict):
+            checks = [checks]
+        if not isinstance(checks, list):
             continue
-        command = verify.get("command")
-        if not isinstance(command, list) or not command:
-            continue
-        resolved = [str(item) for item in command]
-        if resolved[0] in {"python", "python3"}:
-            resolved[0] = sys.executable
-        specs.append({
-            "name": str(interface.get("name", "interface")),
-            "command": resolved,
-            "timeout": max(1, int(verify.get("timeout", 30))),
-        })
+        for index, verify in enumerate(checks):
+            if not isinstance(verify, dict):
+                continue
+            command = verify.get("command")
+            if not isinstance(command, list) or not command:
+                continue
+            resolved = [str(item) for item in command]
+            if resolved[0] in {"python", "python3"}:
+                resolved[0] = sys.executable
+            specs.append({
+                "interface": str(interface.get("name", "interface")),
+                "name": str(verify.get("name", f"check_{index + 1}")),
+                "kind": str(verify.get("kind", "runtime")),
+                "required": bool(verify.get("required", True)),
+                "command": resolved,
+                "timeout": max(1, int(verify.get("timeout", 30))),
+            })
     if not specs and isinstance(existing, list) and existing:
         specs.append({
             "name": "application",
+            "interface": "application", "kind": "runtime", "required": True,
             "command": [str(item) for item in existing],
             "timeout": max(1, int(verification.get("timeout", 30))),
         })
@@ -60,9 +69,9 @@ def _project_verification_fingerprint() -> str:
         if path.is_file()
     ]
     paths.extend(sorted(Path.cwd().glob("*.py")))
-    for directory in (Path("modules"), Path("pipelines"), Path("tests")):
+    for directory in (Path("modules"), Path("pipelines"), Path("interfaces"), Path("tests")):
         if directory.is_dir():
-            paths.extend(sorted(directory.rglob("*.py")))
+            paths.extend(sorted(path for path in directory.rglob("*") if path.is_file()))
     digest = hashlib.sha256()
     for path in sorted(set(paths), key=lambda item: item.as_posix()):
         digest.update(path.as_posix().encode("utf-8"))
@@ -78,6 +87,8 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
 
     specs = _application_verification_specs(state)
     interface_checks = []
+    required_failed = False
+    suggested_files: list[str] = []
     result = verify_project([], timeout=1)
     if not specs:
         result["status"] = "failed"
@@ -94,13 +105,24 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
                 timeout=max(1, int(timeout)) if timeout is not None else spec["timeout"],
             )
             interface_checks.append({
-                "name": spec["name"], "command": spec["command"],
+                "interface": spec["interface"], "name": spec["name"],
+                "kind": spec["kind"], "required": spec["required"],
+                "command": spec["command"],
                 "timeout": spec["timeout"], "status": current["status"],
                 "execution": current["checks"]["execution"],
             })
             result = current
-            if current["status"] != "passed":
-                break
+            if current["status"] != "passed" and spec["required"]:
+                required_failed = True
+                suggested_files.extend(current.get("repair", {}).get("suggested_files", []))
+        structure_failed = any(
+            item.get("status") == "failed" and item.get("required")
+            for item in interface_checks
+            if item.get("kind") == "structure"
+        )
+        result["status"] = "failed" if required_failed or structure_failed else "passed"
+        result["repair"]["required"] = result["status"] == "failed"
+        result["repair"]["suggested_files"] = list(dict.fromkeys(suggested_files))
         result["checks"]["interfaces"] = interface_checks
     latest = _load_decision_plan(desc)
     verification = latest["agent"]["verification"]

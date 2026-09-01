@@ -6,13 +6,17 @@ from ai_pod_cli.config import load_beans
 from ai_pod_cli.pod.build import _execute_pod_build_tool, _load_routes_map
 from ai_pod_cli.pod.state import (
     STAGE_BUILD_TOOLS, STAGE_NAMES,
-    load_decision_plan as _load_decision_plan,
+    load_current_plan, load_decision_plan as _load_decision_plan,
+    prepare_stage_rebuild, stage_index,
     resume_stage as _resume_stage,
     save_decision_plan as _save_decision_plan,
 )
 from ai_pod_cli.pod.verification import (
     _project_verification_fingerprint, _repair_current_artifact, _verify_application,
 )
+from ai_pod_cli.pod.revision import select_revision_stage
+
+
 def _agent_project_observation(state: dict) -> dict:
     """Return compact public state that lets the Pod Agent choose its next tool."""
     beans = load_beans().get("beans", [])
@@ -64,6 +68,8 @@ def _append_agent_event(desc: str, event: dict) -> dict:
 def _set_agent_status(desc: str, status: str) -> None:
     state = _load_decision_plan(desc)
     state["agent"]["status"] = status
+    if status == "complete":
+        state.pop("revision", None)
     _save_decision_plan(state)
 
 
@@ -87,7 +93,42 @@ def handle_pod(args):
         from ai_pod_cli.commands.env import print_missing_model_config
         print_missing_model_config()
         raise SystemExit(1)
-
+    requested_stage = str(getattr(args, "stage", "") or "").strip().lower()
+    if requested_stage:
+        if requested_stage == "auto":
+            current = load_current_plan()
+            if current is None:
+                print("❌ 当前项目没有可修改的 Pod 计划。")
+                raise SystemExit(1)
+            if current.get("objective") == desc:
+                # A same-objective invocation is a resume, not a modification.
+                requested_stage = ""
+            else:
+                decision = select_revision_stage(
+                    desc, current, _agent_project_observation(current),
+                    getattr(args, "progress_callback", None),
+                )
+                requested_stage = decision["stage"]
+                print(
+                    f"🧠 [Pod 影响分析] 最早受影响层: {requested_stage}"
+                    + (f" — {decision['summary']}" if decision["summary"] else "")
+                )
+        if not requested_stage:
+            pass
+        else:
+            try:
+                state = prepare_stage_rebuild(requested_stage, desc)
+            except ValueError as error:
+                print(f"❌ {error}")
+                raise SystemExit(1) from error
+            rebuild_from = stage_index(requested_stage)
+            desc = state["objective"]
+            args._pod_stage = rebuild_from
+            args._pod_rebuild_from = rebuild_from
+            print(
+                f"🔧 [Pod 局部重建] 从 {requested_stage} 层开始；"
+                "上游已冻结，下游将重新生成并验证。"
+            )
     original_file = getattr(args, "file", "")
     args.file = ""
     args.desc = desc

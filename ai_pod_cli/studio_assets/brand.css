@@ -53,3 +53,31 @@
   font: 11px/1.5 Consolas, monospace;
   white-space: pre-wrap;
 }
+
+/* Keep long Pod requirements and streamed diagnostics inside the modal. */
+#podDialog {
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+}
+
+#podDialog form,
+#podDialog .modal-body,
+#podRequest,
+#podDialog .field {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#podDialog .modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#podDescription,
+#podLog {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: hidden;
+}
