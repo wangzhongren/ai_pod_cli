@@ -197,6 +197,18 @@ class RuntimeIntegrationTests(unittest.TestCase):
         self.assertIn("UNKNOWN_DEPENDENCY", codes)
         self.assertIn("DEPENDENCY_CYCLE", codes)
 
+    def test_plan_reducer_rejects_service_to_service_visibility(self):
+        plan = {"components": [{
+            "name": "Coordinator", "category": "service",
+            "depends_on": ["Worker"], "models": [],
+        }]}
+        existing = [{"id": "Worker", "category": "service"}]
+
+        result = reduce_decision_fragments(plan, existing, "services")
+
+        self.assertEqual(result["status"], "conflict")
+        self.assertEqual(result["conflicts"][0]["code"], "SERVICE_VISIBILITY_VIOLATION")
+
     def test_plan_mapper_normalizes_legacy_model_dependencies(self):
         plan = {"components": [{
             "name": "MoveService", "category": "service",
@@ -618,6 +630,17 @@ class Worker:
     def test_service_requires_execute(self):
         self.assertTrue(validate_component_contract("class MissingExecute: pass", "MissingExecute", "service"))
 
+    def test_service_cannot_import_another_service(self):
+        code = (
+            "from modules.services.worker import Worker\n"
+            "class Coordinator:\n"
+            "    def execute(self, ctx): return Worker().execute(ctx)\n"
+        )
+        violations = validate_component_contract(
+            code, "Coordinator", "service", {}, {},
+        )
+        self.assertTrue(any("不得看到或导入其他 Service" in item for item in violations))
+
     def test_component_rejects_noncanonical_config_store_import(self):
         code = (
             "from modules.providers.config_store import ConfigStore\n"
@@ -721,6 +744,52 @@ def run(ctx):
         self.assertIsInstance(result, Failure)
         self.assertEqual(calls, [])
         self.assertEqual(ctx.steps[0]["status"], "failure")
+
+    def test_repeat_runs_visible_pipeline_chain_with_bounded_trace(self):
+        from ai_pod_cli.container import _ComponentRef, repeat
+
+        class Tick:
+            def execute(self, ctx):
+                return {"tick": ctx.get("tick", 0) + 1}
+
+        class Stop:
+            def execute(self, ctx):
+                return {"quit_requested": ctx.get("tick", 0) >= 3}
+
+        frame = _ComponentRef("Tick", Tick()) | _ComponentRef("Stop", Stop())
+        ctx = PipelineContext()
+
+        result = repeat(
+            frame, until_field="quit_requested",
+            output_field="executed_frames", trace_limit=2,
+        ).execute_all(ctx)
+
+        self.assertIsInstance(result, Success)
+        self.assertEqual(ctx.get("executed_frames"), 3)
+        self.assertEqual(ctx.steps[0]["mode"], "repeat")
+        self.assertEqual(ctx.steps[0]["stop_reason"], "until")
+        self.assertEqual(len(ctx.steps[0]["iteration_traces"]), 2)
+        self.assertEqual(
+            [step["component"] for step in ctx.steps[0]["iteration_traces"][-1]["steps"]],
+            ["Tick", "Stop"],
+        )
+
+    def test_container_rejects_service_dependency_before_importing_project_code(self):
+        from ai_pod_cli.container import build_container
+
+        config = {"beans": [
+            {
+                "id": "Worker", "category": "service",
+                "class_path": "missing.worker.Worker", "dependencies": [],
+            },
+            {
+                "id": "Coordinator", "category": "service",
+                "class_path": "missing.coordinator.Coordinator",
+                "dependencies": ["Worker"],
+            },
+        ]}
+        with self.assertRaisesRegex(ValueError, "cannot depend on other Services"):
+            build_container(config)
 
     def test_retry_recovers_from_transient_exception(self):
         from ai_pod_cli.container import _ComponentRef

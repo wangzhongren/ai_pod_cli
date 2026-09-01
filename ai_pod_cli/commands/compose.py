@@ -171,6 +171,9 @@ def handle_compose(args):
        - 流式：`from ai_pod_cli.streaming import stream`，使用
          `stream(S(Source)).map(S(Transform), concurrency=4).batch(100)`，
          通过 `async for` 消费，或 `await ...execute_all_async(ctx)` 完整消费。
+       - 循环：`from ai_pod_cli.container import repeat`，使用
+         `repeat(frame, until_field="quit_requested", max_iterations_field="max_frames")`。
+         循环条件只能引用 Context 字段，禁止 lambda、Service 内 while 或 Service 调用 Service。
        `|` 永远只表示串行。并发度、失败策略和 merge 策略必须显式声明。
 
     【PipelineContext 的 API】：

@@ -23,7 +23,7 @@ def handle_create(args):
     append_deps_to_requirements([])
 
     beans = load_beans()
-    beans_summary = load_beans_summary()
+    beans_summary = load_beans_summary(include_services=args.category != "service")
     toml_keys = load_config_toml_safe()
 
     # 构造分类别的 System Prompt
@@ -147,6 +147,8 @@ def handle_create(args):
     【service 规范】：
     - 你只生成**一个 Python 类**，不是 pipeline 脚本！不要写 run() 函数，不要用 S()/Pod()/build_container。
     - service 是业务组件，必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
+    - Service 的组件池视图只包含 Model 和 Provider。禁止 import、注入、实例化或调用
+      任何其他 Service；Service 组合只能写在 Pipeline 中。
     - 网络、数据库驱动或消息队列原生支持 async 时，可以生成 `async def execute(...)`。
     - 需求明确是持续事件源时，可额外实现 `async def stream(self, ctx)` 并逐条 yield
       符合 outputs Contract 的 dict；并发、批处理和重试仍由 Pipeline Runtime 声明，

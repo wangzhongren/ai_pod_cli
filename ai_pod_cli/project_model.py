@@ -56,6 +56,8 @@ def extract_pipeline_execution(pipeline_path: str) -> dict:
     }
     if "stream" in calls:
         mode = "stream"
+    elif "repeat" in calls:
+        mode = "repeat"
     elif "parallel" in calls:
         mode = "parallel"
     elif any(

@@ -93,3 +93,23 @@ The Runtime governs local execution. Queue acknowledgements, durable checkpoints
 distributed partition ownership, transactions, and exactly-once claims depend on the
 chosen infrastructure and must be implemented through explicit Providers and idempotent
 Services.
+
+## Governed repetition
+
+Services never import, inject, instantiate, or invoke other Services. Repeated workflows
+stay visible in the Pipeline through `repeat`:
+
+```python
+frame = S(ReadInput) | S(UpdateScene) | S(ApplyPhysics) | S(RenderFrame)
+loop = repeat(
+    frame,
+    until_field="quit_requested",
+    max_iterations_field="max_frames",
+    output_field="executed_frames",
+)
+loop.execute_all(ctx)
+```
+
+The stop condition and optional limit are Context fields, not arbitrary callbacks. Each
+iteration uses an isolated Context snapshot, merges successful writes deterministically,
+stops on `Failure`, and retains only a bounded number of iteration traces.

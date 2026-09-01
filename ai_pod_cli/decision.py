@@ -145,6 +145,21 @@ def reduce_decision_fragments(
                     "dependency": dependency,
                     "message": f"'{component_id}' depends on unknown Bean '{dependency}'",
                 })
+                continue
+            dependency_kind = (
+                existing[dependency].get("category")
+                if dependency in existing else planned[dependency].get("kind")
+            )
+            if fragment["kind"] == "service" and dependency_kind == "service":
+                conflicts.append({
+                    "code": "SERVICE_VISIBILITY_VIOLATION",
+                    "component": component_id,
+                    "dependency": dependency,
+                    "message": (
+                        f"Service '{component_id}' cannot see Service '{dependency}'; "
+                        "compose them in a Pipeline"
+                    ),
+                })
         for model_id in fragment["models"]:
             if model_id in existing:
                 model_kind = existing[model_id].get("category")

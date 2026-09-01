@@ -41,6 +41,23 @@ class DynamicAIContainerModule(Module):
 
 def build_container(config: dict) -> Injector:
     """Build and return a fully-wired Injector container from the bean config."""
+    by_id = {
+        str(bean.get("id")): bean for bean in config.get("beans", [])
+        if bean.get("id")
+    }
+    for bean in by_id.values():
+        if bean.get("category") != "service":
+            continue
+        hidden = [
+            dependency for dependency in bean.get("dependencies", [])
+            if by_id.get(str(dependency), {}).get("category") == "service"
+        ]
+        if hidden:
+            raise ValueError(
+                f"Service '{bean.get('id')}' cannot depend on other Services: "
+                + ", ".join(str(item) for item in hidden)
+                + "; compose them in a Pipeline"
+            )
     container = Injector([DynamicAIContainerModule(config)])
     container._aipod_config = config
     return container
@@ -275,7 +292,7 @@ class _PipeChain:
         self._refs = list(refs)
 
     def __or__(self, other):
-        if isinstance(other, (_ComponentRef, _ParallelGroup)):
+        if isinstance(other, (_ComponentRef, _ParallelGroup, _RepeatNode)):
             self._refs.append(other)
         elif isinstance(other, _PipeChain):
             self._refs.extend(other._refs)
@@ -287,7 +304,7 @@ class _PipeChain:
         """Execute all components in order, recording each step."""
         result = None
         for ref in self._refs:
-            if isinstance(ref, _ParallelGroup):
+            if isinstance(ref, (_ParallelGroup, _RepeatNode)):
                 result = ref.execute_all(ctx)
                 normalized = normalize_result(result)
             else:
@@ -309,7 +326,7 @@ class _PipeChain:
         """Execute sequential nodes asynchronously, preserving ``|`` semantics."""
         result = None
         for ref in self._refs:
-            if isinstance(ref, _ParallelGroup):
+            if isinstance(ref, (_ParallelGroup, _RepeatNode)):
                 result = await ref.execute_all_async(ctx)
             else:
                 result = await ref.execute_all_async(ctx)
@@ -437,6 +454,147 @@ def parallel(*branches, merge="strict", failure_policy="fail_fast", concurrency=
     """Declare branches that may run concurrently with deterministic merging."""
     return _ParallelGroup(
         branches, merge=merge, failure_policy=failure_policy, concurrency=concurrency,
+    )
+
+
+class _RepeatNode:
+    """Deterministically repeat a governed Pipeline body until state says stop."""
+
+    __slots__ = (
+        "_body", "_until_field", "_max_iterations", "_max_iterations_field",
+        "_output_field", "_trace_limit",
+    )
+
+    def __init__(
+        self, body, *, until_field: str | None = None,
+        max_iterations: int | None = None,
+        max_iterations_field: str | None = None,
+        output_field: str = "iterations", trace_limit: int = 20,
+    ):
+        if not isinstance(body, (_ComponentRef, _PipeChain, _ParallelGroup)):
+            raise TypeError("repeat body must be an S(Component), pipe chain, or parallel group")
+        if not until_field and max_iterations is None and not max_iterations_field:
+            raise ValueError("repeat requires until_field or an iteration limit")
+        if max_iterations is not None and max_iterations < 1:
+            raise ValueError("max_iterations must be at least 1")
+        if trace_limit < 1:
+            raise ValueError("repeat trace_limit must be at least 1")
+        self._body = body
+        self._until_field = str(until_field) if until_field else None
+        self._max_iterations = max_iterations
+        self._max_iterations_field = (
+            str(max_iterations_field) if max_iterations_field else None
+        )
+        self._output_field = str(output_field)
+        self._trace_limit = trace_limit
+
+    def __or__(self, other):
+        return _PipeChain([self]) | other
+
+    def _limit(self, ctx: PipelineContext) -> int | None:
+        value = self._max_iterations
+        if value is None and self._max_iterations_field:
+            value = ctx.get(self._max_iterations_field)
+        if value is None:
+            if self._until_field:
+                return None
+            raise ValueError("repeat iteration limit is missing")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ValueError("repeat iteration limit must be a positive integer")
+        return value
+
+    def _done(self, ctx: PipelineContext) -> bool:
+        return bool(self._until_field and ctx.get(self._until_field, False))
+
+    def _finish(self, ctx, started, iterations, traces, result, stop_reason):
+        normalized = normalize_result(result)
+        if isinstance(normalized, Failure):
+            final = normalized
+            status = "failure"
+        else:
+            final = Success({self._output_field: iterations})
+            ctx.set(self._output_field, iterations)
+            status = "success"
+        ctx.record_step(
+            "repeat", final.to_dict(), (perf_counter() - started) * 1000,
+            status=status, mode="repeat", iterations=iterations,
+            stop_reason=stop_reason, until_field=self._until_field,
+            trace_limit=self._trace_limit, iteration_traces=traces,
+        )
+        return final
+
+    def execute_all(self, ctx: PipelineContext):
+        started = perf_counter()
+        limit = self._limit(ctx)
+        traces = []
+        iterations = 0
+        result = Success()
+        stop_reason = "until"
+        while True:
+            iteration_ctx = ctx.fork(f"iteration-{iterations + 1}")
+            result = self._body.execute_all(iteration_ctx)
+            normalized = normalize_result(result)
+            if isinstance(normalized, Success):
+                ctx.merge([iteration_ctx], strategy="overwrite")
+            iterations += 1
+            traces.append({
+                "iteration": iterations,
+                "status": "failure" if isinstance(normalized, Failure) else "success",
+                "steps": iteration_ctx.summary()["steps"],
+            })
+            traces = traces[-self._trace_limit:]
+            if isinstance(normalized, Failure):
+                stop_reason = "failure"
+                break
+            if self._done(ctx):
+                stop_reason = "until"
+                break
+            if limit is not None and iterations >= limit:
+                stop_reason = "limit"
+                break
+        return self._finish(ctx, started, iterations, traces, result, stop_reason)
+
+    async def execute_all_async(self, ctx: PipelineContext):
+        started = perf_counter()
+        limit = self._limit(ctx)
+        traces = []
+        iterations = 0
+        result = Success()
+        stop_reason = "until"
+        while True:
+            iteration_ctx = ctx.fork(f"iteration-{iterations + 1}")
+            result = await self._body.execute_all_async(iteration_ctx)
+            normalized = normalize_result(result)
+            if isinstance(normalized, Success):
+                ctx.merge([iteration_ctx], strategy="overwrite")
+            iterations += 1
+            traces.append({
+                "iteration": iterations,
+                "status": "failure" if isinstance(normalized, Failure) else "success",
+                "steps": iteration_ctx.summary()["steps"],
+            })
+            traces = traces[-self._trace_limit:]
+            if isinstance(normalized, Failure):
+                stop_reason = "failure"
+                break
+            if self._done(ctx):
+                stop_reason = "until"
+                break
+            if limit is not None and iterations >= limit:
+                stop_reason = "limit"
+                break
+        return self._finish(ctx, started, iterations, traces, result, stop_reason)
+
+
+def repeat(
+    body, *, until_field=None, max_iterations=None, max_iterations_field=None,
+    output_field="iterations", trace_limit=20,
+):
+    """Declare a governed loop without exposing one Service to another."""
+    return _RepeatNode(
+        body, until_field=until_field, max_iterations=max_iterations,
+        max_iterations_field=max_iterations_field, output_field=output_field,
+        trace_limit=trace_limit,
     )
 
 

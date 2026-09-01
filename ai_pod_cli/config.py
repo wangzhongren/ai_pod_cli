@@ -168,7 +168,7 @@ def init_config_if_not_exists():
             json.dump(initial_data, f, indent=2, ensure_ascii=False)
 
 
-def load_beans_summary() -> str:
+def load_beans_summary(*, include_services: bool = True) -> str:
     """Return a categorized summary of all beans with method signatures for AI prompts."""
     config = load_beans()
     models_changed = hydrate_model_fields(config)
@@ -200,7 +200,7 @@ def load_beans_summary() -> str:
             if resources:
                 entry += f"\n      冻结资源: {resources}"
             providers.append(entry)
-        else:
+        elif include_services:
             entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
             inputs = b.get("inputs", {})
             outputs = b.get("outputs", {})
@@ -215,9 +215,10 @@ def load_beans_summary() -> str:
     lines.append("")
     lines.append("  【provider（可注入的依赖，附方法签名）】")
     lines.extend(providers if providers else ["  (无)"])
-    lines.append("")
-    lines.append("  【service（有 execute，可放入管线）】")
-    lines.extend(services if services else ["  (无)"])
+    if include_services:
+        lines.append("")
+        lines.append("  【service（有 execute，仅由 Pipeline 可见）】")
+        lines.extend(services if services else ["  (无)"])
     return "\n".join(lines)
 
 

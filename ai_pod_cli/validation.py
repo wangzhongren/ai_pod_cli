@@ -202,6 +202,29 @@ def validate_component_contract(
         return list(dict.fromkeys(violations))
 
     if category == "service":
+        service_imports = sorted({
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and isinstance(node.module, str)
+            and (
+                node.module == "modules.services"
+                or node.module.startswith("modules.services.")
+            )
+        })
+        service_imports.extend(sorted({
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+            if alias.name == "modules.services" or alias.name.startswith("modules.services.")
+        }))
+        if service_imports:
+            violations.append(
+                "Service 不得看到或导入其他 Service："
+                + ", ".join(dict.fromkeys(service_imports))
+                + "；请在 Pipeline 中组合"
+            )
         sql_pattern = re.compile(
             r"^\s*(?:CREATE\s+(?:TABLE|INDEX)|INSERT\s+INTO|SELECT\s+.+\s+FROM|"
             r"UPDATE\s+\w+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+(?:TABLE|INDEX))\b",

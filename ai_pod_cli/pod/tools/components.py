@@ -75,7 +75,7 @@ def generate_components(
 
         # 重新加载配置（因为每轮生成后 bean pool 会更新）
         beans = load_beans()
-        beans_context = load_beans_summary()
+        beans_context = load_beans_summary(include_services=category != "service")
         toml_keys = load_config_toml_safe()
         referenced_model_ids = reduced_fragments.get(name, {}).get("models", [])
         referenced_models = [
@@ -123,7 +123,9 @@ def generate_components(
         - 每个组件的文件名见上方组件池，必须**原样使用**，不要自己编文件名！
         - 必须逐字复制上方组件池中的 class_path 来 import，禁止根据类别猜测路径。
         - Model 固定从 modules.models.<文件名> 导入；禁止从 modules.services 或 modules.providers 导入 Model。
-        - Provider 从 modules.providers.<文件名> 导入，Service 从 modules.services.<文件名> 导入。
+        - Provider 从 modules.providers.<文件名> 导入。
+        - Service 代码禁止 import modules.services；它只能看到自身 Contract、Model 和 Provider。
+          多个 Service 的执行顺序、循环、并行和失败策略只能由 Pipeline 声明。
         - 如果 Provider 暴露“冻结资源”，SQL/消息主题/外部资源名称必须逐字使用其中的表名和字段，禁止猜测复数形式或不存在的列。
         """
 

@@ -131,12 +131,15 @@ class PipelineContext:
         for key in (
             "duration_ms", "status", "attempts", "fallback", "mode",
             "branch_count", "failure_policy", "merge", "stream_count",
-            "failed_count", "last_sequence",
+            "failed_count", "last_sequence", "iterations", "stop_reason",
+            "until_field", "trace_limit",
         ):
             if key in step:
                 summary[key] = step[key]
         if "branches" in step:
             summary["branches"] = step["branches"]
+        if "iteration_traces" in step:
+            summary["iteration_traces"] = step["iteration_traces"]
         return summary
 
     def __repr__(self):

@@ -79,7 +79,7 @@ def _execute_pod_build_tool(args):
     )
 
     beans = load_beans()
-    existing_beans = load_beans_summary()
+    existing_beans = load_beans_summary(include_services=stage != 2)
     toml_keys = load_config_toml_safe()
     stage_names = STAGE_NAMES
     stage_name = stage_names[min(stage, len(stage_names) - 1)]
@@ -95,8 +95,8 @@ def _execute_pod_build_tool(args):
     stage_instructions = {
         0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类。明确区分运行时 Value Model（不持久化）和 Persistent Model（需要 ModelRepository/数据库）；禁止把 Vector2、Transform、事件、碰撞结果等瞬时值规划成数据库表。",
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
-        2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。components.models 必须填写 Bean Pool 中已有 Model 的精确 Bean ID，禁止填写或猜测 class_path；后续代码生成器会从冻结注册表取得精确 class_path。Model 只能普通 import，不能写入 depends_on。",
-        3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。默认同步串行；只有需求明确需要时才声明 async、parallel 或 stream。并发分支必须给出 merge、failure_policy 和 concurrency，流式执行必须给出 concurrency、batch_size 和 failure_policy。",
+        2: "只规划业务 service。Service 看不到其他 Service：depends_on 只能填写 Provider Bean ID，禁止依赖、导入、实例化或调用其他 Service；Service 组合只能由 Pipeline 完成。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。components.models 必须填写 Bean Pool 中已有 Model 的精确 Bean ID，禁止填写或猜测 class_path；后续代码生成器会从冻结注册表取得精确 class_path。Model 只能普通 import，不能写入 depends_on。",
+        3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。Service 之间的唯一组合位置就是 Pipeline。默认同步串行；只有需求明确需要时才声明 async、parallel、stream 或 repeat。循环必须使用 Runtime repeat 节点和 Context 字段条件，禁止让 Service 调用 Service 或在 Service 中编排 while。并发分支必须给出 merge、failure_policy 和 concurrency，流式执行必须给出 concurrency、batch_size 和 failure_policy。",
         4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。复杂 Adapter 必须拆成 adapter_entry 和多个 adapter_module，每个文件只承担一个输入适配职责。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
 
@@ -139,7 +139,7 @@ def _execute_pod_build_tool(args):
     1. 为每个 service 类型的组件规划至少一条 pipeline。
     2. pipeline 的 instruction 应该是具体的业务指令（如 "生成一个用户认证组件"）。
     3. pipeline 的 name 应该是简短的英文标识（如 create_auth）。
-    4. execution.mode 只能是 sequential、async、parallel 或 stream。默认 sequential。
+    4. execution.mode 只能是 sequential、async、parallel、stream 或 repeat。默认 sequential。
        parallel/stream 的策略由 Runtime 执行，不要要求 Service 自己管理 asyncio 任务。
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
@@ -163,11 +163,13 @@ def _execute_pod_build_tool(args):
                 "name": "pipeline 英文标识",
                 "instruction": "自然语言业务指令（AI 据此规划执行链）",
                 "execution": {{
-                    "mode": "sequential|async|parallel|stream",
+                    "mode": "sequential|async|parallel|stream|repeat",
                     "concurrency": 1,
                     "failure_policy": "fail_fast|collect_all|ignore|stop|skip",
                     "merge": "strict|overwrite|collect",
-                    "batch_size": 1
+                    "batch_size": 1,
+                    "until_field": "循环停止的 bool Context 字段",
+                    "max_iterations_field": "可选的最大迭代次数 Context 字段"
                 }}
             }}
         ],
