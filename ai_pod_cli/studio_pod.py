@@ -13,6 +13,56 @@ from ai_pod_cli.studio_common import (
 )
 
 
+_POD_PROGRESS_RANGES = {
+    "impact_analysis": (2, 9),
+    "models": (10, 24),
+    "providers": (25, 39),
+    "services": (40, 59),
+    "pipelines": (60, 76),
+    "interfaces": (77, 91),
+    "verification": (92, 99),
+}
+_POD_PROGRESS_ORDER = tuple(_POD_PROGRESS_RANGES)
+_POD_PROGRESS_ALIASES = {
+    "planning": "impact_analysis",
+    "planned": "impact_analysis",
+    "components": "services",
+    "entrypoint": "interfaces",
+    "validation": "verification",
+    "repair": "verification",
+}
+
+
+def _progress_phase(stage: str) -> str:
+    return _POD_PROGRESS_ALIASES.get(stage, stage)
+
+
+def _phase_percent(stage: str, fraction: float = 0.0) -> int:
+    phase = _progress_phase(stage)
+    start, end = _POD_PROGRESS_RANGES[phase]
+    fraction = min(1.0, max(0.0, float(fraction)))
+    return start + int((end - start) * fraction)
+
+
+def _apply_phase_progress(task: dict, stage: str, percent: int) -> None:
+    """Keep total progress inside the current phase's reserved interval."""
+    phase = _progress_phase(stage)
+    if phase not in _POD_PROGRESS_RANGES:
+        return
+    start, end = _POD_PROGRESS_RANGES[phase]
+    bounded = min(end, max(start, int(percent)))
+    current_phase = _progress_phase(str(task.get("stage", "planning")))
+    if current_phase in _POD_PROGRESS_ORDER:
+        current_index = _POD_PROGRESS_ORDER.index(current_phase)
+        next_index = _POD_PROGRESS_ORDER.index(phase)
+        if next_index < current_index:
+            return
+        if next_index == current_index:
+            bounded = max(min(end, int(task.get("percent", start))), bounded)
+    task["stage"] = stage
+    task["percent"] = bounded
+
+
 class StudioPodService:
     def start_pod_build(self, description: str, stage: str = "") -> dict:
         """Start one Pod build in the background and return its task id."""
@@ -182,24 +232,33 @@ class StudioPodService:
         if len(clean) > 2_000:
             clean = clean[:2_000] + " … [truncated]"
         stage, percent, message = None, 0, clean
-        match = re.search(r"\[(\d+)/(\d+)\]\s*生成\s+([^\s]+)", clean)
+        match = re.search(
+            r"\[(\d+)/(\d+)\]\s*生成\s+([^\s]+)\s+\((model|provider|service)\)",
+            clean,
+        )
+        frozen = re.search(
+            r"\[(models|providers|services|pipelines|interfaces)\s+阶段已冻结\]",
+            clean,
+        )
         if "verify_application" in clean:
-            stage, percent, message = "verification", 96, "Running application verification."
+            stage, percent, message = "verification", _phase_percent("verification", 0.55), "Running application verification."
         elif "repair_current_artifact" in clean:
-            stage, percent, message = "repair", 97, "Repairing the current failing artifact."
+            stage, percent, message = "repair", _phase_percent("verification", 0.72), "Repairing the current failing artifact."
         elif "拆解方案" in clean:
-            stage, percent, message = "planned", 18, "Architecture planned."
+            message = "Architecture planned."
+        elif frozen:
+            stage = frozen.group(1)
+            percent = _phase_percent(stage, 1.0)
+            message = f"{stage.capitalize()} stage completed."
         elif match:
             current, total, name = int(match.group(1)), max(1, int(match.group(2))), match.group(3)
-            stage = "components"
-            percent = 20 + int(50 * (current - 1) / total)
+            stage = {"model": "models", "provider": "providers", "service": "services"}[match.group(4)]
+            percent = _phase_percent(stage, (current - 1) / total)
             message = f"Generating component {current}/{total}: {name}"
         elif "[生成 Pipeline]" in clean or "[Pipeline 复用]" in clean:
-            stage, percent = "pipelines", 74
-        elif "入口" in clean:
-            stage, percent = "entrypoint", 90
-        elif "完成" in clean or "验证" in clean:
-            stage, percent = "validation", 96
+            stage, percent = "pipelines", _phase_percent("pipelines", 0.25)
+        elif "[Interface delivery]" in clean:
+            stage, percent = "interfaces", _phase_percent("interfaces", 0.75)
         with self._pod_task_lock:
             task = self._pod_tasks.get(build_id)
             if task is None:
@@ -208,11 +267,9 @@ class StudioPodService:
             if len(task["logs"]) > 500:
                 del task["logs"][:100]
             if task["status"] == "running":
-                task.update(
-                    stage=stage or task["stage"],
-                    percent=max(task["percent"], percent) if stage else task["percent"],
-                    message=message[:300],
-                )
+                if stage:
+                    _apply_phase_progress(task, stage, percent)
+                task["message"] = message[:300]
 
     def _record_pod_event(self, build_id: str, event: dict) -> None:
         """Record model-stream activity without retaining generated content."""
@@ -230,26 +287,27 @@ class StudioPodService:
                 component_match = re.match(r"Generating component (\d+)/(\d+):", label)
                 planning_match = re.match(r"Planning stage (\d+)/5:\s*(\w+)", label)
                 if label == "Classifying earliest affected Pod layer":
-                    stage, percent = "impact_analysis", max(percent, 6)
+                    stage, percent = "impact_analysis", _phase_percent("impact_analysis", 0.55)
                 elif planning_match:
                     stage = planning_match.group(2).lower()
-                    percent = max(percent, {
-                        "models": 10, "providers": 26, "services": 42,
-                        "pipelines": 62, "interfaces": 80,
-                    }.get(stage, 8))
+                    percent = _phase_percent(stage)
                 elif label == "Planning architecture":
-                    stage, percent = "planning", max(percent, 8)
+                    stage, percent = "planning", _phase_percent("impact_analysis", 0.4)
                 elif component_match:
                     current, total = int(component_match.group(1)), max(1, int(component_match.group(2)))
-                    stage, percent = "components", 20 + int(50 * (current - 1) / total)
+                    active_phase = _progress_phase(stage)
+                    if active_phase not in {"models", "providers", "services"}:
+                        active_phase = "services"
+                    stage = active_phase
+                    percent = _phase_percent(stage, (current - 1) / total)
                 elif label.startswith("Composing pipeline:"):
-                    stage, percent = "pipelines", max(percent, 74)
+                    stage, percent = "pipelines", _phase_percent("pipelines", 0.35)
                 elif label == "Generating application entry point":
-                    stage, percent = "entrypoint", max(percent, 90)
+                    stage, percent = "interfaces", _phase_percent("interfaces", 0.6)
                 elif label.startswith("Generating Interface artifact:"):
-                    stage, percent = "interfaces", max(percent, 86)
+                    stage, percent = "interfaces", _phase_percent("interfaces", 0.45)
                 elif label.startswith("Repairing current artifact:"):
-                    stage, percent = "repair", max(percent, 97)
+                    stage, percent = "repair", _phase_percent("verification", 0.72)
                 suffix = "starting…" if event_type == "llm_started" else f"{characters:,} characters received"
                 if event_type == "llm_completed":
                     suffix = f"response complete · {characters:,} characters"
@@ -258,7 +316,8 @@ class StudioPodService:
                     task["logs"].append(f"{marker} {label} · {suffix}")
                     if len(task["logs"]) > 500:
                         del task["logs"][:100]
-                task.update(stage=stage, percent=percent, message=f"{label} · {suffix}")
+                _apply_phase_progress(task, stage, percent)
+                task["message"] = f"{label} · {suffix}"
 
     @staticmethod
     def _pod_task_snapshot(task: dict) -> dict:

@@ -979,6 +979,8 @@ class StudioApiTests(unittest.TestCase):
         self.assertIn("pod-phase-strip", progress_script)
         self.assertIn("pod-details", progress_script)
         self.assertIn("details.hidden = logs.length === 0", progress_script)
+        self.assertIn("boundedPodPercent", progress_script)
+        self.assertIn("providers: [25, 39]", progress_script)
         self.assertIn("#podDialog .modal-body", brand)
         self.assertIn("overflow-x: hidden", brand)
         self.assertIn("overflow-wrap: anywhere", brand)
@@ -1025,6 +1027,63 @@ class StudioApiTests(unittest.TestCase):
             self.assertTrue(any("verify_application" in line for line in task["logs"]))
             self.assertTrue(any("repair_current_artifact" in line for line in task["logs"]))
             self.assertTrue(task["result"]["ok"])
+
+    def test_studio_progress_stays_inside_current_pod_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+            with patch("ai_pod_cli.studio_pod.threading.Thread.start"):
+                started = api.start_pod_build("build staged app")
+            build_id = started["build_id"]
+
+            api._record_pod_event(build_id, {
+                "type": "llm_started", "label": "Planning stage 1/5: models",
+            })
+            api._record_pod_progress(build_id, "✅ 模型验证完成")
+            models = api.pod_build_status(build_id)["task"]
+            self.assertGreaterEqual(models["percent"], 10)
+            self.assertLessEqual(models["percent"], 24)
+
+            api._record_pod_event(build_id, {
+                "type": "llm_started", "label": "Planning stage 2/5: providers",
+            })
+            api._record_pod_progress(build_id, "✅ Provider 隔离验证完成")
+            providers = api.pod_build_status(build_id)["task"]
+            self.assertEqual(providers["stage"], "providers")
+            self.assertGreaterEqual(providers["percent"], 25)
+            self.assertLessEqual(providers["percent"], 39)
+
+    def test_studio_pod_stage_start_percentages_are_monotonic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous_cwd = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(project)
+            with patch("ai_pod_cli.studio_pod.threading.Thread.start"):
+                started = api.start_pod_build("build staged app")
+            build_id = started["build_id"]
+
+            observed = []
+            for number, stage in enumerate(
+                ("models", "providers", "services", "pipelines", "interfaces"), 1,
+            ):
+                api._record_pod_event(build_id, {
+                    "type": "llm_started",
+                    "label": f"Planning stage {number}/5: {stage}",
+                })
+                observed.append(api.pod_build_status(build_id)["task"]["percent"])
+
+            self.assertEqual(observed, [10, 25, 40, 60, 77])
 
     def test_studio_uses_ai_impact_selection_for_existing_pod_changes(self):
         with tempfile.TemporaryDirectory() as tmp:

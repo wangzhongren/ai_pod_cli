@@ -9,6 +9,24 @@ const podPhases = [
   ["interfaces", "Interface"],
   ["verification", "Verify"],
 ];
+const podPhaseRanges = {
+  impact_analysis: [2, 9],
+  models: [10, 24],
+  providers: [25, 39],
+  services: [40, 59],
+  pipelines: [60, 76],
+  interfaces: [77, 91],
+  verification: [92, 99],
+};
+const podPhaseAliases = {
+  planning: "impact_analysis",
+  planned: "impact_analysis",
+  components: "services",
+  entrypoint: "interfaces",
+  validation: "verification",
+  repair: "verification",
+  completed: "verification",
+};
 
 podProgress.innerHTML = `
   <section class="pod-overview">
@@ -38,22 +56,22 @@ podProgress.innerHTML = `
 `;
 
 function podPhaseIndex(stage) {
-  const aliases = {
-    planning: "impact_analysis",
-    planned: "models",
-    components: "services",
-    entrypoint: "interfaces",
-    validation: "verification",
-    repair: "verification",
-    completed: "verification",
-  };
-  const normalized = aliases[stage] || stage;
+  const normalized = podPhaseAliases[stage] || stage;
   return Math.max(0, podPhases.findIndex(([key]) => key === normalized));
+}
+
+function boundedPodPercent(stage, rawPercent, status) {
+  if (status === "completed") return 100;
+  const normalized = podPhaseAliases[stage] || stage;
+  const range = podPhaseRanges[normalized];
+  const percent = Math.max(0, Math.min(100, Number(rawPercent || 0)));
+  if (!range) return percent;
+  return Math.max(range[0], Math.min(range[1], percent));
 }
 
 renderPodTask = function renderPodTaskCompact(task) {
   const stage = String(task.stage || "working");
-  const percent = Math.max(0, Math.min(100, Number(task.percent || 0)));
+  const percent = boundedPodPercent(stage, task.percent, task.status);
   const logs = task.logs || [];
   const stageLabel = stage.replace(/(^|_)([a-z])/g, (_, prefix, letter) =>
     (prefix ? " " : "") + letter.toUpperCase()
