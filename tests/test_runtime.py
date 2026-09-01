@@ -63,7 +63,7 @@ from ai_pod_cli.validation import (
     validate_pipeline_contract,
 )
 from ai_pod_cli.interface import (
-    create_context, load_adapter, verify_adapter_candidate,
+    InterfaceAdapter, create_context, load_adapter, verify_adapter_candidate,
 )
 
 
@@ -320,6 +320,19 @@ class RuntimeIntegrationTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_model_rejects_custom_init_that_bypasses_nested_validation(self):
+        code = (
+            "from ai_pod_cli import Model\n"
+            "class GameObject(Model):\n"
+            "    components: list[dict]\n"
+            "    def __init__(self, components):\n"
+            "        self.components = components\n"
+        )
+        violations = validate_component_contract(
+            code, "GameObject", "model", {}, {},
+        )
+        self.assertTrue(any("__init__" in item for item in violations))
 
     def test_model_sample_supports_date(self):
         self.assertEqual(DatedSample.sample_instance().day, date(2024, 1, 1))
@@ -664,6 +677,32 @@ def run(ctx):
         self.assertTrue(ctx.get("saved"))
         self.assertEqual(ctx.steps[0]["result"]["effects"][0]["kind"], "database")
         self.assertEqual(ctx.steps[0]["status"], "success")
+
+    def test_component_input_contract_materializes_model_instances(self):
+        from ai_pod_cli.container import _ComponentRef
+
+        class Consumer:
+            def execute(self, ctx):
+                snapshot = ctx.get("snapshot")
+                self.received = snapshot
+                return {"shipment_count": len(snapshot.shipments)}
+
+        consumer = Consumer()
+        ctx = PipelineContext({
+            "snapshot": {
+                "shipments": [{"id": "s-1", "distance_km": 12.5}],
+            },
+        })
+        result = _ComponentRef(
+            "Consumer", consumer,
+            inputs={
+                "snapshot": {"model": "tests.test_runtime.TestShipmentSnapshot"},
+            },
+        ).execute_all(ctx)
+
+        self.assertEqual(result["shipment_count"], 1)
+        self.assertIsInstance(consumer.received, TestShipmentSnapshot)
+        self.assertIsInstance(consumer.received.shipments[0], TestShipment)
 
     def test_failure_stops_the_remaining_pipeline(self):
         from ai_pod_cli.container import _ComponentRef, _PipeChain
@@ -2032,6 +2071,81 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(runtime_violations, [])
         self.assertEqual(result["data"]["handled"], "hello")
         self.assertEqual(cli_result["data"]["handled"], "smoke")
+
+    def test_interface_smoke_validates_public_route_input_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                (project / "pipelines").mkdir()
+                (project / "pipelines/game_loop.py").write_text(
+                    "from ai_pod_cli.container import Pod\n"
+                    "def run(ctx):\n"
+                    "    S(GameLoopService).execute_all(ctx)\n",
+                    encoding="utf-8",
+                )
+                (project / "routes.toml").write_text(
+                    '[game_loop]\npipeline = "pipelines/game_loop.py"\n',
+                    encoding="utf-8",
+                )
+                registry = json.loads((project / "beans_config.json").read_text())
+                registry["beans"].append({
+                    "id": "GameLoopService", "category": "service",
+                    "class_path": "modules.services.game_loop.GameLoopService",
+                    "inputs": {"scene": "dict"}, "outputs": {"frames": "int"},
+                })
+                (project / "beans_config.json").write_text(json.dumps(registry))
+                context = create_context({"name": "desktop"}, project)
+
+                class MissingPayloadAdapter(InterfaceAdapter):
+                    def required_routes(self):
+                        return ["game_loop"]
+
+                class ValidPayloadAdapter(MissingPayloadAdapter):
+                    def smoke_payloads(self):
+                        return {"game_loop": {"scene": {"name": "smoke"}}}
+
+                missing = MissingPayloadAdapter().smoke(context)
+                valid = ValidPayloadAdapter().smoke(context)
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(context.route_contract("game_loop")["inputs"]["scene"]["type"], "dict")
+        self.assertEqual(missing["status"], "failed")
+        self.assertEqual(missing["missing_smoke_payloads"], ["game_loop"])
+        self.assertEqual(valid["status"], "passed")
+
+    def test_adapter_route_call_must_wrap_model_under_contract_field(self):
+        contracts = {
+            "game_loop": {"inputs": {"scene": {"type": "dict", "required": True}}},
+        }
+        wrong = (
+            "from ai_pod_cli.interface import InterfaceAdapter\n"
+            "class GeneratedInterfaceAdapter(InterfaceAdapter):\n"
+            "    def required_routes(self): return ['game_loop']\n"
+            "    def smoke_payloads(self): return {'game_loop': {'scene': {}}}\n"
+            "    def start(self, context, payload=None):\n"
+            "        scene = {'name': 'demo'}\n"
+            "        return context.run_route('game_loop', scene)\n"
+        )
+        correct = wrong.replace(
+            "context.run_route('game_loop', scene)",
+            "context.run_route('game_loop', {'scene': scene})",
+        )
+
+        violations = validate_interface_adapter_contract(
+            wrong, "GeneratedInterfaceAdapter", contracts,
+        )
+
+        self.assertTrue(any("scene" in item and "顶层参数" in item for item in violations))
+        self.assertEqual(
+            validate_interface_adapter_contract(
+                correct, "GeneratedInterfaceAdapter", contracts,
+            ),
+            [],
+        )
 
     def test_optional_interface_check_does_not_fail_required_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:

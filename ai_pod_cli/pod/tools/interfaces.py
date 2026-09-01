@@ -13,6 +13,7 @@ from pathlib import Path
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import append_deps_to_requirements
 from ai_pod_cli.interface import verify_adapter_candidate
+from ai_pod_cli.project_model import build_project_model
 from ai_pod_cli.pod.routes import load_routes_map
 from ai_pod_cli.pod.state import normalize_interface_plan, set_stage_status
 from ai_pod_cli.security import validate_code
@@ -48,7 +49,7 @@ def _runtime_artifact(interface: dict) -> str:
 
 
 def _artifact_prompt(
-    desc: str, interface: dict, artifact: dict, routes_map: dict[str, str],
+    desc: str, interface: dict, artifact: dict, route_capabilities: dict[str, dict],
 ) -> tuple[str, str]:
     path = str(artifact["path"])
     role = str(artifact.get("role", "resource"))
@@ -80,8 +81,8 @@ def _artifact_prompt(
     - verification checks using this artifact:
       {json.dumps(verification, ensure_ascii=False)}
 
-    Frozen routes:
-    {json.dumps(routes_map, ensure_ascii=False, indent=2)}
+    Frozen routes and their complete public boundary Contracts:
+    {json.dumps(route_capabilities, ensure_ascii=False, indent=2)}
 
     Rules:
     - Return strict JSON: {{"path":"{path}","content":"complete text","extra_deps":[]}}
@@ -95,7 +96,13 @@ def _artifact_prompt(
       InterfaceContext and never accesses PipelineRunner directly.
     - An artifact with role=adapter_entry must define the manifest's adapter.class_name,
       inherit ai_pod_cli.interface.InterfaceAdapter, implement start(context, payload)
-      and required_routes(), and call only context.run_route(...). It must not import
+      required_routes(), and smoke_payloads(), and call only context.run_route(...).
+      Every run_route call must pass a dict whose top-level keys exactly follow that
+      route's public inputs Contract. For example, a route requiring `scene` receives
+      `context.run_route("route", {{"scene": scene}})`, never the scene dict directly.
+      smoke_payloads() returns the same non-destructive parameter shape keyed by route
+      name, so base smoke validates Contract boundaries without opening UI or executing
+      long-running Pipelines. It must not import
       AIPod container/runtime internals or project components.
     - role=adapter_module files contain one focused transport/UI/queue concern and use
       relative imports within the Interface bundle. They share the same import boundary.
@@ -118,7 +125,7 @@ def _artifact_prompt(
 
 def _validate_artifact(
     interface: dict, artifact: dict, content: str, extra_deps: list[str],
-    route_names: list[str],
+    route_names: list[str], route_contracts: dict[str, dict] | None = None,
 ) -> list[str]:
     path = Path(str(artifact["path"]))
     role = str(artifact.get("role", "resource"))
@@ -131,7 +138,9 @@ def _validate_artifact(
         if role in {"adapter", "adapter_entry"}:
             class_name = str(interface.get("adapter", {}).get("class_name", "GeneratedInterfaceAdapter"))
             violations.extend(validate_code(content, allow_file_io=True))
-            violations.extend(validate_interface_adapter_contract(content, class_name))
+            violations.extend(validate_interface_adapter_contract(
+                content, class_name, route_contracts,
+            ))
         elif role == "adapter_module":
             violations.extend(validate_code(content, allow_file_io=True))
             violations.extend(validate_interface_adapter_imports(content))
@@ -184,11 +193,13 @@ def _validate_artifact(
 
 
 def _generate_artifact(
-    desc: str, interface: dict, artifact: dict, routes_map: dict[str, str],
+    desc: str, interface: dict, artifact: dict, route_capabilities: dict[str, dict],
     progress_callback=None, auto_repair: bool = False,
 ) -> tuple[str, list[str]] | None:
     path = str(artifact["path"])
-    system_prompt, user_prompt = _artifact_prompt(desc, interface, artifact, routes_map)
+    system_prompt, user_prompt = _artifact_prompt(
+        desc, interface, artifact, route_capabilities,
+    )
     feedback = ""
     for attempt in range(1, 4):
         try:
@@ -211,7 +222,8 @@ def _generate_artifact(
         if returned_path != path:
             violations.append(f"Artifact path must remain exactly {path}")
         violations.extend(_validate_artifact(
-            interface, artifact, content, extra_deps, list(routes_map),
+            interface, artifact, content, extra_deps, list(route_capabilities),
+            route_capabilities,
         ))
         if not violations:
             return content, extra_deps
@@ -247,12 +259,29 @@ def generate_interface_delivery(
     generated: dict[Path, str] = {}
     all_deps: list[str] = []
     routes_map = load_routes_map()
+    project_model = build_project_model()
+    public_contracts = {
+        str(item.get("name")): {
+            "description": str(item.get("description", "")),
+            "inputs": dict(item.get("contract", {}).get("inputs", {})),
+            "outputs": dict(item.get("contract", {}).get("outputs", {})),
+        }
+        for item in project_model.get("pipelines", [])
+        if item.get("name") in routes_map
+    }
+    route_capabilities = {
+        name: public_contracts.get(name, {
+            "description": str(route.get("description", "")) if isinstance(route, dict) else "",
+            "inputs": {}, "outputs": {},
+        })
+        for name, route in routes_map.items()
+    }
     for artifact, path in zip(artifacts, paths):
         existing = Path(path)
         if existing.is_file() and not replace_existing:
             content = existing.read_text(encoding="utf-8")
             violations = _validate_artifact(
-                interface, artifact, content, [], list(routes_map),
+                interface, artifact, content, [], list(routes_map), route_capabilities,
             )
             if violations:
                 print(f"   ❌ Existing artifact is invalid: {path.as_posix()}")
@@ -262,7 +291,7 @@ def generate_interface_delivery(
             generated[path] = content
             continue
         result = _generate_artifact(
-            desc, interface, artifact, routes_map,
+            desc, interface, artifact, route_capabilities,
             progress_callback=progress_callback, auto_repair=auto_repair,
         )
         if result is None:

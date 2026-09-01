@@ -74,6 +74,7 @@ class InterfaceContext:
     manifest: dict
     events: list[dict[str, Any]] = field(default_factory=list)
     _runner: Any = field(default=None, init=False, repr=False)
+    _route_contracts: dict[str, dict] | None = field(default=None, init=False, repr=False)
 
     @contextmanager
     def activated(self):
@@ -101,8 +102,43 @@ class InterfaceContext:
         return self._runner
 
     def route_names(self) -> list[str]:
+        """List frozen routes without importing or constructing project Beans."""
+        from ai_pod_cli.runner import PipelineRunner
+
         with self.activated():
-            return list(self.runner().route_names())
+            return list(PipelineRunner().route_names())
+
+    def route_contracts(self) -> dict[str, dict]:
+        """Return public route inputs/outputs without exposing component internals."""
+        if self._route_contracts is None:
+            from ai_pod_cli.project_model import build_project_model
+
+            with self.activated():
+                model = build_project_model()
+            self._route_contracts = {
+                str(item.get("name")): {
+                    "description": str(item.get("description", "")),
+                    "inputs": dict(item.get("contract", {}).get("inputs", {})),
+                    "outputs": dict(item.get("contract", {}).get("outputs", {})),
+                }
+                for item in model.get("pipelines", [])
+                if item.get("name")
+            }
+        return dict(self._route_contracts)
+
+    def route_contract(self, route: str) -> dict:
+        """Return one route's public boundary Contract."""
+        return dict(self.route_contracts().get(str(route), {}))
+
+    def validate_route_params(self, route: str, params: dict | None = None) -> list[str]:
+        """Validate Adapter-produced parameters without executing the Pipeline."""
+        from ai_pod_cli.contracts import validate_contract_data
+
+        contract = self.route_contract(route)
+        with self.activated():
+            return validate_contract_data(
+                dict(params or {}), contract.get("inputs", {}), str(route),
+            )
 
     def run_route(self, route: str, params: dict | None = None):
         with self.activated():
@@ -123,13 +159,30 @@ class InterfaceAdapter:
             str(route) for route in self.required_routes()
         }
         missing = sorted(declared - set(context.route_names()))
+        payloads = self.smoke_payloads()
+        missing_payloads = []
+        contract_errors = {}
+        for route in sorted(declared - set(missing)):
+            inputs = context.route_contract(route).get("inputs", {})
+            if inputs and route not in payloads:
+                missing_payloads.append(route)
+                continue
+            errors = context.validate_route_params(route, payloads.get(route, {}))
+            if errors:
+                contract_errors[route] = errors
         return {
-            "status": "passed" if not missing else "failed",
+            "status": "passed" if not missing and not missing_payloads and not contract_errors else "failed",
             "required_routes": sorted(declared), "missing_routes": missing,
+            "missing_smoke_payloads": missing_payloads,
+            "contract_errors": contract_errors,
         }
 
     def required_routes(self) -> list[str]:
         return []
+
+    def smoke_payloads(self) -> dict[str, dict]:
+        """Return non-destructive sample params keyed by required route name."""
+        return {}
 
     def stop(self, context: InterfaceContext) -> None:
         return None

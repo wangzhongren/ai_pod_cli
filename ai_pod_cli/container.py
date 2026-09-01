@@ -12,7 +12,7 @@ from time import perf_counter
 from injector import Injector, Module, singleton
 
 from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.contracts import validate_contract_data
+from ai_pod_cli.contracts import materialize_contract_data, validate_contract_data
 from ai_pod_cli.result import Failure, Success, normalize_result, serialize_result
 
 
@@ -138,6 +138,10 @@ class _ComponentRef:
                 )
                 if input_errors:
                     raise ValueError("inputs schema validation failed: " + "; ".join(input_errors))
+                for key, value in materialize_contract_data(
+                    {**ctx.params, **ctx.data}, self._inputs,
+                ).items():
+                    ctx.set(key, value)
                 raw_result = self.execute(ctx)
                 if inspect.isawaitable(raw_result):
                     if inspect.iscoroutine(raw_result):
@@ -194,6 +198,10 @@ class _ComponentRef:
                 )
                 if input_errors:
                     raise ValueError("inputs schema validation failed: " + "; ".join(input_errors))
+                for key, value in materialize_contract_data(
+                    {**ctx.params, **ctx.data}, self._inputs,
+                ).items():
+                    ctx.set(key, value)
                 raw_result = await self.execute_async(ctx)
                 normalized = normalize_result(raw_result)
                 if isinstance(normalized, Success):

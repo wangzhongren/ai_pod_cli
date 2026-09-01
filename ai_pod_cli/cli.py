@@ -124,7 +124,7 @@ def main():
     interface_parser.add_argument("--payload", default="{}", help="JSON event payload for run")
     interface_parser.add_argument("--project-root", default=".", help="AIPod project root")
     interface_parser.add_argument(
-        "inputs", nargs=argparse.REMAINDER,
+        "inputs", nargs="*",
         help="Raw Adapter arguments after --; overrides --payload",
     )
 

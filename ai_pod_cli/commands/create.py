@@ -78,6 +78,8 @@ def handle_create(args):
     - 需要通过 ModelRepository 持久化的实体才使用 `class {args.name}(Model, table=True)`，并定义主键字段。
     - 根据描述选择其中一种，禁止为了统一形式把瞬时运行数据变成数据库表。
     - 字段必须有完整类型注解。
+    - 禁止定义 `__init__`、使用 `@inject` 或手动给字段赋值；Model 的构造、默认值、
+      嵌套 Model 转换必须交给 Pydantic/SQLModel。默认值使用字段声明或 Field。
     - 嵌套结构拆成独立 Model 时，本次仍只返回主 Model 文件所需的完整代码。
     - 不使用 injector、PipelineContext、execute、ctx、Provider 或业务逻辑。
 

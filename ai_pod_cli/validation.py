@@ -182,6 +182,15 @@ def validate_component_contract(
         }
         if "Model" not in bases:
             violations.append(f"model '{class_name}' 必须继承 ai_pod_cli.Model")
+        if any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "__init__"
+            for node in component.body
+        ):
+            violations.append(
+                f"model '{class_name}' 不得覆盖 __init__；"
+                "字段构造和嵌套 Model 转换必须由 Pydantic/SQLModel 管理"
+            )
         # Both value objects and persistent entities are first-class Models.
         # Only persistent Models opt into SQLModel mapping with ``table=True``.
         return list(dict.fromkeys(violations))
@@ -430,7 +439,9 @@ def validate_interface_adapter_imports(code: str) -> list[str]:
     return list(dict.fromkeys(violations))
 
 
-def validate_interface_adapter_contract(code: str, class_name: str) -> list[str]:
+def validate_interface_adapter_contract(
+    code: str, class_name: str, route_contracts: dict[str, dict] | None = None,
+) -> list[str]:
     """Validate the Adapter entry class against the stable SDK."""
     try:
         tree = ast.parse(code)
@@ -459,6 +470,19 @@ def validate_interface_adapter_contract(code: str, class_name: str) -> list[str]
         violations.append(f"{class_name} 必须实现 start(context, payload)")
     if "required_routes" not in methods:
         violations.append(f"{class_name} 必须实现 required_routes()")
+    if route_contracts and any(
+        contract.get("inputs") for contract in route_contracts.values()
+    ) and "smoke_payloads" not in methods:
+        violations.append(
+            f"{class_name} 必须实现 smoke_payloads()，为有输入的 route 声明非破坏性样例参数"
+        )
+    dict_bindings = {
+        target_name.id: node.value
+        for node in ast.walk(target)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict)
+        for target_name in node.targets
+        if isinstance(target_name, ast.Name)
+    }
     route_calls = [
         node for node in ast.walk(target)
         if isinstance(node, ast.Call)
@@ -467,4 +491,37 @@ def validate_interface_adapter_contract(code: str, class_name: str) -> list[str]
     ]
     if not route_calls:
         violations.append("Adapter 必须通过 context.run_route(...) 调用 Pipeline")
+    for call in route_calls:
+        if not route_contracts or not call.args:
+            continue
+        route_arg = call.args[0]
+        if not isinstance(route_arg, ast.Constant) or not isinstance(route_arg.value, str):
+            continue
+        route_name = route_arg.value
+        inputs = route_contracts.get(route_name, {}).get("inputs", {})
+        required = {
+            name for name, field in inputs.items()
+            if not isinstance(field, dict) or field.get("required", True)
+        }
+        if not required:
+            continue
+        params_node = call.args[1] if len(call.args) > 1 else None
+        if isinstance(params_node, ast.Name):
+            params_node = dict_bindings.get(params_node.id)
+        if not isinstance(params_node, ast.Dict):
+            violations.append(
+                f"context.run_route('{route_name}', ...) 必须传入可静态验证的参数 dict，"
+                f"包含：{', '.join(sorted(required))}"
+            )
+            continue
+        keys = {
+            key.value for key in params_node.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        missing = sorted(required - keys)
+        if missing:
+            violations.append(
+                f"context.run_route('{route_name}', params) 缺少顶层参数："
+                + ", ".join(missing)
+            )
     return list(dict.fromkeys(violations))

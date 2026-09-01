@@ -178,6 +178,41 @@ def validate_contract_data(data: dict, fields: Any, prefix: str = "$") -> list[s
     return errors
 
 
+def materialize_contract_value(value: Any, spec: Any) -> Any:
+    """Convert validated structured values into their declared runtime types."""
+    expected = normalize_type(spec)
+    if expected == "model":
+        model_path = _model_path(spec) or ""
+        module_name, class_name = model_path.rsplit(".", 1)
+        model_class = getattr(importlib.import_module(module_name), class_name)
+        return value if isinstance(value, model_class) else model_class.model_validate(value)
+    if not isinstance(spec, dict):
+        return value
+    if expected == "dict" and isinstance(value, dict):
+        properties = spec.get("properties", {})
+        if not isinstance(properties, dict):
+            return value
+        return {
+            key: materialize_contract_value(item, properties[key])
+            if key in properties else item
+            for key, item in value.items()
+        }
+    if expected == "list" and isinstance(value, list) and "items" in spec:
+        return [materialize_contract_value(item, spec["items"]) for item in value]
+    return value
+
+
+def materialize_contract_data(data: dict, fields: Any) -> dict:
+    """Materialize present named fields after successful Contract validation."""
+    if not isinstance(fields, dict):
+        return {}
+    return {
+        name: materialize_contract_value(data[name], spec)
+        for name, spec in fields.items()
+        if name in data
+    }
+
+
 @dataclass(frozen=True)
 class ContractField:
     name: str
