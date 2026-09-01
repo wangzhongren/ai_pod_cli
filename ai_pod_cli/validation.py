@@ -407,3 +407,62 @@ def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> li
                 "入口不得导入项目名、Pod 名、modules 或 pipelines"
             )
     return list(dict.fromkeys(violations))
+
+
+def validate_interface_adapter_imports(code: str) -> list[str]:
+    """Keep every Adapter source file behind the public Interface SDK boundary."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as error:
+        return [f"Adapter 语法错误: {error}"]
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        module = node.module or ""
+        if module.startswith("ai_pod_cli.") and module != "ai_pod_cli.interface":
+            violations.append(
+                "Adapter 只能从 ai_pod_cli.interface 导入公共 SDK；"
+                "不得直接访问 Container、Runner 或项目组件"
+            )
+    return list(dict.fromkeys(violations))
+
+
+def validate_interface_adapter_contract(code: str, class_name: str) -> list[str]:
+    """Validate the Adapter entry class against the stable SDK."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as error:
+        return [f"Adapter 语法错误: {error}"]
+    violations = validate_interface_adapter_imports(code)
+    target = next(
+        (
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == class_name
+        ),
+        None,
+    )
+    if target is None:
+        return [f"Adapter 必须定义类 {class_name}"]
+    bases = {
+        base.id for base in target.bases if isinstance(base, ast.Name)
+    }
+    if "InterfaceAdapter" not in bases:
+        violations.append(f"{class_name} 必须继承 InterfaceAdapter")
+    methods = {
+        node.name for node in target.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if "start" not in methods:
+        violations.append(f"{class_name} 必须实现 start(context, payload)")
+    if "required_routes" not in methods:
+        violations.append(f"{class_name} 必须实现 required_routes()")
+    route_calls = [
+        node for node in ast.walk(target)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run_route"
+    ]
+    if not route_calls:
+        violations.append("Adapter 必须通过 context.run_route(...) 调用 Pipeline")
+    return list(dict.fromkeys(violations))

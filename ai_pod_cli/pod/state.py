@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 
-PLAN_VERSION = 5
+PLAN_VERSION = 6
 DECISION_PLAN_FILE = Path("aipod_plan.json")
 STAGE_NAMES = ("models", "providers", "services", "pipelines", "interfaces")
 STAGE_BUILD_TOOLS = (
@@ -60,6 +60,7 @@ class InterfaceManifest(TypedDict, total=False):
     kind: str
     platform: str
     instruction: str
+    adapter: dict[str, str]
     artifacts: list[InterfaceArtifact]
     lifecycle: dict[str, list[str]]
     permissions: list[str]
@@ -100,6 +101,16 @@ def stage_index(stage: str | int) -> int:
 
 def default_interface_verification(interface: dict[str, Any]) -> dict[str, Any]:
     """Return a portable runtime proof for one Interface delivery unit."""
+    if isinstance(interface.get("adapter"), dict):
+        return {
+            "name": "adapter_smoke", "kind": "runtime", "required": True,
+            "command": [
+                "{python}", "-m", "ai_pod_cli", "interface",
+                "--project-root", "{project_root}", "smoke",
+                str(interface.get("name", "interface")),
+            ],
+            "timeout": 30,
+        }
     artifacts = interface.get("artifacts", [])
     runtime = next(
         (
@@ -154,6 +165,14 @@ def normalize_interface_plan(plan: dict[str, Any]) -> dict[str, Any]:
             item["instruction"] = str(item.get("instruction", ""))
             normalized_artifacts.append(item)
         raw["artifacts"] = normalized_artifacts
+        adapter = raw.get("adapter")
+        if isinstance(adapter, dict):
+            adapter.setdefault(
+                "entry_path", adapter.get("path", f"interfaces/{name}/adapter.py"),
+            )
+            adapter.setdefault("path", adapter["entry_path"])
+            adapter.setdefault("class_name", "GeneratedInterfaceAdapter")
+            raw["adapter"] = adapter
         runtime_path = next(
             (
                 item["path"] for item in normalized_artifacts

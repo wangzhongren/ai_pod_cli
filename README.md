@@ -214,35 +214,45 @@ The `|` operator expresses deterministic left-to-right composition.
 ### 5. Interface — delivery
 
 Interfaces are delivery units for a CLI, website, desktop application, worker, native
-adapter, or message consumer. They depend on routes through `PipelineRunner` instead of
-duplicating business logic. One Interface may contain multiple independently generated
-Artifacts plus lifecycle, permission, platform-support, and verification metadata:
+integration, message consumer, or any combination of them. AIPod provides the stable
+`InterfaceAdapter` SDK and `InterfaceContext`; AI generates only the project-specific
+event-to-route glue during the build. Runtime execution never calls AI and the Adapter
+cannot see or import Services.
 
 ```json
 {
   "name": "finder-new-file",
-  "kind": "macos_quick_action",
-  "platform": "macos",
+  "kind": "windows_desktop_queue",
+  "platform": "windows",
+  "adapter": {
+    "entry_path": "interfaces/order-monitor/adapter.py",
+    "class_name": "GeneratedInterfaceAdapter"
+  },
   "artifacts": [
-    {"path": "interfaces/finder-new-file/main.py", "role": "runtime"},
-    {"path": "interfaces/finder-new-file/install.sh", "role": "installer"},
-    {"path": "interfaces/finder-new-file/Info.plist", "role": "metadata"}
+    {"path": "interfaces/order-monitor/adapter.py", "role": "adapter_entry"},
+    {"path": "interfaces/order-monitor/queue.py", "role": "adapter_module"},
+    {"path": "interfaces/order-monitor/window.py", "role": "adapter_module"},
+    {"path": "interfaces/order-monitor/event_bridge.py", "role": "adapter_module"},
+    {"path": "interfaces/order-monitor/install.ps1", "role": "installer"}
   ],
   "lifecycle": {
-    "run": ["python", "interfaces/finder-new-file/main.py"],
-    "install": ["sh", "interfaces/finder-new-file/install.sh"]
+    "run": ["{python}", "-m", "ai_pod_cli", "interface", "run", "order-monitor"],
+    "install": ["powershell", "interfaces/order-monitor/install.ps1"]
   },
-  "permissions": ["finder_automation", "filesystem_write"],
-  "support": {"level": "supported_with_manual_step", "manual_steps": []},
+  "permissions": ["message_queue_connect", "desktop_notification"],
   "verify": [
-    {"name": "runtime_smoke", "kind": "runtime", "required": true,
-     "command": ["python", "interfaces/finder-new-file/main.py", "--smoke"], "timeout": 30}
+    {"name": "adapter_smoke", "kind": "runtime", "required": true,
+     "command": ["{python}", "-m", "ai_pod_cli", "interface", "smoke", "order-monitor"], "timeout": 30}
   ]
 }
 ```
 
-Artifacts are generated in separate model calls, validated independently, staged, and
-committed as one bundle only after every required Artifact passes.
+The generated entry inherits `InterfaceAdapter`, receives only `InterfaceContext`, and
+calls `context.run_route(...)`. Complex adapters are split across multiple independently
+generated files using relative imports: queue transport, Windows UI, event bridge, CLI,
+or any other project-specific concern. All Adapter sources are staged together, imported
+as one private package, smoked in a disposable project, and committed atomically only
+after every required check passes.
 
 ## Five-Stage Generation and Runtime Closure
 
@@ -544,6 +554,7 @@ project/
 | `aipod init [--install-deps]` | Initialize the current directory | No |
 | `aipod pod DESC [--file FILE] [--yes] [--json]` | Build or resume all five stages | Yes |
 | `aipod pod --stage auto DESC` | Modify from the AI-selected affected layer | Yes |
+| `aipod interface list/run/smoke/install/uninstall` | Execute a frozen Interface Adapter | No |
 | `aipod create --category model/provider/service --name NAME --desc DESC` | Generate one component | Yes |
 | `aipod add --category model/provider/service --name NAME --class-path PATH --desc DESC` | Register hand-written code | No |
 | `aipod compose CMD [--name NAME] [--json]` | Generate and register a Pipeline | Yes |

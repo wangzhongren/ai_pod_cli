@@ -83,9 +83,11 @@ to solve global-config visibility; it cannot change the sandbox boundary.
 - Providers expose infrastructure capabilities and may be injected.
 - Services implement focused transformations through `execute(ctx)`.
 - Pipelines compose registered Services.
-- Interfaces are multi-Artifact delivery units. Inspect `artifacts`, `lifecycle`,
-  `permissions`, `support`, and every item in `verify`; required checks determine pass or
-  fail while optional installation checks remain visible evidence.
+- Interfaces use an AI-generated project Adapter over AIPod's stable `InterfaceAdapter`
+  and `InterfaceContext` SDK. The Adapter may bridge any CLI, Web, desktop, worker, queue,
+  or mixed event source, but it can see only routes and must call
+  `context.run_route(...)`; it never imports Services. Inspect `adapter`, `artifacts`,
+  `lifecycle`, `permissions`, `support`, and every item in `verify`.
 - `AIPodCli` is the distribution name, but generated Python imports must use
   `ai_pod_cli`. Reject Interface imports of the project name, Pod name, `modules`, or
   `pipelines`.

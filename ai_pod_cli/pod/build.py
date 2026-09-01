@@ -97,7 +97,7 @@ def _execute_pod_build_tool(args):
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
         2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。复杂输入输出必须引用已生成 Model 的完整类路径。Model 只能普通 import，不能写入 depends_on。",
         3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。",
-        4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
+        4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。复杂 Adapter 必须拆成 adapter_entry 和多个 adapter_module，每个文件只承担一个输入适配职责。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
 
     system_prompt = f"""
@@ -165,21 +165,25 @@ def _execute_pod_build_tool(args):
                 "kind": "cli|web|desktop|worker|consumer|macos_quick_action|native_extension",
                 "platform": "cross-platform|macos|windows|linux",
                 "instruction": "交付单元的整体行为和精确 Pipeline route",
+                "adapter": {{
+                    "entry_path": "interfaces/interface-id/adapter.py",
+                    "class_name": "GeneratedInterfaceAdapter"
+                }},
                 "artifacts": [
-                    {{"path": "interfaces/interface-id/main.py", "role": "runtime", "format": "python", "instruction": "仅生成运行时逻辑"}},
-                    {{"path": "interfaces/interface-id/install.sh", "role": "installer", "format": "shell", "instruction": "仅生成安装脚本"}},
-                    {{"path": "interfaces/interface-id/Info.plist", "role": "metadata", "format": "plist", "instruction": "仅生成平台元数据"}}
+                    {{"path": "interfaces/interface-id/adapter.py", "role": "adapter_entry", "format": "python", "instruction": "只定义继承 ai_pod_cli.interface.InterfaceAdapter 的入口类；复杂逻辑拆到其他 adapter_module Artifact"}},
+                    {{"path": "interfaces/interface-id/transport.py", "role": "adapter_module", "format": "python", "instruction": "只实现消息、HTTP、UI 或其他项目特有输入适配；文件之间使用相对导入"}},
+                    {{"path": "interfaces/interface-id/install.sh", "role": "installer", "format": "shell", "instruction": "平台需要时生成安装脚本，否则不规划"}},
+                    {{"path": "interfaces/interface-id/metadata.json", "role": "metadata", "format": "json", "instruction": "平台需要时生成声明元数据"}}
                 ],
                 "lifecycle": {{
-                    "run": ["python", "interfaces/interface-id/main.py"],
+                    "run": ["{{python}}", "-m", "ai_pod_cli", "interface", "--project-root", "{{project_root}}", "run", "interface-id"],
                     "install": ["sh", "interfaces/interface-id/install.sh"],
                     "uninstall": ["sh", "interfaces/interface-id/uninstall.sh"]
                 }},
                 "permissions": ["filesystem_write"],
                 "support": {{"level": "supported|supported_with_manual_step|prototype_only|unsupported", "manual_steps": []}},
                 "verify": [
-                    {{"name": "runtime_smoke", "kind": "runtime", "required": true, "command": ["python", "interfaces/interface-id/main.py", "--smoke"], "timeout": 30}},
-                    {{"name": "installation_check", "kind": "installation", "required": false, "command": ["python", "interfaces/interface-id/main.py", "--verify-install"], "timeout": 10}}
+                    {{"name": "adapter_smoke", "kind": "runtime", "required": true, "command": ["{{python}}", "-m", "ai_pod_cli", "interface", "--project-root", "{{project_root}}", "smoke", "interface-id"], "timeout": 30}}
                 ]
             }}
         ],

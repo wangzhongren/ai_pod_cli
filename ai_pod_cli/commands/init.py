@@ -62,6 +62,14 @@ def handle_init(args):
     else:
         skipped.append(f"📁 目录 {PIPELINES_DIR}/ (已存在)")
 
+    # Interface adapters are project-specific AI-generated glue over stable AIPod SDK.
+    interfaces_dir = "interfaces"
+    if not os.path.exists(interfaces_dir):
+        os.makedirs(interfaces_dir)
+        created.append(f"📁 目录 {interfaces_dir}/")
+    else:
+        skipped.append(f"📁 目录 {interfaces_dir}/ (已存在)")
+
     # 3. 创建 config.toml + routes.toml + beans_config.json
     toml_exists = os.path.exists(CONFIG_TOML)
     routes_exists = os.path.exists(ROUTES_TOML)

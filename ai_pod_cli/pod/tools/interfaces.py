@@ -12,11 +12,13 @@ from pathlib import Path
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import append_deps_to_requirements
+from ai_pod_cli.interface import verify_adapter_candidate
 from ai_pod_cli.pod.routes import load_routes_map
 from ai_pod_cli.pod.state import normalize_interface_plan, set_stage_status
 from ai_pod_cli.security import validate_code
 from ai_pod_cli.validation import (
     repair_feedback, request_repair, validate_entry_contract, validate_entry_imports,
+    validate_interface_adapter_contract, validate_interface_adapter_imports,
 )
 
 
@@ -60,7 +62,7 @@ def _artifact_prompt(
         key: interface.get(key)
         for key in (
             "name", "kind", "platform", "instruction", "lifecycle",
-            "permissions", "support",
+            "permissions", "support", "adapter",
         )
     }
     system_prompt = f"""
@@ -88,12 +90,27 @@ def _artifact_prompt(
     - Never import build_container, load_beans, PipelineRunner, or project Services from
       the ai_pod_cli root package. Their canonical modules are ai_pod_cli.container,
       ai_pod_cli.config, and ai_pod_cli.runner. Interface code never imports Services.
-    - Runtime Python gets PipelineRunner only through
-      build_container(load_beans()).get(PipelineRunner).
+    - Legacy role=runtime Python gets PipelineRunner only through
+      build_container(load_beans()).get(PipelineRunner). New role=adapter code uses only
+      InterfaceContext and never accesses PipelineRunner directly.
+    - An artifact with role=adapter_entry must define the manifest's adapter.class_name,
+      inherit ai_pod_cli.interface.InterfaceAdapter, implement start(context, payload)
+      and required_routes(), and call only context.run_route(...). It must not import
+      AIPod container/runtime internals or project components.
+    - role=adapter_module files contain one focused transport/UI/queue concern and use
+      relative imports within the Interface bundle. They share the same import boundary.
+    - Optional queue, UI, desktop, and web dependencies must be imported lazily inside
+      start(); required_routes() and smoke() must not connect to external systems or open UI.
     - Runtime code must implement every declared runtime verification mode, including
       --smoke when present, without starting a long-running server or touching user data.
     - Installer and platform artifacts must call the runtime artifact at {runtime_path};
       they must not duplicate business logic.
+    - A Python installer must prefer the active VIRTUAL_ENV interpreter, then a
+      project-local virtual environment, then command -v python3. Never prefer or embed
+      /usr/bin/python3. It must verify `import ai_pod_cli` before installing.
+    - A system launcher must establish the packaged project root before starting Python
+      so load_beans(), routes.toml, modules, and pipelines resolve outside the terminal's
+      current working directory.
     - Do not claim native integration is installed when support.manual_steps remains.
     """
     return system_prompt, f"Application requirement:\n{desc}\n\nGenerate only {path}."
@@ -111,7 +128,14 @@ def _validate_artifact(
         return [f"Artifact {path.as_posix()} is empty"]
 
     if artifact_format == "python" or path.suffix == ".py":
-        if role == "runtime":
+        if role in {"adapter", "adapter_entry"}:
+            class_name = str(interface.get("adapter", {}).get("class_name", "GeneratedInterfaceAdapter"))
+            violations.extend(validate_code(content, allow_file_io=True))
+            violations.extend(validate_interface_adapter_contract(content, class_name))
+        elif role == "adapter_module":
+            violations.extend(validate_code(content, allow_file_io=True))
+            violations.extend(validate_interface_adapter_imports(content))
+        elif role == "runtime":
             violations.extend(validate_entry_contract(content, route_names))
         else:
             violations.extend(validate_code(content, allow_file_io=True))
@@ -138,6 +162,24 @@ def _validate_artifact(
             violations.append(
                 f"Invalid shell artifact {path.as_posix()}: {completed.stderr.strip()}"
             )
+        if role == "installer":
+            system_python = content.find("/usr/bin/python3")
+            virtual_env = content.find("VIRTUAL_ENV")
+            if system_python >= 0 and (virtual_env < 0 or system_python < virtual_env):
+                violations.append(
+                    "Installer must prefer the active VIRTUAL_ENV or project-local "
+                    "environment before any system Python"
+                )
+            if "PYTHON_BIN" in content and "import ai_pod_cli" not in content:
+                violations.append(
+                    "Installer must preflight the selected interpreter with "
+                    "`import ai_pod_cli` before modifying the installation"
+                )
+            if "main.py" in content and "cd " not in content and "AIPOD_PROJECT_ROOT" not in content:
+                violations.append(
+                    "Installed launcher must establish the AIPod project root before "
+                    "running main.py"
+                )
     return list(dict.fromkeys(violations))
 
 
@@ -228,6 +270,29 @@ def generate_interface_delivery(
         content, deps = result
         generated[path] = content
         all_deps.extend(item for item in deps if item not in all_deps)
+
+    adapter_spec = interface.get("adapter")
+    if isinstance(adapter_spec, dict) and (adapter_spec.get("entry_path") or adapter_spec.get("path")):
+        adapter_path = Path(str(adapter_spec.get("entry_path") or adapter_spec.get("path")))
+        adapter_sources = {
+            path.as_posix(): generated[path]
+            for artifact, path in zip(artifacts, paths)
+            if (
+                str(artifact.get("role", "")) == "adapter"
+                or str(artifact.get("role", "")).startswith("adapter_")
+            ) and path in generated
+        }
+        if adapter_path.as_posix() not in adapter_sources:
+            print(f"   ❌ Adapter entry artifact was not generated: {adapter_path.as_posix()}")
+            return None
+        adapter_violations = verify_adapter_candidate(
+            Path.cwd(), interface, adapter_sources, timeout=30,
+        )
+        if adapter_violations:
+            print(f"   ❌ Adapter isolated verification failed: {name}")
+            for violation in adapter_violations:
+                print(f"      - {violation}")
+            return None
 
     bundle.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(

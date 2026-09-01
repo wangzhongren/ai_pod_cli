@@ -29,9 +29,10 @@ from ai_pod_cli.pod.planning import save_pod_plan
 from ai_pod_cli.pod.revision import select_revision_stage
 from ai_pod_cli.pod.state import prepare_stage_rebuild
 from ai_pod_cli.pod.tools.components import generate_components, verify_reused_components
-from ai_pod_cli.pod.tools.interfaces import generate_interface_delivery
+from ai_pod_cli.pod.tools.interfaces import _validate_artifact, generate_interface_delivery
 from ai_pod_cli.pod.verification import _verify_application
 from ai_pod_cli.commands.verify import _bounded_output, _project_traceback_locations, verify_project
+from ai_pod_cli.commands.interface import handle_interface
 from ai_pod_cli.cli import _apply_global_env
 from ai_pod_cli.commands.env import print_missing_model_config, record_global_config_load_error
 from ai_pod_cli.sandbox import (
@@ -57,7 +58,11 @@ from ai_pod_cli.validation import (
     validate_component_contract,
     validate_entry_contract,
     validate_entry_imports,
+    validate_interface_adapter_contract,
     validate_pipeline_contract,
+)
+from ai_pod_cli.interface import (
+    create_context, load_adapter, verify_adapter_candidate,
 )
 
 
@@ -1215,7 +1220,7 @@ class StudioApiTests(unittest.TestCase):
         upgraded = load_and_upgrade_plan(legacy, "serve app")
         interface = upgraded["stages"]["interfaces"]["plan"]["interfaces"][0]
 
-        self.assertEqual(upgraded["version"], 5)
+        self.assertEqual(upgraded["version"], 6)
         self.assertEqual(interface["name"], "server")
         self.assertEqual(interface["artifacts"][0]["path"], "interfaces/server/main.py")
         self.assertEqual(interface["artifacts"][0]["role"], "runtime")
@@ -1629,6 +1634,113 @@ class StudioApiTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertFalse(committed)
 
+    def test_python_installer_must_preserve_runtime_environment_and_project_root(self):
+        interface = {"verify": []}
+        artifact = {
+            "path": "interfaces/demo/install.sh", "role": "installer", "format": "shell",
+        }
+        broken = (
+            "#!/bin/sh\n"
+            "PYTHON_BIN=/usr/bin/python3\n"
+            '"$PYTHON_BIN" main.py --smoke\n'
+        )
+        valid = (
+            "#!/bin/sh\n"
+            "PROJECT_ROOT=/tmp/project\n"
+            'PYTHON_BIN="${VIRTUAL_ENV}/bin/python"\n'
+            '"$PYTHON_BIN" -c "import ai_pod_cli"\n'
+            'cd "$PROJECT_ROOT"\n'
+            '"$PYTHON_BIN" main.py --smoke\n'
+        )
+
+        violations = _validate_artifact(interface, artifact, broken, [], [])
+
+        self.assertTrue(any("VIRTUAL_ENV" in item for item in violations))
+        self.assertTrue(any("preflight" in item for item in violations))
+        self.assertTrue(any("project root" in item for item in violations))
+        self.assertEqual(_validate_artifact(interface, artifact, valid, [], []), [])
+
+    def test_ai_generated_adapter_uses_only_interface_context_and_routes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                adapter_dir = project / "interfaces/queue-window"
+                adapter_dir.mkdir(parents=True)
+                pipeline = project / "pipelines/work.py"
+                pipeline.parent.mkdir(parents=True, exist_ok=True)
+                pipeline.write_text(
+                    "def run(ctx):\n"
+                    "    ctx.set('handled', ctx.params.get('message'))\n"
+                    "    return ctx.summary()\n",
+                    encoding="utf-8",
+                )
+                (project / "routes.toml").write_text(
+                    '[work]\npipeline = "pipelines/work.py"\n', encoding="utf-8",
+                )
+                adapter_code = (
+                    "from ai_pod_cli.interface import InterfaceAdapter, InterfaceContext\n"
+                    "from .bridge import to_params\n"
+                    "class GeneratedInterfaceAdapter(InterfaceAdapter):\n"
+                    "    def required_routes(self):\n"
+                    "        return ['work']\n"
+                    "    def start(self, context: InterfaceContext, payload=None):\n"
+                    "        return context.run_route('work', to_params(payload or {}))\n"
+                    "    def smoke(self, context: InterfaceContext):\n"
+                    "        return context.run_route('work', {'message': 'smoke'})\n"
+                )
+                bridge_code = (
+                    "def to_params(payload):\n"
+                    "    return {'message': payload.get('message')}\n"
+                )
+                manifest = {
+                    "name": "queue-window", "kind": "windows_desktop_queue",
+                    "adapter": {
+                        "path": "interfaces/queue-window/adapter.py",
+                        "class_name": "GeneratedInterfaceAdapter",
+                    },
+                    "artifacts": [{
+                        "path": "interfaces/queue-window/adapter.py",
+                        "role": "adapter_entry", "format": "python",
+                    }, {
+                        "path": "interfaces/queue-window/bridge.py",
+                        "role": "adapter_module", "format": "python",
+                    }],
+                }
+                (adapter_dir / "adapter.py").write_text(adapter_code, encoding="utf-8")
+                (adapter_dir / "bridge.py").write_text(bridge_code, encoding="utf-8")
+                (adapter_dir / "interface.json").write_text(
+                    json.dumps(manifest), encoding="utf-8",
+                )
+
+                static_violations = validate_interface_adapter_contract(
+                    adapter_code, "GeneratedInterfaceAdapter",
+                )
+                runtime_violations = verify_adapter_candidate(
+                    project, manifest, {
+                        "interfaces/queue-window/adapter.py": adapter_code,
+                        "interfaces/queue-window/bridge.py": bridge_code,
+                    },
+                )
+                adapter = load_adapter(manifest, project)
+                result = adapter.start(create_context(manifest, project), {"message": "hello"})
+                cli_output = io.StringIO()
+                with redirect_stdout(cli_output):
+                    handle_interface(SimpleNamespace(
+                        action="smoke", target="queue-window",
+                        project_root=str(project), payload="{}",
+                    ))
+                cli_result = json.loads(cli_output.getvalue())
+            finally:
+                os.chdir(previous)
+
+        self.assertEqual(static_violations, [])
+        self.assertEqual(runtime_violations, [])
+        self.assertEqual(result["data"]["handled"], "hello")
+        self.assertEqual(cli_result["data"]["handled"], "smoke")
+
     def test_optional_interface_check_does_not_fail_required_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -1740,6 +1852,7 @@ class StudioApiTests(unittest.TestCase):
             self.assertTrue((ordinary / "modules" / "services" / "__init__.py").exists())
             self.assertTrue((ordinary / "modules" / "models" / "__init__.py").exists())
             self.assertTrue((ordinary / "pipelines" / "__init__.py").exists())
+            self.assertTrue((ordinary / "interfaces").is_dir())
 
     def test_pod_reuses_existing_component_and_pipeline_without_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

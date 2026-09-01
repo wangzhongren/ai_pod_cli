@@ -40,7 +40,11 @@ def _application_verification_specs(state: dict) -> list[dict]:
             command = verify.get("command")
             if not isinstance(command, list) or not command:
                 continue
-            resolved = [str(item) for item in command]
+            replacements = {
+                "{python}": sys.executable,
+                "{project_root}": str(Path.cwd().resolve()),
+            }
+            resolved = [replacements.get(str(item), str(item)) for item in command]
             if resolved[0] in {"python", "python3"}:
                 resolved[0] = sys.executable
             specs.append({

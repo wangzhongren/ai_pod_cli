@@ -12,6 +12,7 @@ from ai_pod_cli.commands.entry import handle_entry
 from ai_pod_cli.commands.env import handle_config
 from ai_pod_cli.commands.init import handle_init
 from ai_pod_cli.commands.inspect import handle_inspect
+from ai_pod_cli.commands.interface import handle_interface
 from ai_pod_cli.commands.pod import handle_pod
 from ai_pod_cli.commands.run import handle_run
 from ai_pod_cli.commands.studio import handle_studio
@@ -114,7 +115,20 @@ def main():
     studio_parser.add_argument("path", nargs="?", default=".", help="AIPod project directory (default: current directory)")
     studio_parser.add_argument("--debug", action="store_true", help="Enable webview developer tools")
 
-    # 12. verify
+    # 12. interface
+    interface_parser = subparsers.add_parser(
+        "interface", help="Run AI-generated Interface adapters",
+    )
+    interface_parser.add_argument("action", choices=("list", "run", "smoke", "install", "uninstall"))
+    interface_parser.add_argument("target", nargs="?", default="", help="Interface name or manifest path")
+    interface_parser.add_argument("--payload", default="{}", help="JSON event payload for run")
+    interface_parser.add_argument("--project-root", default=".", help="AIPod project root")
+    interface_parser.add_argument(
+        "inputs", nargs=argparse.REMAINDER,
+        help="Raw Adapter arguments after --; overrides --payload",
+    )
+
+    # 13. verify
     verify_parser = subparsers.add_parser("verify", help="Run structural checks and an optional real project command")
     verify_parser.add_argument("--timeout", type=int, default=120, help="Command timeout in seconds")
     verify_parser.add_argument("--json", action="store_true", help="Emit structured repair evidence")
@@ -132,6 +146,7 @@ def main():
         "entry": handle_entry,
         "run": handle_run,
         "inspect": handle_inspect,
+        "interface": handle_interface,
         "visualize": handle_visualize,
         "studio": handle_studio,
         "verify": handle_verify,
@@ -156,6 +171,8 @@ def main():
         handle_run(args)
     elif args.command == "inspect":
         handle_inspect(args)
+    elif args.command == "interface":
+        handle_interface(args)
     elif args.command == "visualize":
         handle_visualize(args)
     elif args.command == "studio":

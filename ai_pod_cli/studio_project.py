@@ -80,7 +80,10 @@ class StudioProjectService:
                 previous = Path.cwd()
                 os.chdir(root)
                 try:
-                    for directory in (Path("modules/models"), Path("modules/providers"), Path("modules/services"), Path("pipelines")):
+                    for directory in (
+                        Path("modules/models"), Path("modules/providers"),
+                        Path("modules/services"), Path("pipelines"), Path("interfaces"),
+                    ):
                         directory.mkdir(parents=True, exist_ok=True)
                     for init_file, description in (
                         (Path("modules/__init__.py"), "AIPod project components."),
