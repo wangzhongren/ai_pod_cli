@@ -21,7 +21,8 @@ from ai_pod_cli.contracts import (
 )
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import (
-    _load_decision_plan, _resume_stage, _save_decision_plan, _set_stage_status,
+    _execute_pod_build_tool, _load_decision_plan, _resume_stage,
+    _save_decision_plan, _set_stage_status,
     handle_pod, load_and_upgrade_plan,
 )
 from ai_pod_cli.pod.planning import save_pod_plan
@@ -833,6 +834,7 @@ class StudioApiTests(unittest.TestCase):
     def test_studio_frontend_is_packaged(self):
         page = studio_asset_path().read_text(encoding="utf-8")
         brand = studio_asset_path().with_name("brand.css").read_text(encoding="utf-8")
+        progress_script = studio_asset_path().with_name("pod-progress.js").read_text(encoding="utf-8")
         self.assertIn("AIPod Studio", page)
         self.assertIn("pywebview.api", page)
         self.assertIn("Build or modify a Pod with AI", page)
@@ -840,9 +842,19 @@ class StudioApiTests(unittest.TestCase):
         self.assertIn("Run pipeline", page)
         self.assertIn("pod_build_status", page)
         self.assertIn("podProgressBar", page)
+        self.assertIn("pod-overview", progress_script)
+        self.assertIn("pod-phase-strip", progress_script)
+        self.assertIn("pod-details", progress_script)
+        self.assertIn("details.hidden = logs.length === 0", progress_script)
         self.assertIn("#podDialog .modal-body", brand)
         self.assertIn("overflow-x: hidden", brand)
         self.assertIn("overflow-wrap: anywhere", brand)
+        self.assertNotIn("min-width: 520px", brand)
+        self.assertIn(".pod-progress {", brand)
+        self.assertIn("  min-width: 0;\n  max-width: 100%;", brand)
+        self.assertIn(".pod-progress-track {\n  width: 100%;", brand)
+        self.assertIn(".pod-progress-track i.indeterminate", brand)
+        self.assertIn("grid-template-columns: repeat(7", brand)
         self.assertIn("Application verification", page)
         self.assertIn("agentStatus", page)
         self.assertIn("Repairs applied", page)
@@ -1066,6 +1078,78 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(len(violations), 2)
         self.assertIn("ai_pod_cli", violations[0])
         self.assertEqual(validate_entry_imports(valid, ["fastapi>=0.100"]), [])
+
+    def test_entry_imports_enforce_canonical_aipod_symbol_paths(self):
+        invalid = (
+            "from ai_pod_cli import build_container, load_beans, "
+            "TemplateQueryService, PipelineRunner\n"
+            "from modules.services.templatequeryservice import TemplateQueryService as DirectService\n"
+        )
+        valid = (
+            "from ai_pod_cli.config import load_beans\n"
+            "from ai_pod_cli.container import build_container\n"
+            "from ai_pod_cli.runner import PipelineRunner\n"
+        )
+
+        violations = validate_entry_imports(invalid, [])
+
+        self.assertTrue(any("ai_pod_cli.container" in item for item in violations))
+        self.assertTrue(any("ai_pod_cli.config" in item for item in violations))
+        self.assertTrue(any("ai_pod_cli.runner" in item for item in violations))
+        self.assertTrue(any("TemplateQueryService" in item for item in violations))
+        self.assertTrue(any("不得直接导入 modules" in item for item in violations))
+        self.assertEqual(validate_entry_imports(valid, []), [])
+
+    def test_interface_planning_can_see_routes_but_not_services(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            previous = Path.cwd()
+            os.chdir(project)
+            try:
+                init_config_if_not_exists()
+                config = json.loads((project / "beans_config.json").read_text(encoding="utf-8"))
+                config["beans"].append({
+                    "id": "SecretTemplateService", "category": "service",
+                    "class_path": "modules.services.secret.SecretTemplateService",
+                    "inputs": {}, "outputs": {"templates": "list"},
+                })
+                save_config(config)
+                (project / "routes.toml").write_text(
+                    '[query_templates]\npipeline = "pipelines/query_templates.py"\n'
+                    'description = "Query public templates"\n',
+                    encoding="utf-8",
+                )
+                captured = {}
+
+                def respond(system, user, **_kwargs):
+                    captured.update(system=system, user=user)
+                    return {
+                        "pod_name": "interface_only",
+                        "reuse_components": ["SecretTemplateService"],
+                        "components": [], "pipelines": [], "interfaces": [],
+                        "config_additions": {},
+                    }
+
+                args = SimpleNamespace(
+                    file="", desc="Build a template browser", _pod_stage=4,
+                    yes=True, json=True, auto_repair=True,
+                )
+                with (
+                    patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+                    patch("ai_pod_cli.pod.build.call_llm", side_effect=respond),
+                ):
+                    _execute_pod_build_tool(args)
+                state = _load_decision_plan("Build a template browser", 4)
+            finally:
+                os.chdir(previous)
+
+        self.assertNotIn("SecretTemplateService", captured["system"])
+        self.assertNotIn("modules.services.secret", captured["system"])
+        self.assertIn("query_templates", captured["system"])
+        self.assertIn("Query public templates", captured["system"])
+        self.assertEqual(
+            state["stages"]["interfaces"]["plan"]["reuse_components"], [],
+        )
 
     def test_selected_rebuild_freezes_upstream_and_invalidates_downstream(self):
         with tempfile.TemporaryDirectory() as tmp:

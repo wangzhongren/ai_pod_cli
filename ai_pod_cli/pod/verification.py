@@ -13,7 +13,8 @@ from ai_pod_cli.pod.state import (
 )
 from ai_pod_cli.repair import apply_file_patches, file_patch_prompt
 from ai_pod_cli.validation import (
-    validate_component_contract, validate_entry_contract, validate_pipeline_contract,
+    validate_component_contract, validate_entry_contract, validate_entry_imports,
+    validate_pipeline_contract,
 )
 
 def _application_verification_specs(state: dict) -> list[dict]:
@@ -159,7 +160,17 @@ def _validate_repaired_artifact(relative_path: str, code: str) -> list[str]:
                 bean.get("outputs"),
                 bean.get("methods"),
             )
-    return validate_entry_contract(code, list(_load_routes_map()))
+    requirements = []
+    requirements_path = Path("requirements.txt")
+    if requirements_path.is_file():
+        requirements = [
+            line.strip() for line in requirements_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    return [
+        *validate_entry_contract(code, list(_load_routes_map())),
+        *validate_entry_imports(code, requirements),
+    ]
 
 
 def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> dict:

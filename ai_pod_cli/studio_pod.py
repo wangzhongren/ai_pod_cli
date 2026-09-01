@@ -228,7 +228,16 @@ class StudioPodService:
                 stage = task["stage"]
                 percent = task["percent"]
                 component_match = re.match(r"Generating component (\d+)/(\d+):", label)
-                if label == "Planning architecture":
+                planning_match = re.match(r"Planning stage (\d+)/5:\s*(\w+)", label)
+                if label == "Classifying earliest affected Pod layer":
+                    stage, percent = "impact_analysis", max(percent, 6)
+                elif planning_match:
+                    stage = planning_match.group(2).lower()
+                    percent = max(percent, {
+                        "models": 10, "providers": 26, "services": 42,
+                        "pipelines": 62, "interfaces": 80,
+                    }.get(stage, 8))
+                elif label == "Planning architecture":
                     stage, percent = "planning", max(percent, 8)
                 elif component_match:
                     current, total = int(component_match.group(1)), max(1, int(component_match.group(2)))
@@ -237,11 +246,18 @@ class StudioPodService:
                     stage, percent = "pipelines", max(percent, 74)
                 elif label == "Generating application entry point":
                     stage, percent = "entrypoint", max(percent, 90)
+                elif label.startswith("Generating Interface artifact:"):
+                    stage, percent = "interfaces", max(percent, 86)
                 elif label.startswith("Repairing current artifact:"):
                     stage, percent = "repair", max(percent, 97)
                 suffix = "starting…" if event_type == "llm_started" else f"{characters:,} characters received"
                 if event_type == "llm_completed":
                     suffix = f"response complete · {characters:,} characters"
+                if event_type in {"llm_started", "llm_completed"}:
+                    marker = "●" if event_type == "llm_started" else "✓"
+                    task["logs"].append(f"{marker} {label} · {suffix}")
+                    if len(task["logs"]) > 500:
+                        del task["logs"][:100]
                 task.update(stage=stage, percent=percent, message=f"{label} · {suffix}")
 
     @staticmethod

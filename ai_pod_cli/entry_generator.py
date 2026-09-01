@@ -83,6 +83,8 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
       runner.run("route_name", {{"key": "value"}})  — 执行管线
     - 禁止手动 new PipelineRunner()，必须通过 container.get() 获取。
     - 禁止 import AIPodCli、项目名、Pod 名、modules 或 pipelines。
+    - 禁止 `from ai_pod_cli import build_container, load_beans, PipelineRunner`；必须使用上面列出的精确子模块路径。
+    - 入口不得直接导入任何具体 Service，只能通过 PipelineRunner 调用 route。
     - 入口文件不需要 import 任何 modules/ 下的底层 Bean，只通过管线完成业务。
     - 生成的代码必须是完整可运行的，包含所有必要的 import。
     - 加上清晰的中文注释。

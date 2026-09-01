@@ -11,20 +11,78 @@
 }
 
 .pod-progress {
-  min-width: 520px;
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.pod-progress-head {
+.pod-overview {
+  padding: 14px;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  background: #202020;
+}
+
+.pod-stage-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  color: #d4d4d4;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pod-spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 2px solid #3d4f65;
+  border-top-color: #75beff;
+  border-radius: 50%;
+  animation: pod-spin .85s linear infinite;
+}
+
+.pod-spinner.settled {
+  border-color: #89d185;
+  animation: none;
+}
+
+.pod-stage-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pod-stage-copy strong {
+  overflow: hidden;
+  color: #e5e5e5;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pod-stage-kicker {
+  color: #858585;
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pod-percent-pill {
+  margin-left: auto;
+  padding: 2px 7px;
+  border: 1px solid #3c3c3c;
+  border-radius: 10px;
+  color: #9cdcfe;
+  font-variant-numeric: tabular-nums;
 }
 
 .pod-progress-track {
-  height: 5px;
+  width: 100%;
+  height: 4px;
   overflow: hidden;
+  border-radius: 999px;
   background: #3c3c3c;
 }
 
@@ -32,30 +90,129 @@
   display: block;
   width: 0;
   height: 100%;
+  border-radius: inherit;
   background: linear-gradient(90deg, #007acc, #c586c0);
   transition: width .25s ease;
 }
 
-.pod-message {
-  min-height: 18px;
-  margin: 10px 0 6px;
+.pod-progress-track i.indeterminate {
+  width: 34% !important;
+  animation: pod-progress-slide 1.3s ease-in-out infinite;
+}
+
+.pod-phase-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 11px;
+}
+
+.pod-phase-strip span {
+  overflow: hidden;
+  color: #666;
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pod-phase-strip span.done {
+  color: #89d185;
+}
+
+.pod-phase-strip span.active {
   color: #9cdcfe;
+  font-weight: 600;
+}
+
+.pod-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-left: 2px solid #007acc;
+  background: #1d2731;
+  color: #c8d7e5;
+  line-height: 1.45;
+}
+
+.pod-activity-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #75beff;
+  box-shadow: 0 0 0 4px #75beff18;
+}
+
+#podMessage {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pod-log {
-  height: 210px;
+  max-height: 180px;
   margin: 0;
   padding: 10px;
-  overflow: auto;
-  border: 1px solid #3c3c3c;
+  overflow-y: auto;
+  border-top: 1px solid #3c3c3c;
   background: #181818;
   color: #b8b8b8;
   font: 11px/1.5 Consolas, monospace;
   white-space: pre-wrap;
 }
 
+.pod-details {
+  overflow: hidden;
+  border: 1px solid #3c3c3c;
+  border-radius: 5px;
+  background: #1b1b1b;
+}
+
+.pod-details summary {
+  padding: 8px 10px;
+  color: #a8a8a8;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.pod-details summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 7px;
+  transition: transform .15s ease;
+}
+
+.pod-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.pod-details summary span {
+  float: right;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #2b2b2b;
+  color: #858585;
+  font-size: 10px;
+  text-align: center;
+}
+
+@keyframes pod-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pod-progress-slide {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(300%); }
+}
+
 /* Keep long Pod requirements and streamed diagnostics inside the modal. */
 #podDialog {
+  width: min(560px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   overflow: hidden;
 }

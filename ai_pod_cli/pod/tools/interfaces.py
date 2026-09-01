@@ -85,6 +85,9 @@ def _artifact_prompt(
     - Return strict JSON: {{"path":"{path}","content":"complete text","extra_deps":[]}}
     - PyPI distribution name is AIPodCli; Python import name is ai_pod_cli.
     - Never import AIPodCli, the project name, the Pod name, modules, or pipelines.
+    - Never import build_container, load_beans, PipelineRunner, or project Services from
+      the ai_pod_cli root package. Their canonical modules are ai_pod_cli.container,
+      ai_pod_cli.config, and ai_pod_cli.runner. Interface code never imports Services.
     - Runtime Python gets PipelineRunner only through
       build_container(load_beans()).get(PipelineRunner).
     - Runtime code must implement every declared runtime verification mode, including

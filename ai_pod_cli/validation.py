@@ -323,6 +323,19 @@ _DISTRIBUTION_IMPORT_ALIASES = {
     "pyyaml": "yaml",
 }
 
+_AIPOD_ROOT_EXPORTS = {
+    "PipelineContext", "Model", "ModelRepository", "ContractField", "Effect",
+    "Failure", "Result", "Success", "analyze_pipeline_contracts", "types_compatible",
+}
+
+_AIPOD_CANONICAL_IMPORTS = {
+    "build_container": "ai_pod_cli.container",
+    "Pod": "ai_pod_cli.container",
+    "load_beans": "ai_pod_cli.config",
+    "PipelineRunner": "ai_pod_cli.runner",
+    "ConfigStore": "ai_pod_cli.config_store",
+}
+
 
 def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> list[str]:
     """Reject invented project/package imports in generated Interface files."""
@@ -342,11 +355,46 @@ def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> li
 
     violations = []
     for node in ast.walk(tree):
-        module = ""
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             names = [node.module or ""] if node.level == 0 else []
+            module = node.module or ""
+            if module == "ai_pod_cli":
+                for alias in node.names:
+                    symbol = alias.name
+                    canonical = _AIPOD_CANONICAL_IMPORTS.get(symbol)
+                    if canonical:
+                        violations.append(
+                            f"入口不能从 ai_pod_cli 根包导入 '{symbol}'；"
+                            f"请使用 from {canonical} import {symbol}"
+                        )
+                    elif symbol not in _AIPOD_ROOT_EXPORTS:
+                        violations.append(
+                            f"ai_pod_cli 根包没有导出 '{symbol}'；"
+                            "具体 Service 不得由 Interface 直接导入，"
+                            "应通过 PipelineRunner 调用已注册 route"
+                        )
+            elif module.startswith("ai_pod_cli."):
+                for alias in node.names:
+                    canonical = _AIPOD_CANONICAL_IMPORTS.get(alias.name)
+                    if canonical and module != canonical:
+                        violations.append(
+                            f"'{alias.name}' 的导入路径错误；"
+                            f"请使用 from {canonical} import {alias.name}"
+                        )
+            elif module == "modules" or module.startswith("modules."):
+                violations.append(
+                    "Interface 不得直接导入 modules 下的 Model、Provider 或 Service；"
+                    "请通过 PipelineRunner 调用已注册 route"
+                )
+                names = []
+            elif module == "pipelines" or module.startswith("pipelines."):
+                violations.append(
+                    "Interface 不得直接导入 pipelines；"
+                    "请通过 PipelineRunner 调用 routes.toml 中的 route"
+                )
+                names = []
         else:
             continue
         for name in names:

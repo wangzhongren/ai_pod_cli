@@ -83,29 +83,41 @@ def _execute_pod_build_tool(args):
     toml_keys = load_config_toml_safe()
     stage_names = STAGE_NAMES
     stage_name = stage_names[min(stage, len(stage_names) - 1)]
+    frozen_routes = _load_routes_map() if stage == 4 else {}
+    visible_components = (
+        "[hidden from Interface planning; use frozen routes only]"
+        if stage == 4 else existing_beans
+    )
+    visible_config = (
+        "[hidden from Interface planning]" if stage == 4 else toml_keys
+    )
+    visible_evidence = {} if stage == 4 else previous_stage_evidence
     stage_instructions = {
         0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类。明确区分运行时 Value Model（不持久化）和 Persistent Model（需要 ModelRepository/数据库）；禁止把 Vector2、Transform、事件、碰撞结果等瞬时值规划成数据库表。",
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
         2: "只规划业务 service。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。复杂输入输出必须引用已生成 Model 的完整类路径。Model 只能普通 import，不能写入 depends_on。",
         3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。",
-        4: "只规划用户入口 Interface。components 和 pipelines 必须为空。读取已冻结 route，把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
+        4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
 
     system_prompt = f"""
     你是一个资深的软件架构师。当前系统是一个基于 Python `injector` 框架的 IoC/DI 容器低代码平台。
 
     目前系统中已有的组件池（Bean Pool）：
-    {existing_beans}
+    {visible_components}
 
     当前 config.toml 中的配置项（敏感值已隐藏）：
-    {toml_keys}
+    {visible_config}
+
+    Interface 可见的已冻结 routes（非 Interface 阶段为空）：
+    {json.dumps(frozen_routes, ensure_ascii=False, indent=2)}
 
     当前处于阶段 {stage + 1}/5：{stage_name}。
     {stage_instructions}
 
     本次局部修改要求：{revision_instruction or "无（正常构建或续跑）"}
     {"当前层及下游已解冻。如需修改现有同层组件，可以在 components 中使用相同 Bean ID 返回替换规划。" if rebuild_active else ""}
-    上一次当前层验证证据：{json.dumps(previous_stage_evidence, ensure_ascii=False)}
+    上一次当前层验证证据：{json.dumps(visible_evidence, ensure_ascii=False)}
 
     你的任务是只规划当前阶段。后续阶段会在当前产物生成并验证之后重新调用规划器，禁止提前规划。
 
@@ -205,6 +217,11 @@ def _execute_pod_build_tool(args):
         decision_state["current_stage"] = stage_name
         _save_decision_plan(decision_state)
 
+    if stage == 4:
+        normalize_interface_plan(plan)
+        plan["reuse_components"] = []
+        _save_decision_plan(decision_state)
+
     reduction = reduce_decision_fragments(plan, beans.get("beans", []), stage_name)
     stage_record["reduction"] = reduction
     _save_decision_plan(decision_state)
@@ -301,7 +318,14 @@ def _execute_pod_build_tool(args):
     # An empty Provider plan is a valid and desirable result when the requirement
     # does not name any external infrastructure.  The built-in providers remain
     # available and the five-stage loop must continue to Services.
-    if stage != 1 and not components and not reused and not pipelines and not interfaces:
+    legacy_interface_verification = bool(
+        stage == 4
+        and decision_state.get("agent", {}).get("verification", {}).get("command")
+    )
+    if (
+        stage != 1 and not components and not reused and not pipelines and not interfaces
+        and not legacy_interface_verification
+    ):
         print("❌ AI 未返回可创建或可复用的组件。")
         return
 
