@@ -325,7 +325,9 @@ _DISTRIBUTION_IMPORT_ALIASES = {
 
 _AIPOD_ROOT_EXPORTS = {
     "PipelineContext", "Model", "ModelRepository", "ContractField", "Effect",
-    "Failure", "Result", "Success", "analyze_pipeline_contracts", "types_compatible",
+    "Failure", "Result", "Success", "StreamItem", "StreamPipeline", "stream",
+    "analyze_parallel_contracts", "analyze_pipeline_contracts",
+    "analyze_stream_contracts", "types_compatible",
 }
 
 _AIPOD_CANONICAL_IMPORTS = {

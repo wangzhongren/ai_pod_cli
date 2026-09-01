@@ -19,6 +19,12 @@ def generate_pipelines(
         for i, pipe in enumerate(pipelines, 1):
             pipe_name = pipe.get("name", f"pipeline_{i}")
             instruction = pipe.get("instruction", "")
+            execution = pipe.get("execution") or {"mode": "sequential"}
+            if execution.get("mode", "sequential") != "sequential":
+                instruction += (
+                    "\nExecution policy (must use AIPod Runtime APIs exactly): "
+                    + str(execution)
+                )
             print(f"\n   [{i}/{len(pipelines)}] {pipe_name}: {instruction}")
             if pipe_name in existing_routes:
                 if not replace_existing:

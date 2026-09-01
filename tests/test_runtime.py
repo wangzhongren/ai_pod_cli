@@ -1,5 +1,6 @@
 """End-to-end tests for the deterministic AIPod runtime."""
 
+import asyncio
 import json
 import io
 import os
@@ -16,8 +17,8 @@ from unittest.mock import patch
 from ai_pod_cli.config import extract_model_fields, extract_sql_resources, init_config_if_not_exists, save_config
 from ai_pod_cli.client import _parse_json_content, call_llm
 from ai_pod_cli.contracts import (
-    analyze_pipeline_contracts, normalize_type, semantic_field_similarity, types_compatible,
-    validate_contract_data,
+    analyze_parallel_contracts, analyze_pipeline_contracts, analyze_stream_contracts,
+    normalize_type, semantic_field_similarity, types_compatible, validate_contract_data,
 )
 from ai_pod_cli.commands.visualize import _extract_pipeline_services, _graph_html
 from ai_pod_cli.commands.pod import (
@@ -645,6 +646,18 @@ def run(ctx):
         self.assertEqual(ctx.get("source"), "cache")
         self.assertEqual(ctx.steps[0]["fallback"], "Cache")
 
+    def test_context_fork_rejects_ambiguous_parallel_writes(self):
+        parent = PipelineContext(data={"stable": True})
+        left = parent.fork("left")
+        right = parent.fork("right")
+        left.set("answer", 1)
+        right.set("answer", 2)
+
+        with self.assertRaisesRegex(ValueError, "conflicting values"):
+            parent.merge([left, right])
+        parent.merge([left, right], strategy="collect")
+        self.assertEqual(parent.get("answer"), [1, 2])
+
     def test_repair_feedback_is_explicit_and_requires_confirmation(self):
         violations = ["Pipeline 必须定义 run(ctx) 函数"]
         feedback = repair_feedback(violations)
@@ -655,6 +668,121 @@ def run(ctx):
             self.assertFalse(request_repair(violations, 1, 3))
         with patch("builtins.input", return_value=""):
             self.assertTrue(request_repair(violations, 1, 3))
+
+
+class AsyncPipelineRuntimeTests(unittest.IsolatedAsyncioTestCase):
+
+    async def test_runner_executes_async_pipeline_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pipeline = root / "async_work.py"
+            pipeline.write_text(
+                "import asyncio\n"
+                "async def run(ctx):\n"
+                "    await asyncio.sleep(0.001)\n"
+                "    ctx.set('answer', ctx.get('value') + 1)\n"
+                "    return ctx.summary()\n",
+                encoding="utf-8",
+            )
+            routes = root / "routes.toml"
+            routes.write_text(
+                f'[work]\npipeline = "{pipeline.as_posix()}"\n', encoding="utf-8",
+            )
+
+            result = await PipelineRunner(str(routes)).run_async("work", {"value": 41})
+            self.assertEqual(result["data"]["answer"], 42)
+
+    async def test_async_component_executes_with_non_blocking_retry(self):
+        from ai_pod_cli.container import _ComponentRef
+
+        class AsyncFlaky:
+            def __init__(self):
+                self.calls = 0
+
+            async def execute(self, ctx):
+                self.calls += 1
+                await asyncio.sleep(0.001)
+                if self.calls == 1:
+                    return Failure("temporary", retryable=True)
+                return {"ready": True}
+
+        component = AsyncFlaky()
+        ctx = PipelineContext()
+        result = await _ComponentRef("AsyncFlaky", component).retry(
+            1, delay_seconds=0.001,
+        ).execute_all_async(ctx)
+
+        self.assertEqual(result, {"ready": True})
+        self.assertTrue(ctx.get("ready"))
+        self.assertEqual(ctx.steps[0]["attempts"], 2)
+
+    async def test_parallel_branches_run_concurrently_and_merge_outputs(self):
+        from ai_pod_cli.container import _ComponentRef, parallel
+
+        class Delayed:
+            def __init__(self, key):
+                self.key = key
+
+            async def execute(self, ctx):
+                await asyncio.sleep(0.04)
+                return {self.key: True}
+
+        ctx = PipelineContext({"request": "same snapshot"})
+        started = time.perf_counter()
+        result = await parallel(
+            _ComponentRef("Left", Delayed("left")),
+            _ComponentRef("Right", Delayed("right")),
+        ).execute_all_async(ctx)
+        duration = time.perf_counter() - started
+
+        self.assertIsInstance(result, Success)
+        self.assertLess(duration, 0.075)
+        self.assertEqual(ctx.get("left"), True)
+        self.assertEqual(ctx.get("right"), True)
+        self.assertEqual(ctx.steps[-1]["mode"], "parallel")
+        self.assertEqual(len(ctx.steps[-1]["branches"]), 2)
+
+    async def test_parallel_collect_all_records_failures_without_merging_bad_branch(self):
+        from ai_pod_cli.container import _ComponentRef, parallel
+
+        good = type("Good", (), {"execute": lambda self, ctx: {"value": 1}})()
+        bad = type("Bad", (), {"execute": lambda self, ctx: Failure("broken")})()
+        ctx = PipelineContext()
+
+        result = await parallel(
+            _ComponentRef("Good", good), _ComponentRef("Bad", bad),
+            failure_policy="collect_all",
+        ).execute_all_async(ctx)
+
+        self.assertIsInstance(result, Failure)
+        self.assertEqual(ctx.get("value"), 1)
+        self.assertEqual(result.code, "parallel_branch_failure")
+
+    async def test_stream_has_bounded_map_batch_and_summary(self):
+        from ai_pod_cli.container import _ComponentRef
+        from ai_pod_cli.streaming import stream
+
+        class Source:
+            async def stream(self, ctx):
+                for value in range(ctx.get("count")):
+                    yield {"value": value}
+
+        class Double:
+            async def execute(self, ctx):
+                await asyncio.sleep(0.001)
+                return {"doubled": ctx.get("value") * 2}
+
+        ctx = PipelineContext({"count": 5})
+        pipeline = stream(_ComponentRef("Source", Source())).map(
+            _ComponentRef("Double", Double()), concurrency=2,
+        ).batch(2, output_key="items")
+        batches = [item async for item in pipeline.iter_all(ctx)]
+
+        self.assertEqual(len(batches), 3)
+        self.assertEqual(batches[0].data["items"][1]["doubled"], 2)
+        self.assertEqual(batches[-1].metadata["batch_size"], 1)
+        self.assertEqual(ctx.steps[-1]["stream_count"], 3)
+        self.assertEqual(ctx.steps[-1]["mode"], "stream")
 
 
 class VisualizationTests(unittest.TestCase):
@@ -1054,6 +1182,36 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(contract["outputs"]["text"]["type"], "str")
         self.assertFalse(contract["valid"])
         self.assertEqual(contract["links"][0]["mismatches"][0]["field"], "count")
+
+    def test_parallel_contract_requires_explicit_conflict_resolution(self):
+        components = [
+            {"id": "Primary", "outputs": {"score": "int"}},
+            {"id": "Secondary", "outputs": {"score": "int"}},
+        ]
+        strict = analyze_parallel_contracts(
+            [["Primary"], ["Secondary"]], components, merge="strict",
+        )
+        collected = analyze_parallel_contracts(
+            [["Primary"], ["Secondary"]], components, merge="collect",
+        )
+
+        self.assertFalse(strict["valid"])
+        self.assertEqual(strict["issues"][0]["code"], "parallel_write_conflict")
+        self.assertTrue(collected["valid"])
+        self.assertEqual(collected["outputs"]["score"]["type"], "array")
+
+    def test_stream_contract_reuses_per_item_pipeline_analysis(self):
+        contract = analyze_stream_contracts(
+            ["Read", "Transform"],
+            [
+                {"id": "Read", "outputs": {"event": "str"}},
+                {"id": "Transform", "inputs": {"event": "str"}, "outputs": {"saved": "bool"}},
+            ],
+            batch_size=20,
+        )
+        self.assertTrue(contract["valid"])
+        self.assertEqual(contract["mode"], "stream")
+        self.assertEqual(contract["batch_size"], 20)
 
     def test_pipeline_detects_semantic_field_drift(self):
         components = [

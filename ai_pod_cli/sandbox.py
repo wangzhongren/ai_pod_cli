@@ -313,6 +313,8 @@ def verify_pipeline_candidate(
         candidate.write_text(code, encoding="utf-8")
         helper = r'''
 import importlib.util
+import asyncio
+import inspect
 import json
 from pathlib import Path
 from ai_pod_cli.context import PipelineContext
@@ -327,7 +329,10 @@ ctx = PipelineContext({
     for name, spec in payload['input_specs'].items()
 })
 materialize_path_fixtures(ctx.params)
-result = module.run(ctx)
+entry = getattr(module, 'run_async', None) or module.run
+result = entry(ctx)
+if inspect.isawaitable(result):
+    result = asyncio.run(result)
 print(json.dumps(result or ctx.summary(), ensure_ascii=False, default=str))
 '''
         (root / ".aipod_sandbox_payload.json").write_text(

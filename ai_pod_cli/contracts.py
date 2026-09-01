@@ -333,3 +333,56 @@ def analyze_pipeline_contracts(service_ids: list[str], components: list[dict]) -
         "issues": issues,
         "warnings": warnings,
     }
+
+
+def analyze_parallel_contracts(
+    branches: list[list[str]], components: list[dict], *, merge: str = "strict",
+) -> dict:
+    """Analyze isolated branch contracts and reject ambiguous output merging."""
+    if merge not in {"strict", "overwrite", "collect"}:
+        raise ValueError("parallel merge must be strict, overwrite, or collect")
+    analyses = [analyze_pipeline_contracts(branch, components) for branch in branches]
+    inputs: dict = {}
+    outputs: dict = {}
+    writers: dict[str, list[tuple[int, dict]]] = {}
+    issues = [issue for analysis in analyses for issue in analysis["issues"]]
+    warnings = [warning for analysis in analyses for warning in analysis["warnings"]]
+    for index, analysis in enumerate(analyses):
+        inputs.update(analysis["inputs"])
+        for name, field in analysis["outputs"].items():
+            writers.setdefault(name, []).append((index, field))
+
+    for name, entries in writers.items():
+        declared_types = {entry[1].get("type", "any") for entry in entries}
+        if len(entries) > 1 and merge == "strict":
+            issues.append({
+                "code": "parallel_write_conflict", "field": name,
+                "branches": [entry[0] for entry in entries],
+                "message": "multiple branches write this field without an explicit reducer",
+            })
+        elif len(declared_types) > 1:
+            warnings.append({
+                "code": "parallel_output_type_drift", "field": name,
+                "branches": [entry[0] for entry in entries],
+                "types": sorted(declared_types), "merge": merge,
+            })
+        selected = entries[-1][1]
+        if merge == "collect" and len(entries) > 1:
+            selected = {"type": "array", "items": selected}
+        outputs[name] = selected
+
+    return {
+        "mode": "parallel", "merge": merge, "branches": analyses,
+        "inputs": inputs, "outputs": outputs,
+        "valid": not issues, "issues": issues, "warnings": warnings,
+    }
+
+
+def analyze_stream_contracts(
+    service_ids: list[str], components: list[dict], *, batch_size: int | None = None,
+) -> dict:
+    """Analyze per-item data flow for a streaming component chain."""
+    if batch_size is not None and batch_size < 1:
+        raise ValueError("stream batch_size must be at least 1")
+    analysis = analyze_pipeline_contracts(service_ids, components)
+    return {**analysis, "mode": "stream", "batch_size": batch_size}

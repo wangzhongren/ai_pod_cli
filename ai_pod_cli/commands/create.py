@@ -145,6 +145,10 @@ def handle_create(args):
     【service 规范】：
     - 你只生成**一个 Python 类**，不是 pipeline 脚本！不要写 run() 函数，不要用 S()/Pod()/build_container。
     - service 是业务组件，必须实现 `execute(self, ctx: PipelineContext) -> dict` 方法。
+    - 网络、数据库驱动或消息队列原生支持 async 时，可以生成 `async def execute(...)`。
+    - 需求明确是持续事件源时，可额外实现 `async def stream(self, ctx)` 并逐条 yield
+      符合 outputs Contract 的 dict；并发、批处理和重试仍由 Pipeline Runtime 声明，
+      Service 内禁止自行调用 asyncio.gather 创建无治理任务。
     - 从 `ctx.params` 或 `ctx.get(key)` 读取输入，通过 `ctx.set(key, value)` 写入输出。
     - 必须 `from ai_pod_cli.context import PipelineContext`。
     - 组件名称: {args.name}，类名必须与此一致。

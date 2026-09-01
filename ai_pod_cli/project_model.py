@@ -42,6 +42,32 @@ def extract_pipeline_services(pipeline_path: str, class_to_id: dict[str, str]) -
     return services
 
 
+def extract_pipeline_execution(pipeline_path: str) -> dict:
+    """Infer the declared execution mode without importing the pipeline."""
+    path = Path(pipeline_path)
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return {"mode": "unknown"}
+    calls = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    if "stream" in calls:
+        mode = "stream"
+    elif "parallel" in calls:
+        mode = "parallel"
+    elif any(
+        isinstance(node, ast.AsyncFunctionDef) and node.name in {"run", "run_async"}
+        for node in tree.body
+    ):
+        mode = "async"
+    else:
+        mode = "sequential"
+    return {"mode": mode}
+
+
 def load_project_graph() -> tuple[list[dict], list[dict]]:
     """Return registry components and statically parsed route pipelines."""
     if not os.path.exists(CONFIG_FILE):
@@ -72,6 +98,7 @@ def load_project_graph() -> tuple[list[dict], list[dict]]:
                     "pipeline": pipeline_path,
                     "description": str(route.get("description", "")),
                     "services": extract_pipeline_services(pipeline_path, class_to_id),
+                    "execution": extract_pipeline_execution(pipeline_path),
                     "exists": Path(pipeline_path).exists(),
                 })
     return beans, routes

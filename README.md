@@ -163,6 +163,31 @@ def run(ctx):
 
 Interfaces see route names and descriptions, not Service classes.
 
+The same Pipeline Runtime also supports governed asynchronous, parallel, and streaming
+execution. The operators are explicit: `|` always remains sequential, `parallel(...)`
+uses isolated branch contexts and a declared merge strategy, and `stream(...)` applies
+bounded backpressure. Existing synchronous pipelines remain compatible.
+
+```python
+from ai_pod_cli.container import parallel
+
+
+async def run(ctx):
+    S = Pod(build_container(load_beans()))
+    flow = parallel(
+        S(QueryInventory),
+        S(QueryPrice),
+        merge="strict",
+        failure_policy="collect_all",
+        concurrency=2,
+    ) | S(BuildResponse)
+    await flow.execute_all_async(ctx)
+    return ctx.summary()
+```
+
+See [docs/execution.md](https://github.com/wangzhongren/ai_pod_cli/blob/main/docs/execution.md) for async routes, deterministic branch merging,
+stream processing, failure policies, and Contract behavior.
+
 ### Interface
 
 An Interface is a delivery bundle around one AI-generated project Adapter. It can bridge
@@ -438,7 +463,12 @@ and deployment isolation appropriate to the application.
 
 ## Current boundaries
 
-- Pipeline composition is sequential.
+- Synchronous code cannot safely force an async Pipeline inside an already-running event
+  loop; async callers must use `PipelineRunner.run_async()`.
+- Stream processing is in-process and bounded, but durable offsets, distributed workers,
+  and exactly-once delivery remain responsibilities of the selected queue/provider.
+- Parallel execution isolates Context data, but external side effects still require
+  idempotency and transaction design in the application Services.
 - Contract analysis cannot prove arbitrary Python semantics.
 - Synthetic smoke cannot prove access to real external databases, queues, accounts, or
   operating-system permissions.

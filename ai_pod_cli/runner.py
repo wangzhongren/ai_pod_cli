@@ -1,6 +1,8 @@
 """PipelineRunner — load and execute pipeline files by route name."""
 
+import asyncio
 import importlib.util
+import inspect
 import os
 import sys
 
@@ -64,6 +66,47 @@ class PipelineRunner:
         persist partial execution traces without changing application semantics.
         """
         from ai_pod_cli.context import PipelineContext
+        module = self._load_route_module(route_name)
+        ctx = PipelineContext(params=params or {})
+        try:
+            result = module.run(ctx)
+            if inspect.isawaitable(result):
+                if inspect.iscoroutine(result):
+                    result.close()
+                raise RuntimeError(
+                    "pipeline run(ctx) is asynchronous; use await runner.run_async(...)"
+                )
+        except Exception as error:
+            error.aipod_context = ctx
+            raise
+        return self._finalize_result(result, ctx)
+
+    async def run_async(self, route_name: str, params: dict | None = None):
+        """Execute a synchronous or asynchronous pipeline without blocking the loop."""
+        result, _ctx = await self.run_with_context_async(route_name, params)
+        return result
+
+    async def run_with_context_async(
+        self, route_name: str, params: dict | None = None,
+    ) -> tuple[dict, object]:
+        """Asynchronously execute a route and return its result and context."""
+        from ai_pod_cli.context import PipelineContext
+        module = self._load_route_module(route_name)
+        ctx = PipelineContext(params=params or {})
+        entry = getattr(module, "run_async", None) or module.run
+        try:
+            if inspect.iscoroutinefunction(entry):
+                result = await entry(ctx)
+            else:
+                result = await asyncio.to_thread(entry, ctx)
+                if inspect.isawaitable(result):
+                    result = await result
+        except Exception as error:
+            error.aipod_context = ctx
+            raise
+        return self._finalize_result(result, ctx)
+
+    def _load_route_module(self, route_name: str):
         route = self._routes.get(route_name)
         if route is None:
             raise KeyError(
@@ -93,13 +136,10 @@ class PipelineRunner:
                 f"Pipeline {pipeline_path} does not define a run() function"
             )
 
-        # Execute run(ctx)
-        ctx = PipelineContext(params=params or {})
-        try:
-            result = module.run(ctx)
-        except Exception as error:
-            error.aipod_context = ctx
-            raise
+        return module
+
+    @staticmethod
+    def _finalize_result(result, ctx):
         if isinstance(result, (Success, Failure)):
             payload = result.to_dict()
             payload["context"] = ctx.summary()

@@ -163,6 +163,15 @@ def handle_compose(args):
        S(RemoteService).retry(3, delay_seconds=0.2).fallback(CacheService)
        retry 的 attempts 表示重试次数；fallback 可传组件类或 S(Component) 引用。
        不要默认添加策略，只在需求或组件性质明确需要时使用。
+    10. 只有需求明确涉及并发、异步 I/O 或流式数据时才使用以下确定性 Runtime API：
+       - 异步：定义 `async def run(ctx)`，并 `await chain.execute_all_async(ctx)`。
+       - 并行：`from ai_pod_cli.container import parallel`，使用
+         `parallel(S(A), S(B), merge="strict", failure_policy="fail_fast")`。
+         每个分支 Context 隔离；禁止在分支外编写 asyncio.gather 或共享可变状态。
+       - 流式：`from ai_pod_cli.streaming import stream`，使用
+         `stream(S(Source)).map(S(Transform), concurrency=4).batch(100)`，
+         通过 `async for` 消费，或 `await ...execute_all_async(ctx)` 完整消费。
+       `|` 永远只表示串行。并发度、失败策略和 merge 策略必须显式声明。
 
     【PipelineContext 的 API】：
     - ctx.params: dict — 入口参数
@@ -203,6 +212,20 @@ def handle_compose(args):
     ```python
     # 依次执行 A → B → C（自动记录每步轨迹）
     (S(ComponentA) | S(ComponentB) | S(ComponentC)).execute_all(ctx)
+    ```
+
+    【异步并行示例】：
+    ```python
+    async def run(ctx: PipelineContext):
+        flow = parallel(
+            S(QueryInventory),
+            S(QueryPrice),
+            merge="strict",
+            failure_policy="collect_all",
+            concurrency=2,
+        ) | S(BuildResponse)
+        await flow.execute_all_async(ctx)
+        return ctx.summary()
     ```
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
