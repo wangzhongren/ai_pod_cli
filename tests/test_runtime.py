@@ -14,7 +14,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ai_pod_cli.config import extract_model_fields, extract_sql_resources, init_config_if_not_exists, save_config
+from ai_pod_cli.config import (
+    extract_model_fields, extract_sql_resources, init_config_if_not_exists,
+    load_beans_summary, save_config,
+)
 from ai_pod_cli.client import _parse_json_content, call_llm
 from ai_pod_cli.contracts import (
     analyze_parallel_contracts, analyze_pipeline_contracts, analyze_stream_contracts,
@@ -208,6 +211,32 @@ class RuntimeIntegrationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "conflict")
         self.assertEqual(result["conflicts"][0]["code"], "SERVICE_VISIBILITY_VIOLATION")
+
+        runner_result = reduce_decision_fragments(
+            {"components": [{
+                "name": "RouteCaller", "category": "service",
+                "depends_on": ["PipelineRunner"],
+            }]},
+            [{"id": "PipelineRunner", "category": "provider"}],
+            "services",
+        )
+        self.assertEqual(
+            runner_result["conflicts"][0]["code"],
+            "SERVICE_VISIBILITY_VIOLATION",
+        )
+
+    def test_service_planner_summary_hides_services_and_pipeline_runner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                init_config_if_not_exists()
+                summary = load_beans_summary(include_services=False)
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertNotIn("PipelineRunner", summary)
+        self.assertNotIn("【service", summary)
 
     def test_plan_mapper_normalizes_legacy_model_dependencies(self):
         plan = {"components": [{
@@ -640,6 +669,16 @@ class Worker:
             code, "Coordinator", "service", {}, {},
         )
         self.assertTrue(any("不得看到或导入其他 Service" in item for item in violations))
+
+        runner_code = (
+            "from ai_pod_cli.runner import PipelineRunner\n"
+            "class Coordinator:\n"
+            "    def execute(self, ctx): return {}\n"
+        )
+        runner_violations = validate_component_contract(
+            runner_code, "Coordinator", "service", {}, {},
+        )
+        self.assertTrue(any("不得访问 Pipeline/Interface Runtime" in item for item in runner_violations))
 
     def test_component_rejects_noncanonical_config_store_import(self):
         code = (

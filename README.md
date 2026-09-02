@@ -86,11 +86,12 @@ Large AI-generated applications usually fail at their boundaries:
 - one component produces `shipment_count` while another expects `shipments_count`;
 - a Model is accidentally injected as an infrastructure dependency;
 - generated code imports symbols from the wrong package;
+- one Service injects and directly executes another Service, bypassing Pipeline governance;
 - a downstream failure causes an upstream working file to be rewritten;
 - a Pipeline exists but no verified user-facing Interface reaches it;
 - syntax checks pass while imports or dependency injection fail at runtime.
 
-AIPod addresses these failures with four rules:
+AIPod addresses these failures with five rules:
 
 1. **Build in dependency order.** Earlier layers are completed before downstream layers.
 2. **Make boundaries machine-readable.** IDs, dependencies, Contracts, routes, lifecycle,
@@ -99,6 +100,8 @@ AIPod addresses these failures with four rules:
    scope, but does not silently reopen stable layers.
 4. **Require evidence before completion.** Generated artifacts must pass local structural
    and disposable runtime checks before a stage can freeze.
+5. **Keep orchestration out of Services.** A Service can see its Contract, Models, and
+   Providers, but never another Service. Composition belongs exclusively to Pipelines.
 
 ## The five layers
 
@@ -124,11 +127,13 @@ Models are imported as data types. They are never injected.
 Providers expose infrastructure capabilities such as files, databases, HTTP clients, or
 message transports. They may be injected into Services.
 
-Built-in Providers include:
+Built-in Service-visible Providers include:
 
 - `ConfigStore`
 - `ModelRepository`
-- `PipelineRunner`
+
+`PipelineRunner` is a reserved Runtime capability used behind Interface and CLI route
+boundaries. It is not a way for one Service to reach another Service.
 
 ### Service
 
@@ -144,6 +149,31 @@ class MessageProcessingService:
         result = {"message_id": message_id, "status": "processed"}
         ctx.set("result", result)
         return result
+```
+
+A Service has a deliberately narrow capability view:
+
+| Visible to a Service | Hidden from a Service |
+|---|---|
+| Its input/output Contract | Other Services |
+| Frozen Models as imported data types | `modules.services.*` imports |
+| Providers declared as DI dependencies | Service construction and `execute()` calls |
+| `PipelineContext` data | Pipeline scheduling, loops, parallelism, retries between Services |
+
+Service-to-Service dependencies are rejected independently by the Planner, Canonical
+Plan reducer, source validator, and DI Runtime. A Service must not become a hidden
+orchestrator:
+
+```python
+# Invalid: this bypasses Contract checks, Trace, Failure, retry, and execution policy.
+class GameLoopService:
+    def __init__(self, physics_service, render_service):
+        self.physics_service = physics_service
+        self.render_service = render_service
+
+    def execute(self, ctx):
+        self.physics_service.execute(ctx)
+        return self.render_service.execute(ctx)
 ```
 
 ### Pipeline
@@ -163,10 +193,18 @@ def run(ctx):
 
 Interfaces see route names and descriptions, not Service classes.
 
-The same Pipeline Runtime also supports governed asynchronous, parallel, and streaming
-execution. The operators are explicit: `|` always remains sequential, `parallel(...)`
-uses isolated branch contexts and a declared merge strategy, and `stream(...)` applies
-bounded backpressure. Existing synchronous pipelines remain compatible.
+The same Pipeline Runtime supports governed asynchronous, parallel, repeated, and
+streaming execution. Operators are explicit:
+
+| Runtime declaration | Meaning |
+|---|---|
+| `A \| B` | Deterministic sequential composition |
+| `parallel(A, B)` | Isolated concurrent branches with an explicit merge policy |
+| `repeat(frame, ...)` | Governed repetition controlled by Context fields |
+| `stream(source)` | Bounded asynchronous event processing with backpressure |
+
+Existing synchronous Pipelines remain compatible. AI declares these policies, while the
+local Runtime owns scheduling, merging, stopping, cancellation, and Trace.
 
 ```python
 from ai_pod_cli.container import parallel
@@ -185,8 +223,40 @@ async def run(ctx):
     return ctx.summary()
 ```
 
-See [docs/execution.md](https://github.com/wangzhongren/ai_pod_cli/blob/main/docs/execution.md) for async routes, deterministic branch merging,
-stream processing, failure policies, and Contract behavior.
+Repeated workflows such as game frames, workers, polling, and bounded retries remain
+visible in the Pipeline instead of being hidden inside a coordinating Service:
+
+```python
+from ai_pod_cli.container import Pod, build_container, repeat
+
+
+def run(ctx):
+    S = Pod(build_container(load_beans()))
+    frame = (
+        S(InputHandlingService)
+        | S(SceneUpdateService)
+        | S(PhysicsService)
+        | S(RenderService)
+    )
+    repeat(
+        frame,
+        until_field="quit_requested",
+        max_iterations_field="max_frames",
+        output_field="executed_frames",
+        trace_limit=20,
+    ).execute_all(ctx)
+    return ctx.summary()
+```
+
+The stop condition is a named Context field, not an arbitrary AI-generated callback.
+Each iteration uses an isolated Context snapshot, merges successful writes
+deterministically, stops on `Failure`, and retains only a bounded number of iteration
+traces.
+
+See
+[docs/execution.md](https://github.com/wangzhongren/ai_pod_cli/blob/main/docs/execution.md)
+for async routes, deterministic branch merging, repetition, stream processing, failure
+policies, and Contract behavior.
 
 ### Interface
 
@@ -324,8 +394,8 @@ Validation happens before freezing, not only at the end:
 |---|---|
 | Model | isolated import and class construction |
 | Provider | isolated import, DI construction, declared-method smoke |
-| Service | DI construction and `execute(ctx)` with Contract-derived input |
-| Pipeline | isolated Pipeline execution before route registration |
+| Service | no Service visibility; DI construction and `execute(ctx)` with Contract-derived input |
+| Pipeline | isolated sequential/parallel/repeat/stream execution before route registration |
 | Interface | every Artifact validated, Adapter package imported, smoke executed |
 
 After all layers complete, every required Interface verification command runs again.
@@ -358,7 +428,9 @@ Components publish machine-readable inputs and outputs. AIPod validates:
 - shared Model paths;
 - nested schemas;
 - Pipeline data flow;
-- runtime values at component boundaries.
+- runtime values at component boundaries;
+- Service visibility (`Service → Service` is always invalid);
+- deterministic branch merges and bounded repeat traces.
 
 Type, Model, missing-field, and nested-schema conflicts are errors. Similar-but-different
 field names are warnings because semantic similarity is heuristic.
@@ -454,6 +526,8 @@ AIPod provides governance, not hostile-code isolation.
   freezing.
 - Adapter code can see routes but is prohibited from importing Services or runtime
   internals.
+- Service code can see Models and Providers but is prohibited from importing, injecting,
+  constructing, or invoking another Service.
 - Generated lifecycle files must be reviewed before changing system integration.
 - The final application is ordinary Python and runs with the current user's permissions.
 - Third-party packages and remote model providers remain separate trust boundaries.
@@ -469,6 +543,8 @@ and deployment isolation appropriate to the application.
   and exactly-once delivery remain responsibilities of the selected queue/provider.
 - Parallel execution isolates Context data, but external side effects still require
   idempotency and transaction design in the application Services.
+- `repeat` is an in-process governed loop. Distributed scheduling, durable checkpoints,
+  and process supervision remain deployment concerns.
 - Contract analysis cannot prove arbitrary Python semantics.
 - Synthetic smoke cannot prove access to real external databases, queues, accounts, or
   operating-system permissions.

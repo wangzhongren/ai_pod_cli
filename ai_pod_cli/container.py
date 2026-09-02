@@ -50,7 +50,10 @@ def build_container(config: dict) -> Injector:
             continue
         hidden = [
             dependency for dependency in bean.get("dependencies", [])
-            if by_id.get(str(dependency), {}).get("category") == "service"
+            if (
+                by_id.get(str(dependency), {}).get("category") == "service"
+                or str(dependency) == "PipelineRunner"
+            )
         ]
         if hidden:
             raise ValueError(

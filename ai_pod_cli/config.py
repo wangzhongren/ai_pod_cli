@@ -188,6 +188,8 @@ def load_beans_summary(*, include_services: bool = True) -> str:
                 entry += f"\n      冻结字段: {b['fields']}"
             models.append(entry)
         elif b.get("category") == "provider":
+            if not include_services and b.get("id") == "PipelineRunner":
+                continue
             entry = f"  - {b['id']} ({b.get('file', '')}): {desc}"
             methods = b.get("methods", {})
             if methods:

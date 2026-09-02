@@ -202,6 +202,17 @@ def validate_component_contract(
         return list(dict.fromkeys(violations))
 
     if category == "service":
+        runtime_imports = sorted({
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module in {"ai_pod_cli.runner", "ai_pod_cli.container", "ai_pod_cli.interface"}
+        })
+        if runtime_imports:
+            violations.append(
+                "Service 不得访问 Pipeline/Interface Runtime："
+                + ", ".join(runtime_imports)
+            )
         service_imports = sorted({
             node.module
             for node in ast.walk(tree)

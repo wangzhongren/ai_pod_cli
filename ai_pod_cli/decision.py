@@ -150,7 +150,9 @@ def reduce_decision_fragments(
                 existing[dependency].get("category")
                 if dependency in existing else planned[dependency].get("kind")
             )
-            if fragment["kind"] == "service" and dependency_kind == "service":
+            if fragment["kind"] == "service" and (
+                dependency_kind == "service" or dependency == "PipelineRunner"
+            ):
                 conflicts.append({
                     "code": "SERVICE_VISIBILITY_VIOLATION",
                     "component": component_id,
