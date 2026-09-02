@@ -66,6 +66,13 @@ npm test
 
 Node.js 20 or newer is required.
 
+## AI/Codex skill
+
+[`SKILL.md`](SKILL.md) contains the agent-facing workflow for discovering, building,
+running, repairing, verifying, and operating AIPod Node projects. Install or reference
+the `aipod-node/` subdirectory as the `aipod-node` skill when using this repository from
+Codex or another SKILL.md-compatible coding agent.
+
 ## Shared configuration with Python
 
 The Python and Node.js implementations read the same global file:
