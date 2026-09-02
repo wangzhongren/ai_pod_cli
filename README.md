@@ -518,6 +518,21 @@ OPENAI_TIMEOUT_SECONDS
 
 The PyPI distribution is named `AIPodCli`; the Python import package is `ai_pod_cli`.
 
+Python and Node.js use the same global model configuration file:
+
+```text
+~/.aipod/config.toml
+
+[env]
+OPENAI_API_KEY = "..."
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OPENAI_MODEL = "your-model"
+OPENAI_TIMEOUT_SECONDS = "120"
+```
+
+They also share project-level `config.toml` and dot-notation `ConfigStore` access. Process
+environment variables override project `.env`, which overrides global `[env]` values.
+
 ## Security and trust boundary
 
 AIPod provides governance, not hostile-code isolation.
@@ -553,6 +568,22 @@ and deployment isolation appropriate to the application.
 - Model providers may time out or truncate large generations; Pod state remains resumable.
 
 ## Development
+
+### Node.js subproject
+
+An initial TypeScript implementation lives in [`aipod-node/`](aipod-node/). It provides
+the governed Runtime foundation—Service isolation, Contracts, sequential and parallel
+Pipelines, `repeat`, async streams, and route dispatch—plus a resumable five-stage AI
+construction Agent, complete generated-project semantic type checking, a persistent
+HTTP Broker/Worker runtime, CLI, and local browser-based Studio.
+
+```bash
+cd aipod-node
+npm install
+npm test
+```
+
+See [`aipod-node/README.md`](aipod-node/README.md) for its current scope and API.
 
 ```bash
 git clone https://github.com/wangzhongren/ai_pod_cli.git

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "beans": [
+    {
+      "id": "ConfigStore",
+      "category": "provider",
+      "file": "aipod:config-store",
+      "description": "Built-in project configuration provider",
+      "dependencies": [],
+      "inputs": {},
+      "outputs": {}
+    },
+    {
+      "id": "ModelRepository",
+      "category": "provider",
+      "file": "aipod:model-repository",
+      "description": "Built-in atomic JSON model repository",
+      "dependencies": [],
+      "inputs": {},
+      "outputs": {}
+    },
+    {
+      "id": "ProcessOrderService",
+      "category": "service",
+      "file": "src/services/process-order.ts",
+      "description": "Process one distributed order message",
+      "dependencies": [],
+      "inputs": {
+        "orderId": { "type": "string" }
+      },
+      "outputs": {
+        "processedOrderId": { "type": "string" }
+      }
+    }
+  ],
+  "routes": [
+    {
+      "name": "processOrder",
+      "description": "Process one order",
+      "services": ["ProcessOrderService"],
+      "execution": { "mode": "sequential" },
+      "file": "src/pipelines/process-order.ts"
+    }
+  ],
+  "interfaces": []
+}
