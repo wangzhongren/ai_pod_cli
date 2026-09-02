@@ -66,6 +66,30 @@ npm test
 
 Node.js 20 or newer is required.
 
+Run the package CLI during repository development without addressing build internals:
+
+```bash
+npm run build
+npm run cli -- help
+```
+
+## Installation and CLI
+
+Install AIPod Node as a project-local development tool:
+
+```bash
+npm install --save-dev aipod-node
+npx aipod-node help
+```
+
+`npx` resolves the local `node_modules/.bin/aipod-node` executable created from the
+package's `bin` declaration. A global installation is optional, not required:
+
+```bash
+npm install --global aipod-node
+aipod-node help
+```
+
 ## AI/Codex skill
 
 [`SKILL.md`](SKILL.md) contains the agent-facing workflow for discovering, building,
@@ -103,7 +127,7 @@ Both CLIs can manage the shared global configuration:
 
 ```bash
 aipod config set OPENAI_MODEL deepseek-chat
-node dist/src/cli.js config get OPENAI_MODEL
+npx aipod-node config get OPENAI_MODEL
 ```
 
 ## Example
@@ -146,11 +170,11 @@ await repeat(frame, {
 
 ## CLI
 
-After building:
+After installing:
 
 ```bash
-node dist/src/cli.js init ./demo
-node dist/src/cli.js inspect ./demo
+npx aipod-node init ./demo
+npx aipod-node inspect ./demo
 ```
 
 Configure any OpenAI-compatible endpoint and run the construction Agent:
@@ -160,7 +184,7 @@ export OPENAI_API_KEY="..."
 export OPENAI_MODEL="your-model"
 export OPENAI_BASE_URL="https://api.openai.com/v1" # optional
 
-node dist/src/cli.js pod \
+npx aipod-node pod \
   "Build a typed greeting service, route, and CLI Interface" \
   --project-root ./demo
 ```
@@ -172,7 +196,7 @@ Completed stages resume without another model call.
 Modify an existing project while freezing unaffected upstream stages:
 
 ```bash
-node dist/src/cli.js pod \
+npx aipod-node pod \
   "Change the CLI output to JSON" \
   --stage auto \
   --project-root ./demo
@@ -181,18 +205,18 @@ node dist/src/cli.js pod \
 Inspect, verify, and run generated artifacts:
 
 ```bash
-node dist/src/cli.js inspect ./demo
-node dist/src/cli.js verify ./demo
-node dist/src/cli.js verify ./demo -- node --test
-node dist/src/cli.js run greet \
+npx aipod-node inspect ./demo
+npx aipod-node verify ./demo
+npx aipod-node verify ./demo -- node --test
+npx aipod-node run greet \
   --params '{"name":"Ada"}' \
   --project-root ./demo
 
-node dist/src/cli.js interface list --project-root ./demo
-node dist/src/cli.js interface smoke GreetingCli --project-root ./demo
-node dist/src/cli.js interface verify GreetingCli --project-root ./demo
-node dist/src/cli.js interface install GreetingCli --project-root ./demo
-node dist/src/cli.js interface run GreetingCli \
+npx aipod-node interface list --project-root ./demo
+npx aipod-node interface smoke GreetingCli --project-root ./demo
+npx aipod-node interface verify GreetingCli --project-root ./demo
+npx aipod-node interface install GreetingCli --project-root ./demo
+npx aipod-node interface run GreetingCli \
   --payload '{"name":"Ada"}' \
   --project-root ./demo
 ```
@@ -200,12 +224,12 @@ node dist/src/cli.js interface run GreetingCli \
 Focused construction commands are also available:
 
 ```bash
-node dist/src/cli.js create \
+npx aipod-node create \
   --category service \
   --description "Format a greeting" \
   --project-root ./demo
 
-node dist/src/cli.js compose \
+npx aipod-node compose \
   "Validate then format a greeting" \
   --project-root ./demo
 ```
@@ -213,7 +237,7 @@ node dist/src/cli.js compose \
 Open the local Studio:
 
 ```bash
-node dist/src/cli.js studio ./demo
+npx aipod-node studio ./demo
 ```
 
 Studio binds to `127.0.0.1` on a random port and uses a per-process access token. It can
@@ -227,7 +251,7 @@ Start one persistent Broker on a reachable host:
 ```bash
 export AIPOD_BROKER_TOKEN="replace-with-a-secret"
 
-node dist/src/cli.js broker \
+npx aipod-node broker \
   --host 0.0.0.0 \
   --port 8787 \
   --project-root ./demo
@@ -236,7 +260,7 @@ node dist/src/cli.js broker \
 Publish idempotently from any machine:
 
 ```bash
-node dist/src/cli.js publish \
+npx aipod-node publish \
   --broker http://broker-host:8787 \
   --token "$AIPOD_BROKER_TOKEN" \
   --stream orders \
@@ -247,7 +271,7 @@ node dist/src/cli.js publish \
 Run one or more Workers on other machines:
 
 ```bash
-node dist/src/cli.js worker \
+npx aipod-node worker \
   --broker http://broker-host:8787 \
   --token "$AIPOD_BROKER_TOKEN" \
   --stream orders \
@@ -261,13 +285,13 @@ node dist/src/cli.js worker \
 Inspect Broker and dead-letter state, then replay a repaired message:
 
 ```bash
-node dist/src/cli.js broker-stats --broker http://broker-host:8787 \
+npx aipod-node broker-stats --broker http://broker-host:8787 \
   --token "$AIPOD_BROKER_TOKEN"
 
-node dist/src/cli.js dead-letters --broker http://broker-host:8787 \
+npx aipod-node dead-letters --broker http://broker-host:8787 \
   --token "$AIPOD_BROKER_TOKEN" --stream orders --group order-processors
 
-node dist/src/cli.js requeue --broker http://broker-host:8787 \
+npx aipod-node requeue --broker http://broker-host:8787 \
   --token "$AIPOD_BROKER_TOKEN" --message-id MESSAGE_ID \
   --stream orders --group order-processors
 ```

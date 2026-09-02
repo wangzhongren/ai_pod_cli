@@ -13,14 +13,19 @@ agent inside an AIPod Service or generated project.
 
 ## Choose the executable
 
-Prefer an installed `aipod-node` command. Inside this repository, build and use the local
-CLI when the command is not installed:
+Prefer the project-local package binary and prevent implicit downloads:
+
+```bash
+npx --no-install aipod-node help
+```
+
+Inside the `aipod-node` package source itself, use its development script:
 
 ```bash
 cd aipod-node
 npm install
 npm run build
-node dist/src/cli.js help
+npm run cli -- help
 ```
 
 Do not reinstall dependencies when `node_modules` already satisfies the lockfile. Node.js
@@ -32,17 +37,14 @@ When `aipod.json` exists, inspect it through the stable Project Model before mak
 architectural decisions:
 
 ```bash
-aipod-node inspect .
-aipod-node verify .
+npx --no-install aipod-node inspect .
+npx --no-install aipod-node verify .
 ```
-
-When using the repository CLI, replace `aipod-node` with
-`node /path/to/aipod-node/dist/src/cli.js`.
 
 Use exact Bean IDs, Contract fields, Route names, Interface names, execution modes,
 permissions, lifecycle commands, and verification declarations returned by `inspect`.
 Do not infer IDs from filenames. If the directory is not initialized and the user asked
-for an AIPod Node project, run `aipod-node init <directory>` first.
+for an AIPod Node project, run `npx --no-install aipod-node init <directory>` first.
 
 ## Shared Python and Node configuration
 
@@ -57,8 +59,8 @@ Configuration priority is process environment, project `.env`, then global `[env
 Use only masked inspection:
 
 ```bash
-aipod-node config list
-aipod-node config path
+npx --no-install aipod-node config list
+npx --no-install aipod-node config path
 ```
 
 Never print, request, replace, or copy an existing API key. Components read project
@@ -71,14 +73,14 @@ password, key, and authorization values are redacted before model calls.
 For a complete application requirement:
 
 ```bash
-aipod-node pod "REQUIREMENT" --project-root .
-aipod-node pod --file requirements.md --project-root .
+npx --no-install aipod-node pod "REQUIREMENT" --project-root .
+npx --no-install aipod-node pod --file requirements.md --project-root .
 ```
 
 For a change to an existing application, preserve frozen upstream stages:
 
 ```bash
-aipod-node pod "CHANGE" --stage auto --project-root .
+npx --no-install aipod-node pod "CHANGE" --stage auto --project-root .
 ```
 
 Use an explicit `models|providers|services|pipelines|interfaces` stage only when the user
@@ -98,9 +100,9 @@ unrelated external services, or destructive changes.
 Focused operations are available when a full Pod rebuild is unnecessary:
 
 ```bash
-aipod-node create --category model|provider|service --description "..." --project-root .
-aipod-node add --id ID --category TYPE --file src/path.ts --project-root .
-aipod-node compose "PIPELINE INSTRUCTION" --project-root .
+npx --no-install aipod-node create --category model|provider|service --description "..." --project-root .
+npx --no-install aipod-node add --id ID --category TYPE --file src/path.ts --project-root .
+npx --no-install aipod-node compose "PIPELINE INSTRUCTION" --project-root .
 ```
 
 ## Preserve the five-layer boundary
@@ -128,23 +130,23 @@ fields, not arbitrary generated callbacks.
 Run a registered Route and retain its redacted Trace:
 
 ```bash
-aipod-node run ROUTE --params '{"field":"value"}' --project-root .
+npx --no-install aipod-node run ROUTE --params '{"field":"value"}' --project-root .
 ```
 
 Inspect and exercise the delivery boundary:
 
 ```bash
-aipod-node interface list --project-root .
-aipod-node interface smoke NAME --project-root .
-aipod-node interface verify NAME --project-root .
-aipod-node interface run NAME --payload '{}' --project-root .
+npx --no-install aipod-node interface list --project-root .
+npx --no-install aipod-node interface smoke NAME --project-root .
+npx --no-install aipod-node interface verify NAME --project-root .
+npx --no-install aipod-node interface run NAME --payload '{}' --project-root .
 ```
 
 Run real verification commands as argument arrays after `--`, never as a shell string:
 
 ```bash
-aipod-node verify . -- node --test
-aipod-node verify . -- npm test
+npx --no-install aipod-node verify . -- node --test
+npx --no-install aipod-node verify . -- npm test
 ```
 
 A structure-only result is `unverified`, not passed. Full-project verification uses one
@@ -170,7 +172,7 @@ Open the local authenticated Studio when visual inspection or background Agent p
 is useful:
 
 ```bash
-aipod-node studio .
+npx --no-install aipod-node studio .
 ```
 
 Studio binds to loopback by default and uses a per-process token. Treat a request to bind
@@ -190,13 +192,13 @@ Broker is one persistent coordinator, not an HA replicated cluster.
 Typical operations:
 
 ```bash
-aipod-node broker --host 127.0.0.1 --port 8787 --project-root .
-aipod-node publish --broker URL --token TOKEN --stream NAME --key KEY --payload '{}'
-aipod-node worker --broker URL --token TOKEN --stream NAME --group GROUP \
+npx --no-install aipod-node broker --host 127.0.0.1 --port 8787 --project-root .
+npx --no-install aipod-node publish --broker URL --token TOKEN --stream NAME --key KEY --payload '{}'
+npx --no-install aipod-node worker --broker URL --token TOKEN --stream NAME --group GROUP \
   --route ROUTE --project-root .
-aipod-node broker-stats --broker URL --token TOKEN
-aipod-node dead-letters --broker URL --token TOKEN --stream NAME --group GROUP
-aipod-node requeue --broker URL --token TOKEN --message-id ID --stream NAME --group GROUP
+npx --no-install aipod-node broker-stats --broker URL --token TOKEN
+npx --no-install aipod-node dead-letters --broker URL --token TOKEN --stream NAME --group GROUP
+npx --no-install aipod-node requeue --broker URL --token TOKEN --message-id ID --stream NAME --group GROUP
 ```
 
 Do not expose a Broker, install a system service, or requeue dead letters without the

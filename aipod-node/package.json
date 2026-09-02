@@ -1,7 +1,6 @@
 {
   "name": "aipod-node",
   "version": "0.1.0",
-  "private": true,
   "description": "Governed compositional runtime and construction agent for Node.js applications",
   "license": "MIT",
   "type": "module",
@@ -12,7 +11,10 @@
     "aipod-node": "dist/src/cli.js"
   },
   "exports": {
-    ".": "./dist/src/index.js"
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
   },
   "types": "dist/src/index.d.ts",
   "files": [
@@ -21,13 +23,37 @@
     "examples/**/README.md",
     "examples/**/src/**/*.ts",
     "README.md",
+    "SKILL.md",
     "LICENSE"
   ],
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "cli": "node dist/src/cli.js",
+    "prepack": "npm run clean && npm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangzhongren/ai_pod_cli.git",
+    "directory": "aipod-node"
+  },
+  "homepage": "https://github.com/wangzhongren/ai_pod_cli/tree/main/aipod-node",
+  "bugs": {
+    "url": "https://github.com/wangzhongren/ai_pod_cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "dependency-injection",
+    "pipeline",
+    "typescript",
+    "distributed-worker"
+  ],
   "dependencies": {
     "smol-toml": "^1.8.0",
     "typescript": "^5.9.0"
