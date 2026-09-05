@@ -28,10 +28,15 @@ export interface SemanticDiagnostic {
   message: string;
 }
 
-export async function typeCheckProject(projectRoot: string): Promise<SemanticDiagnostic[]> {
+export async function typeCheckProject(
+  projectRoot: string,
+  sourceFiles?: readonly string[],
+): Promise<SemanticDiagnostic[]> {
   const sourceRoot = resolve(projectRoot, "src");
-  if (!await available(sourceRoot)) return [];
-  const rootNames = (await walk(sourceRoot)).filter((path) => path.endsWith(".ts"));
+  if (sourceFiles === undefined && !await available(sourceRoot)) return [];
+  const rootNames = sourceFiles === undefined
+    ? (await walk(sourceRoot)).filter((path) => path.endsWith(".ts"))
+    : sourceFiles.filter((path) => path.endsWith(".ts")).map((path) => resolve(projectRoot, path));
   if (!rootNames.length) return [];
   const runtimeTypes = runtimeTypesPath();
   const options: ts.CompilerOptions = {
@@ -54,7 +59,7 @@ export async function typeCheckProject(projectRoot: string): Promise<SemanticDia
       ? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start)
       : undefined;
     return {
-      ...(diagnostic.file ? { file: relative(projectRoot, diagnostic.file.fileName) } : {}),
+      ...(diagnostic.file ? { file: relative(projectRoot, diagnostic.file.fileName).replaceAll("\\", "/") } : {}),
       ...(position ? { line: position.line + 1, column: position.character + 1 } : {}),
       code: diagnostic.code,
       message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),

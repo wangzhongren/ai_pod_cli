@@ -132,6 +132,29 @@ export class ConstructionAgent {
     if (this.isCancelled()) throw new AgentCancelledError();
   }
 
+  async #verifyApplication(project: ProjectManifest): Promise<string[]> {
+    this.#checkCancelled();
+    const evidence = await verifyProject(this.projectRoot, project);
+    if (evidence.length) return evidence;
+    for (const item of project.interfaces) {
+      this.#checkCancelled();
+      try {
+        const smoke = await smokeInterface(this.projectRoot, item.name);
+        if (smoke.status !== "passed") evidence.push(`${item.name}: smoke failed`);
+      } catch (error) {
+        evidence.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      this.#checkCancelled();
+      try {
+        const checks = await verifyInterface(this.projectRoot, item.name);
+        if (checks.status !== "passed") evidence.push(`${item.name}: required verification failed`);
+      } catch (error) {
+        evidence.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return evidence;
+  }
+
   async revise(
     instruction: string,
     requestedStage: StageName | "auto" = "auto",
@@ -178,6 +201,7 @@ export class ConstructionAgent {
     const configuration = await loadProjectConfiguration(this.projectRoot);
     const state = await loadState(this.projectRoot, objective.trim());
     state.status = "running";
+    state.verification.status = "pending";
 
     try {
       for (const stage of STAGES) {
@@ -231,8 +255,19 @@ export class ConstructionAgent {
         await commitArtifacts(this.projectRoot, stage, artifacts);
         updateProject(project, stage, plan);
         await saveProject(this.projectRoot, project);
-        record.status = "complete";
         record.artifacts = artifacts.map((artifact) => artifact.path);
+        // Check the current and frozen upstream sources together. Old downstream
+        // sources may legitimately be incompatible during a staged revision.
+        const stageSources = STAGES.slice(0, STAGES.indexOf(stage) + 1)
+          .flatMap((name) => state.stages[name].artifacts);
+        const stageErrors = (await typeCheckProject(this.projectRoot, stageSources))
+          .map(formatSemanticDiagnostic);
+        this.#checkCancelled();
+        if (stageErrors.length) {
+          record.evidence = stageErrors;
+          throw new Error(`${stage} verification failed: ${stageErrors.join("; ")}`);
+        }
+        record.status = "complete";
         record.evidence = [];
         history(state, stage, "build", "passed", `${artifacts.length} artifact(s) committed`);
         await saveState(this.projectRoot, state);
@@ -242,19 +277,7 @@ export class ConstructionAgent {
       state.currentStage = "verification";
       this.#checkCancelled();
       this.onProgress({ stage: "verification", action: "validating", message: "Verifying project" });
-      let evidence = await verifyProject(this.projectRoot, project);
-      if (!evidence.length) {
-        for (const item of project.interfaces) {
-          try {
-            const smoke = await smokeInterface(this.projectRoot, item.name);
-            if (smoke.status !== "passed") evidence.push(`${item.name}: smoke failed`);
-            const checks = await verifyInterface(this.projectRoot, item.name);
-            if (checks.status !== "passed") evidence.push(`${item.name}: required verification failed`);
-          } catch (error) {
-            evidence.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      }
+      let evidence = await this.#verifyApplication(project);
       while (evidence.length && state.verification.repairs < 2) {
         this.#checkCancelled();
         const target = repairTarget(project, evidence);
@@ -270,8 +293,9 @@ export class ConstructionAgent {
           );
           state.verification.repairs += 1;
           await saveState(this.projectRoot, state);
-          evidence = await verifyProject(this.projectRoot, project);
+          evidence = await this.#verifyApplication(project);
         } catch (error) {
+          if (error instanceof AgentCancelledError) throw error;
           evidence = [
             ...evidence,
             `Repair failed: ${error instanceof Error ? error.message : String(error)}`,

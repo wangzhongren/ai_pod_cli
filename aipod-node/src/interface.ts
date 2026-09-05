@@ -4,6 +4,8 @@ import type { PipelineRunner } from "./runner.js";
 import { runVerificationCommand, type CommandEvidence } from "./verification.js";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 export class InterfaceContext {
   #runner?: PipelineRunner;
@@ -40,7 +42,9 @@ export async function loadInterface(
   const buildFile = definition.file
     .replace(/^src[\\/]interfaces[\\/]/, ".aipod/build/interfaces/")
     .replace(/\.ts$/, ".js");
-  const module = await import(pathToFileURL(resolve(projectRoot, buildFile)).href) as Record<string, unknown>;
+  const path = resolve(projectRoot, buildFile);
+  const version = createHash("sha256").update(await readFile(path)).digest("hex");
+  const module = await import(`${pathToFileURL(path).href}?v=${version}`) as Record<string, unknown>;
   const className = `${definition.name}Adapter`;
   const Constructor = module[className] as (new (runner: PipelineRunner) => InterfaceAdapter) | undefined;
   if (typeof Constructor !== "function") throw new Error(`${definition.file} does not export '${className}'`);

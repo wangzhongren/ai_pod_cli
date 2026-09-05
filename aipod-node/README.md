@@ -193,6 +193,12 @@ The Agent executes stages deterministically. The model decides the bounded conte
 current stage, but never chooses the next tool or sees capabilities hidden by that stage.
 Completed stages resume without another model call.
 
+Before a stage is marked complete, its TypeScript sources are checked together with
+frozen upstream sources. A type error leaves the current stage failed and resumable.
+Final verification repeats structural and type checks, Interface smoke checks, and
+declared verification commands after every repair; only required command failures block
+completion.
+
 Modify an existing project while freezing unaffected upstream stages:
 
 ```bash

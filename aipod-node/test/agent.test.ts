@@ -184,6 +184,103 @@ test("invalid stage plan stores evidence and is not frozen", async () => {
   }
 });
 
+test("cross-file type errors stop a stage before freezing and resume preserves upstream", async () => {
+  const root = await projectRoot();
+  const base = new FakeClient();
+  let invalid = true;
+  const client: ModelClient = {
+    complete: async (system) => {
+      if (invalid && system.startsWith("GENERATE_COMPONENT:providers:Clock")) {
+        return { content: 'import type { User } from "../models/user.js"; export class Clock { user: User = { id: 123, name: "Ada" }; }' };
+      }
+      return base.complete(system);
+    },
+  };
+  try {
+    await assert.rejects(new ConstructionAgent(root, client).run("Build typed app"), /providers verification failed.*TS2322/);
+    const failed = await loadState(root, "Build typed app");
+    assert.equal(failed.stages.models.status, "complete");
+    assert.equal(failed.stages.providers.status, "failed");
+    assert.equal(failed.stages.services.status, "pending");
+    assert.ok(failed.stages.providers.evidence.some((item) => item.includes("clock.ts")));
+    assert.ok(!base.systems.some((item) => item.startsWith("PLAN_STAGE:services")));
+    const modelSource = await readFile(join(root, "src/models/user.ts"), "utf8");
+    invalid = false;
+    const resumed = await new ConstructionAgent(root, client).run("Build typed app");
+    assert.equal(resumed.status, "complete");
+    assert.equal(await readFile(join(root, "src/models/user.ts"), "utf8"), modelSource);
+    assert.equal(base.systems.filter((item) => item.startsWith("GENERATE_COMPONENT:models")).length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("required runtime commands are repeated after every repair and cannot become a false pass", async () => {
+  const root = await projectRoot();
+  const base = new FakeClient();
+  let repairs = 0;
+  const command = ["{node}", "-e", "require('node:fs').appendFileSync('checks.log', 'check\\n'); process.exit(1)"];
+  const client: ModelClient = {
+    complete: async (system) => {
+      if (system.startsWith("REPAIR_ARTIFACT:")) {
+        repairs += 1;
+        return { patches: [{ oldText: "return this.runner.run", newText: `/* attempt ${repairs} */ return this.runner.run` }] };
+      }
+      const response = await base.complete(system);
+      if (system.startsWith("PLAN_STAGE:interfaces")) {
+        const interfaces = response.interfaces as { verify: unknown[] }[];
+        interfaces[0]!.verify = [{ name: "real-runtime", command, required: true }];
+      }
+      return response;
+    },
+  };
+  try {
+    await assert.rejects(new ConstructionAgent(root, client).run("Build checked app"), /required verification failed/);
+    const state = await loadState(root, "Build checked app");
+    assert.equal(state.status, "failed");
+    assert.equal(state.verification.status, "failed");
+    assert.equal(state.verification.repairs, 2);
+    assert.equal(await readFile(join(root, "checks.log"), "utf8"), "check\ncheck\ncheck\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("smoke rechecks repaired adapters with fresh code and rejects ineffective repairs", async () => {
+  for (const effective of [false, true]) {
+    const root = await projectRoot();
+    const objective = "Build an adapter to repair";
+    try {
+      await new ConstructionAgent(root, new FakeClient()).run(objective);
+      const file = join(root, "src/interfaces/greeting-cli.ts");
+      const source = await readFile(file, "utf8");
+      await writeFile(file, source.replace('return ["greet"]', 'return ["missing"]'));
+      let repairs = 0;
+      const client: ModelClient = {
+        complete: async (system) => {
+          assert.ok(system.startsWith("REPAIR_ARTIFACT:"));
+          repairs += 1;
+          return { patches: [effective
+            ? { oldText: 'return ["missing"]', newText: 'return ["greet"]' }
+            : { oldText: 'return ["missing"]', newText: `/* attempt ${repairs} */ return ["missing"]` },
+          ] };
+        },
+      };
+      const run = new ConstructionAgent(root, client).run(objective);
+      if (effective) {
+        assert.equal((await run).verification.status, "passed");
+        assert.equal(repairs, 1);
+      } else {
+        await assert.rejects(run, /smoke failed/);
+        assert.equal((await loadState(root, objective)).verification.status, "failed");
+        assert.equal(repairs, 2);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("repair applies bounded exact patches and preserves public exports", async () => {
   const source = "export class Worker { value = 1; }\n";
   assert.equal(
