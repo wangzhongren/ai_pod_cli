@@ -1,0 +1,4 @@
+interface:
+  display_name: "AIPod 渐进迁移"
+  short_description: "将已有 Node.js 与 Electron 项目分批迁入 AIPod，保留业务行为并验证交接"
+  default_prompt: "使用 $aipod-migrate 分析当前项目，制定保留业务行为的 AIPod 迁移计划，并在我要求实施时按批次修改和验证。"
