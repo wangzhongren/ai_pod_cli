@@ -1,0 +1,154 @@
+............F.FFFFFFFFFF............F                                    [100%]
+=================================== FAILURES ===================================
+____ test_defaults_and_explicit_values_reach_handler[arguments0-expected0] _____
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:28: in test_defaults_and_explicit_values_reach_handler
+    assert result.data['seen']==expected
+E   AssertionError: assert {} == {'count': 3, ...e, 'tags': []}
+E
+E     Right contains 3 more items:
+E     {'count': 3, 'label': None, 'tags': []}
+E     Use -v to get more diff
+____ test_defaults_and_explicit_values_reach_handler[arguments2-expected2] _____
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:28: in test_defaults_and_explicit_values_reach_handler
+    assert result.data['seen']==expected
+E   AssertionError: assert {'count': 4} == {'count': 4, ...e, 'tags': []}
+E
+E     Omitting 1 identical items, use -vv to show
+E     Right contains 2 more items:
+E     {'label': None, 'tags': []}
+E     Use -v to get more diff
+___________ test_ordinary_handler_exceptions_are_structured[error0] ____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:33: in test_ordinary_handler_exceptions_are_structured
+    result=invoke(handler)
+           ^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:89: in execute
+    data = tool.handler(args.model_dump(exclude_unset=True), context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:32: in handler
+    def handler(args, ctx): raise error
+                            ^^^^^^^^^^^
+E   RuntimeError: broken
+___________ test_ordinary_handler_exceptions_are_structured[error1] ____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:33: in test_ordinary_handler_exceptions_are_structured
+    result=invoke(handler)
+           ^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:89: in execute
+    data = tool.handler(args.model_dump(exclude_unset=True), context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:32: in handler
+    def handler(args, ctx): raise error
+                            ^^^^^^^^^^^
+E   KeyError: 'missing'
+___________ test_ordinary_handler_exceptions_are_structured[error2] ____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:33: in test_ordinary_handler_exceptions_are_structured
+    result=invoke(handler)
+           ^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:89: in execute
+    data = tool.handler(args.model_dump(exclude_unset=True), context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:32: in handler
+    def handler(args, ctx): raise error
+                            ^^^^^^^^^^^
+E   TypeError: bad handler
+_____________ test_malformed_handler_results_are_structured[None] ______________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:96: in execute
+    status = data.get("status", "ok")
+             ^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'get'
+____________ test_malformed_handler_results_are_structured[value1] _____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:96: in execute
+    status = data.get("status", "ok")
+             ^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'get'
+_____________ test_malformed_handler_results_are_structured[oops] ______________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:96: in execute
+    status = data.get("status", "ok")
+             ^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+______________ test_malformed_handler_results_are_structured[12] _______________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:96: in execute
+    status = data.get("status", "ok")
+             ^^^^^^^^
+E   AttributeError: 'int' object has no attribute 'get'
+____________ test_malformed_handler_results_are_structured[value4] _____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:97: in execute
+    if status not in {"ok", "partial", "error"}:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: cannot use 'list' as a set element (unhashable type: 'list')
+____________ test_malformed_handler_results_are_structured[value5] _____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:42: in test_malformed_handler_results_are_structured
+    result=invoke(lambda args, ctx: value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:97: in execute
+    if status not in {"ok", "partial", "error"}:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: cannot use 'dict' as a set element (unhashable type: 'dict')
+____________ test_factory_defaults_are_isolated_between_invocations ____________
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:84: in test_factory_defaults_are_isolated_between_invocations
+    invoke(handler)
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:18: in invoke
+    return ActionRuntime(registry).execute(call, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/runtime.py:89: in execute
+    data = tool.handler(args.model_dump(exclude_unset=True), context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<aipod-checkout>/experiments/actunit-real/acceptance_cases.py:81: in handler
+    seen.append(list(args['tags']))
+                     ^^^^^^^^^^^^
+E   KeyError: 'tags'
+=========================== short test summary info ============================
+FAILED ::test_defaults_and_explicit_values_reach_handler[arguments0-expected0]
+FAILED ::test_defaults_and_explicit_values_reach_handler[arguments2-expected2]
+FAILED ::test_ordinary_handler_exceptions_are_structured[error0] - RuntimeErr...
+FAILED ::test_ordinary_handler_exceptions_are_structured[error1] - KeyError: ...
+FAILED ::test_ordinary_handler_exceptions_are_structured[error2] - TypeError:...
+FAILED ::test_malformed_handler_results_are_structured[None] - AttributeError...
+FAILED ::test_malformed_handler_results_are_structured[value1] - AttributeErr...
+FAILED ::test_malformed_handler_results_are_structured[oops] - AttributeError...
+FAILED ::test_malformed_handler_results_are_structured[12] - AttributeError: ...
+FAILED ::test_malformed_handler_results_are_structured[value4] - TypeError: c...
+FAILED ::test_malformed_handler_results_are_structured[value5] - TypeError: c...
+FAILED ::test_factory_defaults_are_isolated_between_invocations - KeyError: '...
+12 failed, 25 passed in 0.10s

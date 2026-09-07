@@ -72,6 +72,7 @@ def call_llm(
     max_retries: int = DEFAULT_MAX_RETRIES,
     retry_delay: float = DEFAULT_RETRY_DELAY,
     max_tokens: int = 32768,
+    timeout_seconds: float | None = None,
     progress_callback: Callable[[dict], None] | None = None,
     progress_label: str = "Model response",
 ) -> dict | str:
@@ -97,7 +98,7 @@ def call_llm(
     kwargs = {
         "model": model,
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": (system_prompt + "\nReturn a strict JSON object.") if json_mode else system_prompt},
             {"role": "user", "content": user_content},
         ],
         "temperature": temperature,
@@ -105,6 +106,8 @@ def call_llm(
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    if timeout_seconds is not None:
+        kwargs["timeout"] = timeout_seconds
 
     last_error: Exception | None = None
     delay = retry_delay

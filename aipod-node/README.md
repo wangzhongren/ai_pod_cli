@@ -25,7 +25,7 @@ Initial runtime foundation:
 - bounded async streams and batching;
 - named route runner;
 - resumable Model → Provider → Service → Pipeline → Interface construction Agent;
-- OpenAI-compatible JSON model client using native `fetch`;
+- OpenAI-compatible model client with JSON planning and XML-like source generation;
 - stage-specific capability visibility;
 - per-artifact generation with up to three validation-guided attempts;
 - bounded exact-text source repair with public-export protection;
@@ -351,6 +351,43 @@ recovers expired leases, and moves exhausted messages to its dead-letter state. 
 that perform external side effects must use the message ID or publisher key as an
 idempotency key. The current Broker is a single durable coordinator, not an HA replicated
 cluster.
+
+## Source generation protocol
+
+Model, Provider, Service, and Interface delivery-file generation use text responses
+containing one ActUnit-compatible XML-like candidate artifact:
+
+```xml
+<create>
+  <path>src/services/price-order.ts</path>
+  <content><![CDATA[
+export class PriceOrder {
+  execute() { return { totalCents: 9000 }; }
+}
+]]></content>
+</create>
+```
+
+The text request does not enable JSON response mode. Planning and bounded exact-patch
+repair still use JSON. Pipeline and Interface entry source remain locally generated.
+`OpenAICompatibleClient.completeJson()` and `completeText()` expose the separate modes;
+`complete()` remains the JSON-compatible alias. Custom `ModelClient` implementations
+must supply `completeText()` to generate files; no silent JSON fallback is performed.
+
+The local codec supports only `create` with exactly one `path` and one `content`.
+It accepts CDATA, escaped XML text and DSML tag prefixes, preserving source text.
+To represent `]]>` inside CDATA, split it as `]]]]><![CDATA[>`; the encoder handles this.
+It rejects attributes, nested operands, declarations, unknown operands and path
+mismatches. Unlike ActUnit's general decoder, it also rejects surrounding prose and
+multiple actions instead of extracting only the first supported element.
+It does not perform ActUnit's heuristic repair of unescaped XML characters: source
+containing markup must use CDATA or XML escaping. This is a compatible artifact subset,
+not a full port of ActUnit or its runtime.
+
+Decoding does not execute actions or grant filesystem/Shell permissions. The planned
+path remains authoritative; candidates pass the existing source validation, staging,
+type checking and application verification flow. Parse/path errors feed the existing
+three-attempt artifact loop. Truncated model responses fail explicitly.
 
 ## Semantic Type Checking
 

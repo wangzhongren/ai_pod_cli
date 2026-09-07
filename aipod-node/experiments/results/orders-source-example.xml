@@ -1,0 +1,20 @@
+<create><path>src/services/price-order.ts</path><content><![CDATA[import type { PipelineContext } from "aipod-node";
+
+export class PriceOrder {
+  constructor(_dependencies: Record<never, never> = {}) {}
+
+  execute(context: PipelineContext) {
+    const ctx = context.typed(
+      { amountCents: { type: "integer" } },
+      { totalCents: { type: "integer" } },
+    );
+
+    const amountCents = ctx.get("amountCents");
+    const totalCents = amountCents >= 10000 ? amountCents - 1000 : amountCents;
+
+    ctx.set("totalCents", totalCents);
+
+    return ctx.output({ totalCents });
+  }
+}
+]]></content></create>

@@ -25,6 +25,18 @@ export class OpenAICompatibleClient implements ModelClient {
   ) {}
 
   async complete(system: string, user: string): Promise<Record<string, unknown>> {
+    return this.completeJson(system, user);
+  }
+
+  async completeJson(system: string, user: string): Promise<Record<string, unknown>> {
+    return parseJson(await this.#request(system, user, true));
+  }
+
+  async completeText(system: string, user: string): Promise<string> {
+    return this.#request(system, user, false);
+  }
+
+  async #request(system: string, user: string, jsonMode: boolean): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000);
     try {
@@ -38,21 +50,26 @@ export class OpenAICompatibleClient implements ModelClient {
         body: JSON.stringify({
           model: this.options.model,
           messages: [
-            { role: "system", content: system },
+            // JSON-mode endpoints can reject requests before generation unless
+            // the messages explicitly request JSON, even if they show a schema.
+            { role: "system", content: jsonMode ? `${system}\nReturn a strict JSON object.` : system },
             { role: "user", content: user },
           ],
-          response_format: { type: "json_object" },
+          ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
           temperature: 0.1,
         }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Model request failed (${response.status}): ${await response.text()}`);
       const payload = await response.json() as {
-        choices?: { message?: { content?: string } }[];
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
       };
+      if (payload.choices?.[0]?.finish_reason === "length") {
+        throw new Error("Model response was truncated (finish_reason=length)");
+      }
       const content = payload.choices?.[0]?.message?.content;
       if (!content) throw new Error("Model response has no content");
-      return parseJson(content);
+      return content;
     } finally {
       clearTimeout(timeout);
     }

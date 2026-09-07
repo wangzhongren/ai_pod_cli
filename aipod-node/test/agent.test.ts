@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   ConstructionAgent,
+  encodeSourceArtifact,
   applyCodePatches,
   loadState,
   repairArtifact,
@@ -14,7 +15,23 @@ import {
   type ModelClient,
 } from "../src/index.js";
 
+// Deterministic fixture responses are encoded on the same XML boundary as live output.
+async function xmlFixtureResponse(client: ModelClient, system: string, user: string): Promise<string> {
+  const match = /The path must be exactly ("(?:\\.|[^"\\])*")\./.exec(system);
+  assert.ok(match, "generation prompt must supply the exact planned path");
+  const response = await client.complete(system, user);
+  return encodeSourceArtifact({ path: JSON.parse(match[1]!), content: String(response.content ?? "") });
+}
+
+function withXmlFixture(client: ModelClient): ModelClient {
+  return { complete: (system, user) => client.complete(system, user),
+    completeText: (system, user) => xmlFixtureResponse(client, system, user) };
+}
+
 class FakeClient implements ModelClient {
+  completeText(system: string, user: string): Promise<string> {
+    return xmlFixtureResponse(this, system, user);
+  }
   readonly systems: string[] = [];
   serviceGenerations = 0;
 
@@ -146,7 +163,7 @@ test("bounded revision preserves an independent flow and retains its scope after
     },
   };
   try {
-    const agent = new ConstructionAgent(root, client);
+    const agent = new ConstructionAgent(root, withXmlFixture(client));
     await agent.run("Build two independent flows");
     const frozenFiles = [
       "src/models/user.ts", "src/providers/clock.ts", "src/services/other-service.ts",
@@ -187,7 +204,7 @@ test("construction agent builds five stages and resumes without model calls", as
   try {
     const client = new FakeClient();
     const events: string[] = [];
-    const agent = new ConstructionAgent(root, client, (event) => events.push(`${event.stage}:${event.action}`));
+    const agent = new ConstructionAgent(root, withXmlFixture(client), (event) => events.push(`${event.stage}:${event.action}`));
 
     const state = await agent.run("Build a greeting CLI");
     const project = JSON.parse(await readFile(join(root, "aipod.json"), "utf8")) as {
@@ -249,7 +266,7 @@ test("invalid stage plan stores evidence and is not frozen", async () => {
   };
   try {
     await assert.rejects(
-      new ConstructionAgent(root, client).run("Build invalid app"),
+      new ConstructionAgent(root, withXmlFixture(client)).run("Build invalid app"),
       /unknown dependency/,
     );
     const state = await loadState(root, "Build invalid app");
@@ -274,7 +291,7 @@ test("cross-file type errors stop a stage before freezing and resume preserves u
     },
   };
   try {
-    await assert.rejects(new ConstructionAgent(root, client).run("Build typed app"), /providers verification failed.*TS2322/);
+    await assert.rejects(new ConstructionAgent(root, withXmlFixture(client)).run("Build typed app"), /providers verification failed.*TS2322/);
     const failed = await loadState(root, "Build typed app");
     assert.equal(failed.stages.models.status, "complete");
     assert.equal(failed.stages.providers.status, "failed");
@@ -283,7 +300,7 @@ test("cross-file type errors stop a stage before freezing and resume preserves u
     assert.ok(!base.systems.some((item) => item.startsWith("PLAN_STAGE:services")));
     const modelSource = await readFile(join(root, "src/models/user.ts"), "utf8");
     invalid = false;
-    const resumed = await new ConstructionAgent(root, client).run("Build typed app");
+    const resumed = await new ConstructionAgent(root, withXmlFixture(client)).run("Build typed app");
     assert.equal(resumed.status, "complete");
     assert.equal(await readFile(join(root, "src/models/user.ts"), "utf8"), modelSource);
     assert.equal(base.systems.filter((item) => item.startsWith("GENERATE_COMPONENT:models")).length, 1);
@@ -312,7 +329,7 @@ test("required runtime commands are repeated after every repair and cannot becom
     },
   };
   try {
-    await assert.rejects(new ConstructionAgent(root, client).run("Build checked app"), /required verification failed/);
+    await assert.rejects(new ConstructionAgent(root, withXmlFixture(client)).run("Build checked app"), /required verification failed/);
     const state = await loadState(root, "Build checked app");
     assert.equal(state.status, "failed");
     assert.equal(state.verification.status, "failed");
@@ -343,7 +360,7 @@ test("smoke rechecks repaired adapters with fresh code and rejects ineffective r
           ] };
         },
       };
-      const run = new ConstructionAgent(root, client).run(objective);
+      const run = new ConstructionAgent(root, withXmlFixture(client)).run(objective);
       if (effective) {
         assert.equal((await run).verification.status, "passed");
         assert.equal(repairs, 1);
@@ -402,7 +419,7 @@ test("construction agent cancels cooperatively before committing a partial stage
   };
   try {
     await assert.rejects(
-      new ConstructionAgent(root, client, () => undefined, () => cancelled)
+      new ConstructionAgent(root, withXmlFixture(client), () => undefined, () => cancelled)
         .run("Build then cancel"),
       /cancelled/,
     );

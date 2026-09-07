@@ -3,8 +3,10 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 from ai_pod_cli.client import call_llm
+from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
 from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
@@ -89,7 +91,6 @@ def handle_create(args):
         "inputs": {{}},
         "outputs": {{}},
         "ai_spec": "模型字段及语义说明",
-        "code": "完整 Python 源代码",
         "config_additions": {{}},
         "extra_deps": []
     }}
@@ -134,7 +135,6 @@ def handle_create(args):
                 "outputs": "返回值类型 — 说明"
             }}
         }},
-        "code": "完整 Python 源代码",
         "config_additions": {{"section": {{"key": {{"value": "", "comment": ""}}}}}},
         "extra_deps": ["包名"]
     }}
@@ -192,7 +192,6 @@ def handle_create(args):
         "inputs": {{"参数名": "类型 — 说明", "对象参数": {{"type": "object", "required": ["items"], "properties": {{"items": {{"type": "array", "items": {{"type": "object", "required": ["id"], "properties": {{"id": {{"type": "string"}}}}}}}}}}}}}},
         "outputs": {{"输出键": "类型 — 说明；对象和数组使用相同的嵌套 Schema"}},
         "ai_spec": "对 execute 方法的技术规格描述",
-        "code": "完整 Python 源代码",
         "config_additions": {{"section": {{"key": {{"value": "", "comment": ""}}}}}},
         "extra_deps": ["包名"]
     }}
@@ -207,7 +206,11 @@ def handle_create(args):
     for attempt in range(1, max_attempts + 1):
         try:
             if candidate_result is None:
-                result = call_llm(system_prompt, user_content + feedback, json_mode=True, temperature=0.1)
+                result = generate_source(
+                    call_llm, system_prompt, user_content + feedback,
+                    Path(get_module_path(args.category, args.name)[0], f"{args.name.lower()}.py").as_posix(),
+                    temperature=0.1,
+                )
             else:
                 result = candidate_result
                 candidate_result = None

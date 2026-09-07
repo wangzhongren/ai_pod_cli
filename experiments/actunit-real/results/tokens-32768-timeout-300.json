@@ -1,0 +1,82 @@
+{
+  "max_retries": 1,
+  "max_attempts": 1,
+  "initial_max_tokens": 32768,
+  "project": "wangzhongren/ActUnit",
+  "revision": "0760b60a8ec8bb065da501455ac77811462fcbf9",
+  "root": "<tmp>/aipod-actunit-real-huarbbxa",
+  "source_target": "src/actunit/runtime.py",
+  "acceptance_hash": "14a88cd26eeef388c5d52c91d93765d7fb45ed3a70872e5746fa3af717e3cd79",
+  "calls": [
+    {
+      "channel": "json_metadata",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "finish_reason": "stop",
+          "source_characters": 442,
+          "usage": {
+            "prompt_tokens": 1205,
+            "completion_tokens": 1423,
+            "total_tokens": 2628
+          },
+          "reasoning_tokens": 1326,
+          "seconds": 11.261
+        }
+      ],
+      "seconds": 11.48
+    },
+    {
+      "channel": "xml_source",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "finish_reason": "stop",
+          "source_characters": 3845,
+          "usage": {
+            "prompt_tokens": 1400,
+            "completion_tokens": 19283,
+            "total_tokens": 20683
+          },
+          "reasoning_tokens": 18393,
+          "seconds": 127.912
+        }
+      ],
+      "seconds": 127.913
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "original_tests": {
+        "exit_code": 0,
+        "summary": "12 passed in 0.05s",
+        "log": "<tmp>/aipod-actunit-real-huarbbxa/attempt-1-original.log"
+      },
+      "acceptance": {
+        "exit_code": 0,
+        "summary": "25 passed in 0.04s",
+        "log": "<tmp>/aipod-actunit-real-huarbbxa/attempt-1-acceptance.log"
+      },
+      "changed_files": [
+        "src/actunit/runtime.py"
+      ],
+      "passed": true,
+      "seconds": 139.776
+    }
+  ],
+  "tested_import": "<tmp>/aipod-actunit-real-huarbbxa/project/src/actunit/__init__.py",
+  "baseline_original": {
+    "exit_code": 0,
+    "summary": "12 passed in 0.05s",
+    "log": "<tmp>/aipod-actunit-real-huarbbxa/baseline-original.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "12 failed, 13 passed in 0.08s",
+    "log": "<tmp>/aipod-actunit-real-huarbbxa/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "request_timeout_seconds": 300.0,
+  "success": true
+}

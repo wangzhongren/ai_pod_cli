@@ -1,0 +1,401 @@
+{
+  "requestTimeoutMs": 120000,
+  "sourceFormat": "xml",
+  "jsonCompatibility": false,
+  "revision": "2ab399c",
+  "dirty": true,
+  "output": "<tmp>/aipod-orders-eval-aGBkPE",
+  "startedAt": "2026-09-07T08:32:48.435Z",
+  "offline": [
+    {
+      "name": "baseline-independent-business-acceptance",
+      "passed": true,
+      "evidence": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "compile-rejects-wrong-type-typo-and-missing-output",
+      "passed": true,
+      "evidence": [
+        {
+          "name": "wrong-type",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 199,
+              "code": 2345,
+              "message": "Argument of type 'string' is not assignable to parameter of type 'number'."
+            }
+          ]
+        },
+        {
+          "name": "typo",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 185,
+              "code": 2345,
+              "message": "Argument of type '\"ammountCents\"' is not assignable to parameter of type '\"amountCents\"'."
+            }
+          ]
+        },
+        {
+          "name": "missing-output",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 188,
+              "code": 2345,
+              "message": "Argument of type '{}' is not assignable to parameter of type 'InferContract<{ readonly totalCents: { readonly type: \"integer\"; }; }>'.\n  Property '\"totalCents\"' is missing in type '{}' but required in type '{ totalCents: number; }'."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "runtime-rejects-untyped-invalid-input-and-output",
+      "passed": true,
+      "evidence": "Invalid values rejected at runtime, including JavaScript callers."
+    },
+    {
+      "name": "model-change-reaches-price-only",
+      "passed": true,
+      "evidence": {
+        "models": [
+          "Order"
+        ],
+        "providers": [],
+        "services": [
+          "PriceOrder"
+        ],
+        "pipelines": [
+          "price"
+        ],
+        "interfaces": [
+          "priceCli"
+        ]
+      }
+    },
+    {
+      "name": "dynamic-dependency-and-new-target-fall-back",
+      "passed": true,
+      "evidence": "Both fall back."
+    }
+  ],
+  "live": [
+    {
+      "mode": "auto",
+      "repeat": 1,
+      "root": "<tmp>/aipod-orders-eval-aGBkPE/auto-1",
+      "calls": [
+        {
+          "format": "json",
+          "step": "CLASSIFY_REVISION_STAGE",
+          "startedAt": "2026-09-07T08:32:48.866Z",
+          "responseCharacters": 96,
+          "ms": 2612
+        },
+        {
+          "format": "json",
+          "step": "PLAN_STAGE:services",
+          "startedAt": "2026-09-07T08:32:51.483Z",
+          "responseCharacters": 599,
+          "ms": 7226
+        },
+        {
+          "format": "text",
+          "step": "GENERATE_COMPONENT:services:PriceOrder",
+          "startedAt": "2026-09-07T08:32:58.713Z",
+          "responseCharacters": 604,
+          "ms": 49853
+        },
+        {
+          "format": "json",
+          "step": "PLAN_STAGE:pipelines",
+          "startedAt": "2026-09-07T08:33:48.699Z",
+          "responseCharacters": 540,
+          "ms": 61446
+        },
+        {
+          "format": "json",
+          "step": "PLAN_STAGE:interfaces",
+          "startedAt": "2026-09-07T08:34:50.278Z",
+          "responseCharacters": 524,
+          "ms": 30447
+        }
+      ],
+      "status": "complete",
+      "classification": {
+        "stage": "services",
+        "summary": "Update pricing rule in PriceOrder only",
+        "targets": [
+          "PriceOrder"
+        ]
+      },
+      "scope": {
+        "models": [],
+        "providers": [],
+        "services": [
+          "PriceOrder"
+        ],
+        "pipelines": [
+          "price"
+        ],
+        "interfaces": [
+          "priceCli"
+        ]
+      },
+      "ms": 152501,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 19000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [
+        "src/services/price-order.ts",
+        "src/pipelines/price.ts",
+        "src/interfaces/price-cli.ts"
+      ],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    }
+  ],
+  "model": "deepseek-v4-flash",
+  "finishedAt": "2026-09-07T08:35:21.446Z"
+}

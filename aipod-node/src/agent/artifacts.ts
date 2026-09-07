@@ -4,6 +4,7 @@ import ts from "typescript";
 
 import { validateServiceSource } from "../contracts.js";
 import { visibleLedger, type ProjectManifest } from "./project.js";
+import { decodeSourceArtifact, sourceArtifactInstruction } from "./source-codec.js";
 import type {
   ComponentPlan, InterfaceArtifactPlan, InterfacePlan, ModelClient, RoutePlan,
   StageName, StagePlan,
@@ -70,6 +71,7 @@ async function generateComponent(
   const directory = stage;
   const path = `src/${directory}/${basename(plan.file)}`;
   const visibility = JSON.stringify(visibleLedger(project, stage), null, 2);
+  if (!client.completeText) throw new Error("ModelClient.completeText is required for XML-like source generation");
   let evidence: string[] = [];
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const rules = stage === "services"
@@ -77,13 +79,17 @@ async function generateComponent(
       : stage === "models"
         ? "Generate a pure typed data declaration with no dependency injection or runtime orchestration."
         : "Generate one infrastructure Provider class. It must not orchestrate Services. Its optional constructor receives one dependency object keyed by exact Provider IDs.";
-    const raw = await client.complete(
-      `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nVisible frozen ledger:\n${visibility}\nReturn {"content":"complete source"}.`,
+    const raw = await client.completeText(
+      `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nVisible frozen ledger:\n${visibility}\n${sourceArtifactInstruction(path)}`,
       `Plan:\n${JSON.stringify(plan, null, 2)}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}${stage === "services" ? `\nUse import type { PipelineContext } from "aipod-node" and execute(context: PipelineContext). Inside execute, create const ctx = context.typed(${JSON.stringify(plan.inputs)}, ${JSON.stringify(plan.outputs)}). Use ctx.get for declared inputs, ctx.set for declared outputs, and return ctx.output({...}) to check the complete output. Keep contracts literal for inferred field types; do not cast inputs or outputs to any.` : ""}`,
     );
-    const content = String(raw.content ?? raw.code ?? "");
-    evidence = validateComponentSource(stage, plan, content);
-    if (!evidence.length) return { path, content };
+    try {
+      const artifact = decodeSourceArtifact(raw, path);
+      evidence = validateComponentSource(stage, plan, artifact.content);
+      if (!evidence.length) return artifact;
+    } catch (error) {
+      evidence = [error instanceof Error ? error.message : String(error)];
+    }
   }
   throw new Error(`Artifact '${path}' failed validation: ${evidence.join("; ")}`);
 }
@@ -133,14 +139,19 @@ async function generateInterfaceArtifact(
   project: ProjectManifest,
 ): Promise<Artifact> {
   let evidence: string[] = [];
+  if (!client.completeText) throw new Error("ModelClient.completeText is required for XML-like source generation");
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const raw = await client.complete(
-      `GENERATE_INTERFACE_ARTIFACT:${owner.name}:${artifact.path}\nGenerate exactly one ${artifact.format} Artifact for an AIPod Node Interface. Keep it inside the declared path. It may use only the Interface's frozen route; never import Services or project internals. Installers must use the active Node executable and establish the project root. Return {"content":"complete content"}.`,
+    const raw = await client.completeText(
+      `GENERATE_INTERFACE_ARTIFACT:${owner.name}:${artifact.path}\nGenerate exactly one ${artifact.format} Artifact for an AIPod Node Interface. Keep it inside the declared path. It may use only the Interface's frozen route; never import Services or project internals. Installers must use the active Node executable and establish the project root. ${sourceArtifactInstruction(artifact.path)}`,
       `Interface:\n${JSON.stringify(owner, null, 2)}\nArtifact:\n${JSON.stringify(artifact, null, 2)}\nVisible routes:\n${JSON.stringify(project.routes.map(({ name, description }) => ({ name, description })))}\nPrevious validation evidence:\n${JSON.stringify(evidence)}`,
     );
-    const content = String(raw.content ?? raw.code ?? "");
-    evidence = validateArtifactContent(artifact.path, content);
-    if (!evidence.length) return { path: artifact.path, content };
+    try {
+      const candidate = decodeSourceArtifact(raw, artifact.path);
+      evidence = validateArtifactContent(artifact.path, candidate.content);
+      if (!evidence.length) return candidate;
+    } catch (error) {
+      evidence = [error instanceof Error ? error.message : String(error)];
+    }
   }
   throw new Error(`${artifact.path} failed validation: ${evidence.join("; ")}`);
 }

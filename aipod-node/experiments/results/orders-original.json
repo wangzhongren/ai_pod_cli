@@ -1,0 +1,1075 @@
+{
+  "revision": "2ab399c",
+  "output": "<tmp>/aipod-orders-eval-egwkdu",
+  "startedAt": "2026-09-07T07:16:55.870Z",
+  "offline": [
+    {
+      "name": "baseline-independent-business-acceptance",
+      "passed": true,
+      "evidence": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "compile-rejects-wrong-type-typo-and-missing-output",
+      "passed": true,
+      "evidence": [
+        {
+          "name": "wrong-type",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 199,
+              "code": 2345,
+              "message": "Argument of type 'string' is not assignable to parameter of type 'number'."
+            }
+          ]
+        },
+        {
+          "name": "typo",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 185,
+              "code": 2345,
+              "message": "Argument of type '\"ammountCents\"' is not assignable to parameter of type '\"amountCents\"'."
+            }
+          ]
+        },
+        {
+          "name": "missing-output",
+          "diagnostics": [
+            {
+              "file": "src/probe.ts",
+              "line": 1,
+              "column": 188,
+              "code": 2345,
+              "message": "Argument of type '{}' is not assignable to parameter of type 'InferContract<{ readonly totalCents: { readonly type: \"integer\"; }; }>'.\n  Property '\"totalCents\"' is missing in type '{}' but required in type '{ totalCents: number; }'."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "runtime-rejects-untyped-invalid-input-and-output",
+      "passed": true,
+      "evidence": "Invalid values rejected at runtime, including JavaScript callers."
+    },
+    {
+      "name": "model-change-reaches-price-only",
+      "passed": true,
+      "evidence": {
+        "models": [
+          "Order"
+        ],
+        "providers": [],
+        "services": [
+          "PriceOrder"
+        ],
+        "pipelines": [
+          "price"
+        ],
+        "interfaces": [
+          "priceCli"
+        ]
+      }
+    },
+    {
+      "name": "dynamic-dependency-and-new-target-fall-back",
+      "passed": true,
+      "evidence": "Both fall back."
+    }
+  ],
+  "live": [
+    {
+      "mode": "auto",
+      "repeat": 1,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/auto-1",
+      "calls": [
+        {
+          "step": "CLASSIFY_REVISION_STAGE",
+          "startedAt": "2026-09-07T07:16:56.254Z",
+          "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        }
+      ],
+      "status": "failed",
+      "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+      "ms": 201,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    },
+    {
+      "mode": "services",
+      "repeat": 1,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/services-1",
+      "calls": [
+        {
+          "step": "PLAN_STAGE:services",
+          "startedAt": "2026-09-07T07:16:56.551Z",
+          "ms": 68931
+        }
+      ],
+      "status": "failed",
+      "error": "services plan rejected: Invalid component file 'src/services/price-order.ts'",
+      "ms": 68934,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    },
+    {
+      "mode": "auto",
+      "repeat": 2,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/auto-2",
+      "calls": [
+        {
+          "step": "CLASSIFY_REVISION_STAGE",
+          "startedAt": "2026-09-07T07:18:05.619Z",
+          "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        }
+      ],
+      "status": "failed",
+      "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+      "ms": 107,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    },
+    {
+      "mode": "services",
+      "repeat": 2,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/services-2",
+      "calls": [
+        {
+          "step": "PLAN_STAGE:services",
+          "startedAt": "2026-09-07T07:18:05.823Z",
+          "ms": 79826
+        }
+      ],
+      "status": "failed",
+      "error": "services plan rejected: Invalid component file 'src/services/price-order.ts'",
+      "ms": 79829,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    },
+    {
+      "mode": "auto",
+      "repeat": 3,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/auto-3",
+      "calls": [
+        {
+          "step": "CLASSIFY_REVISION_STAGE",
+          "startedAt": "2026-09-07T07:19:25.794Z",
+          "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        }
+      ],
+      "status": "failed",
+      "error": "Model request failed (500): {\"error\":{\"message\":\"Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}",
+      "ms": 178,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    },
+    {
+      "mode": "services",
+      "repeat": 3,
+      "root": "<tmp>/aipod-orders-eval-egwkdu/services-3",
+      "calls": [
+        {
+          "step": "PLAN_STAGE:services",
+          "startedAt": "2026-09-07T07:19:26.078Z",
+          "ms": 84639
+        }
+      ],
+      "status": "failed",
+      "error": "services plan rejected: Invalid component file 'src/services/price-order.ts'",
+      "ms": 84643,
+      "acceptance": [
+        {
+          "name": "price-0",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 0
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-9999",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 9999
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-10001",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 10001
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "price-20000",
+          "passed": false,
+          "result": {
+            "status": "success",
+            "output": {
+              "totalCents": 20000
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-reserve-3",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-insufficient-8",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-remaining-7",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": true
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "stock-empty",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "reserved": false
+            },
+            "effects": []
+          }
+        },
+        {
+          "name": "notification",
+          "passed": true,
+          "result": {
+            "status": "success",
+            "output": {
+              "message": "Order synthetic-001 confirmed"
+            },
+            "effects": []
+          }
+        }
+      ],
+      "changed": [],
+      "unrelatedChanged": [],
+      "typedServices": [
+        {
+          "id": "PriceOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "ReserveStock",
+          "usesTyped": true,
+          "anyEscape": false
+        },
+        {
+          "id": "NotifyOrder",
+          "usesTyped": true,
+          "anyEscape": false
+        }
+      ]
+    }
+  ],
+  "model": "deepseek-v4-flash",
+  "finishedAt": "2026-09-07T07:20:50.856Z",
+  "jsonCompatibility": false
+}

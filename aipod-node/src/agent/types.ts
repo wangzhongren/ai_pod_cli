@@ -103,5 +103,8 @@ export interface AgentEvent {
 }
 
 export interface ModelClient {
+  /** Structured planning and exact-patch repair. */
   complete(system: string, user: string): Promise<Record<string, unknown>>;
+  /** Required for source generation; no JSON response mode or parsing. */
+  completeText?(system: string, user: string): Promise<string>;
 }

@@ -1,0 +1,55 @@
+{
+  "project": "wangzhongren/ActUnit",
+  "revision": "0760b60a8ec8bb065da501455ac77811462fcbf9",
+  "root": "<tmp>/aipod-actunit-real-_wgjoy3u",
+  "source_target": "src/actunit/runtime.py",
+  "acceptance_hash": "14a88cd26eeef388c5d52c91d93765d7fb45ed3a70872e5746fa3af717e3cd79",
+  "calls": [
+    {
+      "channel": "json_metadata",
+      "seconds": 28.465
+    },
+    {
+      "channel": "xml_source",
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192"
+    },
+    {
+      "channel": "json_metadata",
+      "seconds": 42.149
+    },
+    {
+      "channel": "xml_source",
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192"
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "passed": false,
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192",
+      "seconds": 86.32
+    },
+    {
+      "attempt": 2,
+      "passed": false,
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192",
+      "seconds": 104.597
+    }
+  ],
+  "tested_import": "<tmp>/aipod-actunit-real-_wgjoy3u/project/src/actunit/__init__.py",
+  "baseline_original": {
+    "exit_code": 0,
+    "summary": "............                                                             [100%]",
+    "log": "<tmp>/aipod-actunit-real-_wgjoy3u/baseline-original.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "12 failed, 13 passed in 0.07s",
+    "log": "<tmp>/aipod-actunit-real-_wgjoy3u/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "success": false,
+  "max_retries": 1,
+  "max_attempts": 2,
+  "initial_max_tokens": 8192
+}

@@ -345,6 +345,44 @@ is committed atomically only after every required check passes.
 The Adapter is generated during construction. Running the finished application does not
 call AI.
 
+## Python source output protocol
+
+Python component generation (`pod` and `create`), Pipeline composition, Interface
+delivery files, and the legacy entry generator separate metadata from source:
+
+1. Generate JSON metadata such as Contracts, dependencies, method signatures,
+   configuration additions and extra packages, without a `code` or `content` field.
+2. Freeze that metadata and request one XML-like source artifact through text mode:
+
+```xml
+<create>
+  <path>modules/services/priceorder.py</path>
+  <content><![CDATA[
+class PriceOrder:
+    def execute(self, ctx):
+        return {"total_cents": 9000}
+]]></content>
+</create>
+```
+
+The source response is not forced into JSON. The planned path must match exactly;
+multiple actions, nested operands, extra fields and malformed XML are rejected.
+CDATA splitting supports literal `]]>` in source, and the codec preserves source line endings.
+This uses the same strict ActUnit-compatible artifact subset as AIPod Node, implemented
+locally without requiring an unpublished ActUnit package or a Node process.
+
+Source format failures retry against the frozen metadata. Existing component checks,
+disposable runtime verification and Interface bundle validation still apply. Planning
+and exact-patch repair continue to use JSON. Python generation now normally needs two
+model calls per artifact because its metadata was previously generated with the source;
+this change does not claim a reduction in latency or model cost.
+
+Source requests default to a 32,768-token output budget and a 300-second SDK timeout.
+Metadata/planning calls retain their existing settings. `generate_source()` accepts
+`source_max_tokens` and `source_timeout_seconds` overrides for controlled experiments
+or callers with different limits. The output budget can include model reasoning tokens;
+it does not represent the length of the generated source alone.
+
 ## Pod Agent
 
 `aipod pod` is a resumable local state machine over governed build tools:

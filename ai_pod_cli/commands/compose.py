@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ai_pod_cli.client import call_llm
+from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.config import (
     load_beans, load_beans_summary, load_config_toml_safe, PIPELINES_DIR, register_route,
 )
@@ -233,8 +234,7 @@ def handle_compose(args):
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
-        "pipeline_ids": ["组件ID_1", "组件ID_2"],
-        "code": "完整的 Python pipeline 脚本代码（只包含代码，不含 ```python 标记）"
+        "pipeline_ids": ["组件ID_1", "组件ID_2"]
     }}
     """
 
@@ -242,8 +242,10 @@ def handle_compose(args):
     feedback = ""
     for attempt in range(1, max_attempts + 1):
         try:
-            result = call_llm(
-                system_prompt, f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1,
+            result = generate_source(
+                call_llm, system_prompt, f"指令: {args.cmd}{feedback}",
+                Path(PIPELINES_DIR, f"{args.name or _slugify(args.cmd)}.py").as_posix(),
+                temperature=0.1,
                 progress_callback=getattr(args, "progress_callback", None),
                 progress_label=f"Composing pipeline: {args.name or args.cmd[:40]}",
             )

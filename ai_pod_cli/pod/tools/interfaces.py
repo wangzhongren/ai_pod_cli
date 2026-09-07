@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from ai_pod_cli.client import call_llm
+from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.config import append_deps_to_requirements
 from ai_pod_cli.interface import verify_adapter_candidate
 from ai_pod_cli.project_model import build_project_model
@@ -85,7 +86,7 @@ def _artifact_prompt(
     {json.dumps(route_capabilities, ensure_ascii=False, indent=2)}
 
     Rules:
-    - Return strict JSON: {{"path":"{path}","content":"complete text","extra_deps":[]}}
+    - Return strict JSON: {{"path":"{path}","extra_deps":[]}}
     - PyPI distribution name is AIPodCli; Python import name is ai_pod_cli.
     - Never import AIPodCli, the project name, the Pod name, modules, or pipelines.
     - Never import build_container, load_beans, PipelineRunner, or project Services from
@@ -203,9 +204,9 @@ def _generate_artifact(
     feedback = ""
     for attempt in range(1, 4):
         try:
-            result = call_llm(
-                system_prompt, user_prompt + feedback,
-                json_mode=True, temperature=0.1, max_tokens=16384,
+            result = generate_source(
+                call_llm, system_prompt, user_prompt + feedback, path,
+                content_key="content", temperature=0.1, max_tokens=16384,
                 progress_callback=progress_callback,
                 progress_label=f"Generating Interface artifact: {path}",
             )

@@ -1,0 +1,21 @@
+{
+  "original_stage_plan": {
+    "system": "PLAN_STAGE:services\nYou plan exactly one AIPod Node stage. A Service sees only Contracts, Models, and Providers. dependencies may contain Provider IDs only. Never mention, import, inject, instantiate, or call another Service or PipelineRunner.\nFrozen visible ledger:\n{\n  \"beans\": [\n    {\n      \"id\": \"Order\",\n      \"category\": \"model\",\n      \"file\": \"src/models/order.ts\",\n      \"description\": \"Order amount in integer cents\",\n      \"dependencies\": [],\n      \"inputs\": {},\n      \"outputs\": {}\n    },\n    {\n      \"id\": \"StockMemory\",\n      \"category\": \"provider\",\n      \"file\": \"src/providers/stock-memory.ts\",\n      \"description\": \"In-memory stock starts at 10; reserve(q) returns boolean and deducts only when enough stock exists.\",\n      \"dependencies\": [],\n      \"inputs\": {},\n      \"outputs\": {}\n    }\n  ]\n}\nAvailable shared project configuration:\n{}\nReturn strict JSON shaped as {\"summary\":\"...\",\"components\":[{\"id\":\"PascalCase\",\"file\":\"lowercase.ts\",\"description\":\"...\",\"dependencies\":[],\"inputs\":{},\"outputs\":{}}]}",
+    "user": "Objective:\nUpdate only the pricing rule in PriceOrder: for amountCents >= 10000 subtract exactly 1000 cents once; otherwise keep amountCents unchanged. Preserve every existing ID, file path, input/output contract, route and Interface. ReserveStock, StockMemory and NotifyOrder behavior must remain unchanged. The existing project contains all required components. No new components, dependencies, installers or verification commands. Keep artifacts, lifecycle and verify empty in Interfaces. All three existing routes must remain usable.\nPrevious public validation evidence:\n[]",
+    "result": {
+      "summary": "Update PriceOrder pricing rule to apply a one-time 1000-cent discount when amountCents is at least 10000; otherwise return amountCents unchanged.",
+      "components": [
+        {
+          "id": "PriceOrder",
+          "file": "src/services/price-order.ts",
+          "description": "Price for an order. If amountCents >= 10000, subtract exactly 1000 cents once; otherwise leave amountCents unchanged.",
+          "dependencies": [],
+          "inputs": {},
+          "outputs": {}
+        }
+      ]
+    }
+  },
+  "successful_price_source": "import type { PipelineContext } from \"aipod-node\";\n\nexport class PriceOrder {\n  constructor(_dependencies: Record<never, never> = {}) {}\n\n  execute(context: PipelineContext): { totalCents: number } {\n    const ctx = context.typed(\n      { amountCents: { type: \"integer\" } },\n      { totalCents: { type: \"integer\" } }\n    );\n\n    const amountCents = ctx.get(\"amountCents\");\n    const totalCents = amountCents < 10000 ? amountCents : amountCents - 1000;\n\n    ctx.set(\"totalCents\", totalCents);\n\n    return ctx.output({ totalCents });\n  }\n}\n",
+  "diagnostic_prompt_adapter": "Append Return a strict JSON object. to each system message; production source unchanged."
+}

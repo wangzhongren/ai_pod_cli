@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from ai_pod_cli.client import call_llm
+from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.config import (
     append_deps_to_requirements, extract_model_fields, extract_sql_resources,
     get_module_path, load_beans, load_beans_summary, load_config_toml_safe,
@@ -143,7 +144,7 @@ def generate_components(
         {{
             "dependencies": [], "inputs": {{}}, "outputs": {{}},
             "ai_spec": "模型字段及语义说明",
-            "code": "完整 Python 源代码", "extra_deps": []
+            "extra_deps": []
         }}
         """
         elif category == "provider":
@@ -159,7 +160,6 @@ def generate_components(
         {{
             "dependencies": ["依赖ID"],
             "methods": {{"method_name": {{"inputs": {{...}}, "outputs": "返回值 — 说明"}}}},
-            "code": "完整 Python 源代码",
             "extra_deps": ["包名"]
         }}
         """
@@ -179,7 +179,6 @@ def generate_components(
             "inputs": {{"参数": "str — 说明", "业务对象": {{"model": "modules.models.example.Example"}}}},
             "outputs": {{"输出键": "dict — 可序列化结果，或使用已有 Model 的完整 class_path"}},
             "ai_spec": "对 execute 方法的技术规格描述",
-            "code": "完整 Python 源代码",
             "extra_deps": ["包名"]
         }}
         """
@@ -191,10 +190,10 @@ def generate_components(
             candidate_result = None
             for attempt in range(1, max_attempts + 1):
                 if candidate_result is None:
-                    result = call_llm(
-                        create_prompt,
+                    result = generate_source(
+                        call_llm, create_prompt,
                         f"生成组件: {name}{feedback}",
-                        json_mode=True,
+                        Path(get_module_path(category, name)[0], f"{name.lower()}.py").as_posix(),
                         temperature=0.1,
                         max_tokens=8192,
                         progress_callback=progress_callback,

@@ -1,0 +1,23 @@
+--- a/src/actunit/runtime.py
++++ b/src/actunit/runtime.py
+@@ -86,15 +86,17 @@
+         except ValidationError as exc:
+             return failure("INVALID_ARGUMENTS", str(exc))
+         try:
+-            data = tool.handler(args.model_dump(exclude_unset=True), context)
++            data = tool.handler(args.model_dump(), context)
+         except ActionExecutionError as exc:
+             return failure(exc.code, str(exc), exc.code == "APPROVAL_DENIED")
+         except FileNotFoundError as exc:
+             return failure("FILE_NOT_FOUND", str(exc))
+-        except (OSError, ValueError) as exc:
++        except Exception as exc:
+             return failure("EXECUTION_FAILED", str(exc))
++        if not isinstance(data, dict):
++            return failure("INVALID_RESULT", "Tool result must be a dict")
+         status = data.get("status", "ok")
+-        if status not in {"ok", "partial", "error"}:
++        if status not in ("ok", "partial", "error"):
+             return failure("INVALID_RESULT", f"Unsupported tool result status: {status}")
+         return ActionResult(
+             call_id=call.id,

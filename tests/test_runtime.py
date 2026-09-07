@@ -19,6 +19,7 @@ from ai_pod_cli.config import (
     load_beans_summary, save_config,
 )
 from ai_pod_cli.client import _parse_json_content, call_llm
+from ai_pod_cli.source_codec import encode_source_artifact
 from ai_pod_cli.contracts import (
     analyze_parallel_contracts, analyze_pipeline_contracts, analyze_stream_contracts,
     normalize_type, semantic_field_similarity, types_compatible, validate_contract_data,
@@ -1891,7 +1892,12 @@ class StudioApiTests(unittest.TestCase):
                 with (
                     patch(
                         "ai_pod_cli.pod.tools.components.call_llm",
-                        return_value=generated_response,
+                        side_effect=lambda *_args, **kwargs: (
+                            {key: value for key, value in generated_response.items() if key != "code"}
+                            if kwargs["json_mode"] else encode_source_artifact(
+                                "modules/models/errorcodes.py", generated_response["code"],
+                            )
+                        ),
                     ),
                     patch(
                         "ai_pod_cli.pod.tools.components.verify_component_candidate",
@@ -2008,7 +2014,8 @@ class StudioApiTests(unittest.TestCase):
 
                 def respond(_system, _user, **kwargs):
                     path = kwargs["progress_label"].split(": ", 1)[1]
-                    return {"path": path, "content": responses[path], "extra_deps": []}
+                    return ({"path": path, "extra_deps": []} if kwargs["json_mode"]
+                            else encode_source_artifact(path, responses[path]))
 
                 with patch(
                     "ai_pod_cli.pod.tools.interfaces.call_llm", side_effect=respond,
@@ -2026,7 +2033,7 @@ class StudioApiTests(unittest.TestCase):
                 os.chdir(previous)
 
         self.assertIsNotNone(result)
-        self.assertEqual(llm.call_count, 3)
+        self.assertEqual(llm.call_count, 6)
         self.assertTrue(all(created.values()))
         self.assertEqual(manifest["support"]["level"], "supported_with_manual_step")
 
@@ -2058,7 +2065,8 @@ class StudioApiTests(unittest.TestCase):
 
                 def respond(_system, _user, **kwargs):
                     path = kwargs["progress_label"].split(": ", 1)[1]
-                    return {"path": path, "content": runtime if path.endswith("main.py") else ""}
+                    return ({"path": path, "extra_deps": []} if kwargs["json_mode"]
+                            else encode_source_artifact(path, runtime if path.endswith("main.py") else ""))
 
                 with patch(
                     "ai_pod_cli.pod.tools.interfaces.call_llm", side_effect=respond,

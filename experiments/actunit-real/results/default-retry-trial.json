@@ -1,0 +1,66 @@
+{
+  "max_retries": 3,
+  "max_attempts": 1,
+  "initial_max_tokens": 8192,
+  "project": "wangzhongren/ActUnit",
+  "revision": "0760b60a8ec8bb065da501455ac77811462fcbf9",
+  "root": "<tmp>/aipod-actunit-real-wiu95v0u",
+  "source_target": "src/actunit/runtime.py",
+  "acceptance_hash": "14a88cd26eeef388c5d52c91d93765d7fb45ed3a70872e5746fa3af717e3cd79",
+  "calls": [
+    {
+      "channel": "json_metadata",
+      "seconds": 23.731
+    },
+    {
+      "channel": "xml_source",
+      "error": "LLM 调用在 3 次重试后仍然失败: Request timed out."
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "passed": false,
+      "error": "LLM 调用在 3 次重试后仍然失败: Request timed out.",
+      "seconds": 338.304
+    }
+  ],
+  "tested_import": "<tmp>/aipod-actunit-real-wiu95v0u/project/src/actunit/__init__.py",
+  "baseline_original": {
+    "exit_code": 0,
+    "summary": "12 passed in 0.05s",
+    "log": "<tmp>/aipod-actunit-real-wiu95v0u/baseline-original.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "12 failed, 13 passed in 0.07s",
+    "log": "<tmp>/aipod-actunit-real-wiu95v0u/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "success": false,
+  "postcheck": {
+    "changed_tracked_files": [],
+    "acceptance_unchanged": true,
+    "final_test_exit_code": 1,
+    "final_test_summary": "12 failed, 25 passed in 0.10s"
+  },
+  "environment": {
+    "python": "3.14.7",
+    "pytest": "9.1.1",
+    "pydantic": "2.13.5"
+  },
+  "observed_source_retry_sequence": [
+    {
+      "max_tokens": 8192,
+      "result": "length, zero source characters"
+    },
+    {
+      "max_tokens": 16384,
+      "result": "APITimeoutError"
+    },
+    {
+      "max_tokens": 16384,
+      "result": "APITimeoutError"
+    }
+  ]
+}

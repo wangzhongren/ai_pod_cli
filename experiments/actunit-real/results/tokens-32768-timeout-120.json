@@ -1,0 +1,64 @@
+{
+  "max_retries": 3,
+  "max_attempts": 1,
+  "initial_max_tokens": 32768,
+  "project": "wangzhongren/ActUnit",
+  "revision": "0760b60a8ec8bb065da501455ac77811462fcbf9",
+  "root": "<tmp>/aipod-actunit-real-fljsm2tw",
+  "source_target": "src/actunit/runtime.py",
+  "acceptance_hash": "14a88cd26eeef388c5d52c91d93765d7fb45ed3a70872e5746fa3af717e3cd79",
+  "calls": [
+    {
+      "channel": "json_metadata",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "finish_reason": "stop",
+          "source_characters": 43,
+          "usage": {
+            "prompt_tokens": 1205,
+            "completion_tokens": 629,
+            "total_tokens": 1834
+          },
+          "reasoning_tokens": 616,
+          "seconds": 6.307
+        }
+      ],
+      "seconds": 6.613
+    },
+    {
+      "channel": "xml_source",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "error_type": "APITimeoutError",
+          "seconds": 120.004
+        },
+        {
+          "max_tokens": 32768,
+          "seconds": 86.062
+        }
+      ]
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": 1
+    }
+  ],
+  "tested_import": "<tmp>/aipod-actunit-real-fljsm2tw/project/src/actunit/__init__.py",
+  "baseline_original": {
+    "exit_code": 0,
+    "summary": "12 passed in 0.06s",
+    "log": "<tmp>/aipod-actunit-real-fljsm2tw/baseline-original.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "12 failed, 13 passed in 0.07s",
+    "log": "<tmp>/aipod-actunit-real-fljsm2tw/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "request_timeout_seconds": 120.0,
+  "stopped_early": true,
+  "stopped_reason": "First 32768-token source request hit the unchanged 120-second timeout. Interrupted the following retry after 86.062 seconds to test a 300-second timeout separately."
+}

@@ -1,10 +1,20 @@
 """Entry point file generator — shared by init and pod commands."""
 
 import os
+from pathlib import PurePosixPath
 
 from ai_pod_cli.client import call_llm
+from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.security import validate_code
 from ai_pod_cli.validation import validate_entry_imports
+
+
+def _entry_path(metadata: dict) -> str:
+    path = metadata.get("entry_file", "main.py")
+    if (not isinstance(path, str) or PurePosixPath(path).name != path
+            or "\\" in path or not path.endswith(".py")):
+        raise ValueError("entry_file must be a project-local Python filename")
+    return path
 
 
 def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_context: dict | None = None) -> tuple[str, list[str]] | None:
@@ -96,13 +106,14 @@ def generate_entry(desc: str, routes_map: dict[str, str] | None = None, pod_cont
     {{
         "project_type": "你判断的项目类型名称",
         "entry_file": "你决定的入口文件名",
-        "code": "完整的入口文件 Python 源代码字符串",
         "extra_deps": ["该项目类型需要的额外 pip 包名列表，不包括 ai_pod_cli 已有的"]
     }}
     """
 
     try:
-        result = call_llm(system_prompt, f"项目描述: {desc}", json_mode=True, temperature=0.2)
+        result = generate_source(
+            call_llm, system_prompt, f"项目描述: {desc}", _entry_path, temperature=0.2,
+        )
 
         entry_file = result.get("entry_file", "main.py")
         generated_code = result.get("code", "")
