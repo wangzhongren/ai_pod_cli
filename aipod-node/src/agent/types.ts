@@ -92,6 +92,7 @@ export interface AgentState {
     repairs: number;
   };
   history: AgentHistoryItem[];
+  revisionScope?: Record<StageName, string[]>;
 }
 
 export interface AgentEvent {

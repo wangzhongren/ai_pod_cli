@@ -9,6 +9,22 @@ export interface ContractField {
 
 export type Contract = Record<string, ContractField>;
 
+/** Infer data from literal contracts (use `as const satisfies Contract`). */
+export type InferField<F extends ContractField> =
+  F extends { type: "string" } ? string :
+  F extends { type: "number" | "integer" } ? number :
+  F extends { type: "boolean" } ? boolean :
+  F extends { type: "array"; items: infer I extends ContractField } ? InferField<I>[] :
+  F extends { type: "array" } ? unknown[] :
+  F extends { type: "object"; properties: infer P extends Contract } ? InferContract<P> :
+  F extends { type: "object" } ? Record<string, unknown> : unknown;
+
+export type InferContract<C extends Contract> = {
+  -readonly [K in keyof C as C[K] extends { required: false } ? never : K]: InferField<C[K]>;
+} & {
+  -readonly [K in keyof C as C[K] extends { required: false } ? K : never]?: InferField<C[K]>;
+};
+
 export function validateContractValue(value: unknown, field: ContractField, path: string): string[] {
   const type = field.type ?? "any";
   const valid = type === "any" ||

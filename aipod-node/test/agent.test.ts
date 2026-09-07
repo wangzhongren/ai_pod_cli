@@ -9,6 +9,8 @@ import {
   applyCodePatches,
   loadState,
   repairArtifact,
+  loadProject,
+  saveProject,
   type ModelClient,
 } from "../src/index.js";
 
@@ -104,6 +106,81 @@ async function projectRoot(): Promise<string> {
   }));
   return root;
 }
+
+test("bounded revision preserves an independent flow and retains its scope after failure", async () => {
+  const root = await projectRoot();
+  const base = new FakeClient();
+  let revising = false;
+  let roguePlan = true;
+  const calls: string[] = [];
+  const client: ModelClient = {
+    complete: async (system) => {
+      calls.push(system.split("\n")[0]!);
+      if (system.startsWith("CLASSIFY_REVISION_STAGE")) {
+        return { stage: "services", targets: ["GreetingService"] };
+      }
+      if (system.startsWith("GENERATE_COMPONENT:services:OtherService")) {
+        assert.equal(revising, false, "unrelated Service must stay frozen");
+        return { content: "export class OtherService { execute() { return { other: true }; } }" };
+      }
+      const raw = await base.complete(system);
+      if (!revising || roguePlan) {
+        if (system.startsWith("PLAN_STAGE:services")) {
+          (raw.components as unknown[]).push({
+            id: "OtherService", file: "other-service.ts", description: "Independent flow",
+            dependencies: [], inputs: {}, outputs: { other: { type: "boolean" } },
+          });
+        }
+        if (system.startsWith("PLAN_STAGE:pipelines")) {
+          (raw.routes as unknown[]).push({
+            name: "other", description: "Other", services: ["OtherService"], execution: { mode: "sequential" },
+          });
+        }
+        if (system.startsWith("PLAN_STAGE:interfaces")) {
+          (raw.interfaces as unknown[]).push({
+            name: "OtherCli", file: "other-cli.ts", description: "Other", route: "other", kind: "cli",
+          });
+        }
+      }
+      return raw;
+    },
+  };
+  try {
+    const agent = new ConstructionAgent(root, client);
+    await agent.run("Build two independent flows");
+    const frozenFiles = [
+      "src/models/user.ts", "src/providers/clock.ts", "src/services/other-service.ts",
+      "src/pipelines/other.ts", "src/interfaces/other-cli.ts",
+    ];
+    const before = await Promise.all(frozenFiles.map((file) => readFile(join(root, file), "utf8")));
+    revising = true;
+    calls.length = 0;
+    await assert.rejects(agent.revise("Change the greeting", "auto"), /exactly these services/);
+    const failed = await loadState(root, "Change the greeting");
+    assert.deepEqual(failed.revisionScope, {
+      models: [], providers: [], services: ["GreetingService"], pipelines: ["greet"], interfaces: ["GreetingCli"],
+    });
+    assert.ok(!calls.some((call) => call.startsWith("GENERATE_COMPONENT:")));
+    roguePlan = false;
+    const resumed = await agent.run("Change the greeting");
+    assert.equal(resumed.status, "complete");
+    assert.ok(!calls.includes("PLAN_STAGE:models"));
+    assert.ok(!calls.includes("PLAN_STAGE:providers"));
+    assert.ok(!calls.includes("GENERATE_COMPONENT:services:OtherService"));
+    assert.deepEqual(await Promise.all(frozenFiles.map((file) => readFile(join(root, file), "utf8"))), before);
+    assert.ok(resumed.stages.services.artifacts.includes("src/services/other-service.ts"));
+    const project = await loadProject(root);
+    project.interfaces.find((item) => item.name === "OtherCli")!.verify = [{
+      name: "unrelated-failure", command: [process.execPath, "-e", "process.exit(1)"],
+      timeoutMs: 5_000, required: true,
+    }];
+    await saveProject(root, project);
+    calls.length = 0;
+    await assert.rejects(agent.revise("Change the greeting again", "auto"), /frozen outside the revision scope/);
+    assert.ok(!calls.some((call) => call.startsWith("REPAIR")));
+    assert.deepEqual(await Promise.all(frozenFiles.map((file) => readFile(join(root, file), "utf8"))), before);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 test("construction agent builds five stages and resumes without model calls", async () => {
   const root = await projectRoot();

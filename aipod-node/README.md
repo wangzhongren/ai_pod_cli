@@ -170,6 +170,50 @@ await repeat(frame, {
 
 ## CLI
 
+### Contract-typed Context
+
+Use a checked view when implementing a Service. Literal input/output contracts infer
+field names, nested object/array types, and optional fields without type assertions:
+
+```ts
+import { PipelineContext } from "aipod-node";
+
+function execute(context: PipelineContext) {
+  const ctx = context.typed(
+    { price: { type: "number" }, quantity: { type: "integer" } },
+    { total: { type: "number" } },
+  );
+  return ctx.output({ total: ctx.get("price") * ctx.get("quantity") });
+}
+```
+
+`get` accepts input keys; `set` accepts output keys and their inferred values;
+`output` checks the complete returned output. Input values are validated when the view
+is created and on each read, writes are validated before updating Context, and returned
+data is copied to prevent mutation through the view. Optional inputs include `undefined`.
+For reusable schemas, use `as const satisfies Contract` to preserve literal types.
+The dynamic `PipelineContext.get/set` API remains compatible and untyped; existing
+Services must adopt `typed` to gain these checks. Generation prompts now request this API.
+
+### Bounded revisions
+
+For `pod --stage auto`, the classifier may identify existing target IDs in the earliest
+affected stage. The runtime follows declared dependencies, local source imports (including
+type imports and helper modules), route Services, and Interface routes to compute the
+affected components. Unrelated components remain frozen, including within the same stage.
+The scope is saved in `.aipod/plan.json` as `revisionScope` and survives failed runs.
+Plans cannot change IDs or artifact paths, omit targets, or add unrelated components;
+final repair cannot write to a frozen component. Final verification still checks the
+whole application.
+
+Missing/unknown targets, unresolved or dynamic dependencies, unfinished previous builds,
+and broad changes fall back to the existing whole-stage rebuild. Additions, removals,
+renames, or directly requested changes across several stages should use whole-stage
+planning. Explicit `--stage` retains that behavior. Target selection remains model-based;
+the dependency graph does not prove the intended business scope.
+
+### Commands
+
 After installing:
 
 ```bash

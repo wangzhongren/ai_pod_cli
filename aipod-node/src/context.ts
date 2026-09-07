@@ -1,3 +1,6 @@
+import { isDeepStrictEqual } from "node:util";
+import { validateContract, validateContractValue, type Contract, type InferContract } from "./contracts.js";
+
 export interface TraceStep {
   component: string;
   result: unknown;
@@ -36,6 +39,11 @@ export class PipelineContext {
 
   set(key: string, value: unknown): void {
     this.data[key] = value;
+  }
+
+  /** A checked view: reads use input contracts, writes use output contracts. */
+  typed<const I extends Contract, const O extends Contract>(inputs: I, outputs: O): ContractContext<I, O> {
+    return new ContractContext(this, inputs, outputs);
   }
 
   recordStep(step: TraceStep): void {
@@ -84,4 +92,37 @@ export class PipelineContext {
     return { params: this.params, data: this.data, steps: this.steps };
   }
 }
-import { isDeepStrictEqual } from "node:util";
+
+export class ContractContext<I extends Contract, O extends Contract> {
+  readonly #inputs: I;
+  readonly #outputs: O;
+
+  constructor(readonly context: PipelineContext, inputs: I, outputs: O) {
+    this.#inputs = clone(inputs);
+    this.#outputs = clone(outputs);
+    const errors = validateContract({ ...context.params, ...context.data }, inputs);
+    if (errors.length) throw new Error(errors.join("; "));
+  }
+
+  get<K extends keyof InferContract<I> & string>(key: K): InferContract<I>[K] {
+    if (!Object.hasOwn(this.#inputs, key)) throw new Error(`Undeclared input '${key}'`);
+    // Recheck reads because other steps may have changed the shared Context.
+    const values = { ...this.context.params, ...this.context.data };
+    const errors = validateContract(values, { [key]: this.#inputs[key]! });
+    if (errors.length) throw new Error(errors.join("; "));
+    return clone(values[key]) as InferContract<I>[K];
+  }
+
+  set<K extends keyof InferContract<O> & string>(key: K, value: InferContract<O>[K]): void {
+    if (!Object.hasOwn(this.#outputs, key)) throw new Error(`Undeclared output '${key}'`);
+    const errors = validateContractValue(value, this.#outputs[key]!, `$.${key}`);
+    if (errors.length) throw new Error(errors.join("; "));
+    this.context.set(key, clone(value));
+  }
+
+  output(value: InferContract<O>): InferContract<O> {
+    const errors = validateContract(value as Record<string, unknown>, this.#outputs);
+    if (errors.length) throw new Error(errors.join("; "));
+    return clone(value);
+  }
+}

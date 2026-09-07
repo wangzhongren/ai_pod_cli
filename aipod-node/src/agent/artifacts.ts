@@ -79,7 +79,7 @@ async function generateComponent(
         : "Generate one infrastructure Provider class. It must not orchestrate Services. Its optional constructor receives one dependency object keyed by exact Provider IDs.";
     const raw = await client.complete(
       `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nVisible frozen ledger:\n${visibility}\nReturn {"content":"complete source"}.`,
-      `Plan:\n${JSON.stringify(plan, null, 2)}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}`,
+      `Plan:\n${JSON.stringify(plan, null, 2)}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}${stage === "services" ? `\nUse import type { PipelineContext } from "aipod-node" and execute(context: PipelineContext). Inside execute, create const ctx = context.typed(${JSON.stringify(plan.inputs)}, ${JSON.stringify(plan.outputs)}). Use ctx.get for declared inputs, ctx.set for declared outputs, and return ctx.output({...}) to check the complete output. Keep contracts literal for inferred field types; do not cast inputs or outputs to any.` : ""}`,
     );
     const content = String(raw.content ?? raw.code ?? "");
     evidence = validateComponentSource(stage, plan, content);

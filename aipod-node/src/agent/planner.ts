@@ -153,6 +153,7 @@ export async function planStage(
   project: ProjectManifest,
   evidence: string[] = [],
   configuration: Record<string, unknown> = {},
+  revisionTargets?: string[],
 ): Promise<StagePlan> {
   const visibility = JSON.stringify(visibleLedger(project, stage), null, 2);
   const rules = stage === "services"
@@ -165,9 +166,20 @@ export async function planStage(
     : stage === "pipelines"
       ? '{"summary":"...","routes":[{"name":"routeName","description":"...","services":["ServiceId"],"execution":{"mode":"sequential|parallel|repeat"}}]}'
       : '{"summary":"...","interfaces":[{"name":"appCli","file":"app-cli.ts","description":"...","route":"routeName","kind":"cli|web|desktop|worker|consumer","artifacts":[{"path":"interfaces/appCli/install.sh","role":"installer|uninstaller|adapter_module|metadata|resource","format":"shell|json|typescript|text","instruction":"..."}],"lifecycle":{"install":["sh","interfaces/appCli/install.sh"],"uninstall":[]},"permissions":[],"verify":[{"name":"smoke","command":["node","--version"],"timeoutMs":30000,"required":true}]}]}';
+  let revision = "";
+  if (revisionTargets) {
+    const definitions = stage === "pipelines"
+      ? project.routes.filter((item) => revisionTargets.includes(item.name))
+      : stage === "interfaces"
+        ? project.interfaces.filter((item) => revisionTargets.includes(item.name))
+        : project.beans.filter((item) => revisionTargets.includes(item.id));
+    revision = `\nBounded revision: update exactly ${JSON.stringify(revisionTargets)}. Preserve their IDs and file paths. All other artifacts are frozen. Existing target definitions:\n${JSON.stringify(definitions.map((item) => ({
+      ...item, file: item.file.split("/").at(-1),
+    })))}`;
+  }
   const raw = await client.complete(
     `PLAN_STAGE:${stage}\nYou plan exactly one AIPod Node stage. ${rules}\nFrozen visible ledger:\n${visibility}\nAvailable shared project configuration:\n${JSON.stringify(publicConfiguration(configuration), null, 2)}\nReturn strict JSON shaped as ${shape}`,
-    `Objective:\n${objective}\nPrevious public validation evidence:\n${JSON.stringify(evidence)}`,
+    `Objective:\n${objective}\nPrevious public validation evidence:\n${JSON.stringify(evidence)}${revision}`,
   );
   return normalizeStagePlan(stage, raw);
 }

@@ -14,6 +14,7 @@ import {
 } from "./project.js";
 import { planStage, validateStagePlan } from "./planner.js";
 import { repairArtifact } from "./repair.js";
+import { revisionScope, stageEntries, validateRevisionPlan } from "./revision.js";
 import { loadCurrentState, loadState, newState, saveState } from "./state.js";
 import {
   STAGES, type AgentEvent, type AgentState, type ModelClient, type StageName,
@@ -164,11 +165,12 @@ export class ConstructionAgent {
     if (!current) throw new Error("No existing Agent state is available to revise");
     const project = await loadProject(this.projectRoot);
     let fromStage: StageName;
+    let targets: unknown;
     if (requestedStage === "auto") {
       const raw = await this.client.complete(
-        `CLASSIFY_REVISION_STAGE\nChoose the earliest affected stage. Return {"stage":"models|providers|services|pipelines|interfaces","summary":"public reason"}. Service behavior changes belong to services; orchestration belongs to pipelines; presentation and transport belong to interfaces.`,
+        `CLASSIFY_REVISION_STAGE\nChoose the earliest affected stage. Return {"stage":"models|providers|services|pipelines|interfaces","summary":"public reason","targets":["existing ID or name in that stage"]}. For a localized change, list ALL directly affected existing targets in that stage; the runtime computes dependent components, routes and interfaces. Omit targets for additions, deletions, renames, changes directly affecting multiple stages, or uncertainty. Service behavior changes belong to services; orchestration belongs to pipelines; presentation and transport belong to interfaces.`,
         `Change:\n${instruction}\nCurrent project:\n${JSON.stringify({
-          beans: project.beans.map(({ id, category, inputs, outputs }) => ({ id, category, inputs, outputs })),
+          beans: project.beans,
           routes: project.routes,
           interfaces: project.interfaces,
         })}`,
@@ -176,6 +178,7 @@ export class ConstructionAgent {
       const candidate = String(raw.stage ?? "") as StageName;
       if (!STAGES.includes(candidate)) throw new Error(`Invalid revision stage '${candidate}'`);
       fromStage = candidate;
+      targets = raw.targets;
     } else {
       if (!STAGES.includes(requestedStage)) {
         throw new Error(`Invalid revision stage '${requestedStage}'`);
@@ -183,11 +186,16 @@ export class ConstructionAgent {
       fromStage = requestedStage;
     }
     const state = newState(instruction.trim());
+    const scope = current.status === "complete"
+      ? await revisionScope(this.projectRoot, project, fromStage, targets) : undefined;
+    if (scope) state.revisionScope = scope;
     const start = STAGES.indexOf(fromStage);
-    for (let index = 0; index < start; index += 1) {
+    for (let index = 0; index < STAGES.length; index += 1) {
       const stage = STAGES[index]!;
-      state.stages[stage] = structuredClone(current.stages[stage]);
-      state.stages[stage].status = "complete";
+      if (index < start || (scope && !scope[stage].length)) {
+        state.stages[stage] = structuredClone(current.stages[stage]);
+        state.stages[stage].status = "complete";
+      }
     }
     state.currentStage = fromStage;
     await saveState(this.projectRoot, state);
@@ -218,9 +226,28 @@ export class ConstructionAgent {
         const plan = record.plan ?? await planStage(
           this.client, stage, objective, project, record.evidence,
           configuration,
+          state.revisionScope?.[stage],
         );
         this.#checkCancelled();
         const planErrors = validateStagePlan(stage, plan, project);
+        if (state.revisionScope) {
+          planErrors.push(...validateRevisionPlan(stage, plan, state.revisionScope[stage]));
+          const planned = structuredClone(project);
+          updateProject(planned, stage, plan);
+          const frozenFiles = new Set(STAGES.flatMap((name) => stageEntries(project, name)
+            .filter((entry) => !state.revisionScope![name].includes(entry.id))
+            .flatMap((entry) => entry.files.map((file) => resolve(this.projectRoot, file)))));
+          for (const entry of stageEntries(project, stage)) {
+            if (!state.revisionScope[stage].includes(entry.id)) continue;
+            const next = stageEntries(planned, stage).find((item) => item.id === entry.id);
+            if (!next || JSON.stringify(next.files) !== JSON.stringify(entry.files)) {
+              planErrors.push(`Bounded revision must preserve artifact paths for '${entry.id}'`);
+            }
+            if (next?.files.some((file) => frozenFiles.has(resolve(this.projectRoot, file)))) {
+              planErrors.push(`Revision artifact '${entry.id}' shares a file with a frozen component`);
+            }
+          }
+        }
         if (planErrors.length) {
           record.status = "failed";
           record.evidence = planErrors;
@@ -255,7 +282,9 @@ export class ConstructionAgent {
         await commitArtifacts(this.projectRoot, stage, artifacts);
         updateProject(project, stage, plan);
         await saveProject(this.projectRoot, project);
-        record.artifacts = artifacts.map((artifact) => artifact.path);
+        record.artifacts = state.revisionScope
+          ? stageEntries(project, stage).flatMap((entry) => entry.files).filter((file) => !file.startsWith("aipod:"))
+          : artifacts.map((artifact) => artifact.path);
         // Check the current and frozen upstream sources together. Old downstream
         // sources may legitimately be incompatible during a staged revision.
         const stageSources = STAGES.slice(0, STAGES.indexOf(stage) + 1)
@@ -282,6 +311,12 @@ export class ConstructionAgent {
         this.#checkCancelled();
         const target = repairTarget(project, evidence);
         if (!target) break;
+        if (state.revisionScope && !STAGES.some((stage) => stageEntries(project, stage).some((entry) =>
+          state.revisionScope![stage].includes(entry.id) && entry.files.includes(target.file)
+        ))) {
+          evidence.push(`Repair target '${target.file}' is frozen outside the revision scope`);
+          break;
+        }
         this.onProgress({
           stage: "verification", action: "repairing",
           artifact: target.file, message: `Repairing ${target.file}`,
