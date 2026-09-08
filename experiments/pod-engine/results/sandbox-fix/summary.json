@@ -1,0 +1,125 @@
+{
+  "purpose": "Detection regression, not a successful engine build",
+  "manual_engine_source_edits": false,
+  "detection_checks": {
+    "original_contract_compatible": true,
+    "missing_fields_not_synthesized": true,
+    "smoke_only_plan_rejected": true,
+    "behavior_failure_nonzero": true,
+    "eight_real_tests_executed": true,
+    "three_known_failures_detected": true
+  },
+  "detection_status": "passed",
+  "explicit_entry_sandbox": {
+    "status": "failed",
+    "errors": [
+      "Pipeline 沙箱场景 'default_headless_120' 实际运行失败：\nTraceback (most recent call last):\n  File \"<string>\", line 17, in <module>\n    result = entry(ctx)\n  File \"<pipeline-sandbox>/project/.aipod_candidate_pipeline.py\", line 138, in run\n    (S(RunSummaryService)).execute_all(ctx)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^\n  File \"<aipod-checkout>/ai_pod_cli/container.py\", line 262, in execute_all\n    result, normalized, metadata = self._execute_with_policy(ctx)\n                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^\n  File \"<aipod-checkout>/ai_pod_cli/container.py\", line 160, in _execute_with_policy\n    raise ValueError(\"inputs schema validation failed: \" + \"; \".join(input_errors))\nValueError: inputs schema validation failed: RunSummaryService.total_bricks: required field is missing; RunSummaryService.remaining_bricks: required field is missing; RunSummaryService.ball_position: required field is missing; RunSummaryService.paddle_position: required field is missing"
+    ]
+  },
+  "legacy_smoke_plan_issues": [
+    {
+      "code": "missing_behavior_verification",
+      "interface": "breakout_engine",
+      "message": "Interface 'breakout_engine' has no required behavior acceptance. Smoke/runtime checks are insufficient."
+    }
+  ],
+  "behavior_exit_code": 1,
+  "behavior": {
+    "status": "failed",
+    "tests_run": 8,
+    "successful_tests": 5,
+    "failures": 2,
+    "errors": 1,
+    "route_calls": 16,
+    "assertions": 13,
+    "tests": [
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_brick",
+        "outcome": "error",
+        "route_calls": 1,
+        "assertions": 0,
+        "routes": [
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_default_headless",
+        "outcome": "failed",
+        "route_calls": 0,
+        "assertions": 0,
+        "routes": [],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_held_pause",
+        "outcome": "failed",
+        "route_calls": 3,
+        "assertions": 0,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_launch",
+        "outcome": "passed",
+        "route_calls": 2,
+        "assertions": 2,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_paddle",
+        "outcome": "passed",
+        "route_calls": 2,
+        "assertions": 2,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_pause",
+        "outcome": "passed",
+        "route_calls": 3,
+        "assertions": 3,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_reset",
+        "outcome": "passed",
+        "route_calls": 3,
+        "assertions": 4,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      },
+      {
+        "id": "_aipod_project_behavior_tests.EngineBehavior.test_wall",
+        "outcome": "passed",
+        "route_calls": 2,
+        "assertions": 2,
+        "routes": [
+          "step_breakout_simulation",
+          "step_breakout_simulation"
+        ],
+        "violations": []
+      }
+    ]
+  }
+}

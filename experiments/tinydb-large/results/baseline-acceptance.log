@@ -1,0 +1,379 @@
+EEEEEEFFFFFFEEEEEEEFEEFEEFEF.FFFFF                                       [100%]
+==================================== ERRORS ====================================
+___ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-get-id] ___
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-get-query] __
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+__ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-get-ids] ___
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+___ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-search] ___
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+____ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-all] _____
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+____ ERROR at setup of test_all_read_paths_are_deeply_isolated[memory-iter] ____
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-get-id] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-get-query] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-get-ids] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-search] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-all] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_all_read_paths_are_deeply_isolated[cached-memory-iter] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_cached_results_stay_isolated_without_disabling_cache[memory] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_cached_results_stay_isolated_without_disabling_cache[cached-memory] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+___ ERROR at setup of test_writes_and_cache_invalidation_still_work[memory] ____
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_writes_and_cache_invalidation_still_work[cached-memory] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_per_table_overrides_and_existing_table_identity[memory] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:19: in database
+    db=TinyDB(storage=MemoryStorage,copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_ ERROR at setup of test_per_table_overrides_and_existing_table_identity[cached-memory] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:17: in database
+    db=TinyDB(storage=CachingMiddleware(MemoryStorage),copy_on_read=True)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/middlewares.py:63: in __call__
+    self.storage = self._storage_cls(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+=================================== FAILURES ===================================
+_____________ test_all_read_paths_are_deeply_isolated[json-get-id] _____________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+___________ test_all_read_paths_are_deeply_isolated[json-get-query] ____________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+____________ test_all_read_paths_are_deeply_isolated[json-get-ids] _____________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+_____________ test_all_read_paths_are_deeply_isolated[json-search] _____________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+______________ test_all_read_paths_are_deeply_isolated[json-all] _______________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+______________ test_all_read_paths_are_deeply_isolated[json-iter] ______________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:34: in test_all_read_paths_are_deeply_isolated
+    doc_id=database.insert(deepcopy(PAYLOAD))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+_______ test_cached_results_stay_isolated_without_disabling_cache[json] ________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:48: in test_cached_results_stay_isolated_without_disabling_cache
+    database.insert(deepcopy(PAYLOAD))
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+_____________ test_writes_and_cache_invalidation_still_work[json] ______________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:67: in test_writes_and_cache_invalidation_still_work
+    original=database.insert(deepcopy(PAYLOAD))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+__________ test_per_table_overrides_and_existing_table_identity[json] __________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:84: in test_per_table_overrides_and_existing_table_identity
+    unsafe=database.table('unsafe',copy_on_read=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:130: in table
+    table = self.table_class(self.storage, name, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: Table.__init__() got an unexpected keyword argument 'copy_on_read'
+__________ test_direct_table_and_explicit_opt_in_on_default_database ___________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:97: in test_direct_table_and_explicit_opt_in_on_default_database
+    table=Table(MemoryStorage(),'direct',copy_on_read=True)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: Table.__init__() got an unexpected keyword argument 'copy_on_read'
+_ test_default_behavior_and_legacy_table_subclasses_remain_compatible[options1] _
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:112: in test_default_behavior_and_legacy_table_subclasses_remain_compatible
+    with LegacyDB(storage=MemoryStorage,**options) as db:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+________________ test_option_never_reaches_storage_constructor _________________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:124: in test_option_never_reaches_storage_constructor
+    with TinyDB(storage=StrictStorage,marker='sentinel',copy_on_read=True) as db:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: test_option_never_reaches_storage_constructor.<locals>.StrictStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_____________________ test_reading_does_not_write_storage ______________________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:135: in test_reading_does_not_write_storage
+    with TinyDB(storage=CountWrites,copy_on_read=True) as db:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+__________________ test_custom_document_metadata_is_preserved __________________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:148: in test_custom_document_metadata_is_preserved
+    with CustomDB(storage=MemoryStorage,copy_on_read=True) as db:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/database.py:95: in __init__
+    self._storage: Storage = storage(*args, **kwargs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: MemoryStorage.__init__() got an unexpected keyword argument 'copy_on_read'
+_____________ test_json_file_reopen_and_other_tables_are_unchanged _____________
+<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py:162: in test_json_file_reopen_and_other_tables_are_unchanged
+    ident=db.insert(deepcopy(PAYLOAD))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tinydb/table.py:173: in insert
+    self._update_table(updater)
+tinydb/table.py:834: in _update_table
+    self._storage.write(tables)
+tinydb/storages.py:147: in write
+    serialized = json.dumps(data, **self.kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py:238: in dumps
+    return cls(
+E   TypeError: JSONEncoder.__init__() got an unexpected keyword argument 'copy_on_read'
+=========================== short test summary info ============================
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-get-id]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-get-query]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-get-ids]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-search]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-all]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[json-iter]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_cached_results_stay_isolated_without_disabling_cache[json]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_writes_and_cache_invalidation_still_work[json]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_per_table_overrides_and_existing_table_identity[json]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_direct_table_and_explicit_opt_in_on_default_database
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_default_behavior_and_legacy_table_subclasses_remain_compatible[options1]
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_option_never_reaches_storage_constructor
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_reading_does_not_write_storage
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_custom_document_metadata_is_preserved
+FAILED ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_json_file_reopen_and_other_tables_are_unchanged
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-get-id]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-get-query]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-get-ids]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-search]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-all]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[memory-iter]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-get-id]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-get-query]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-get-ids]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-search]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-all]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_all_read_paths_are_deeply_isolated[cached-memory-iter]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_cached_results_stay_isolated_without_disabling_cache[memory]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_cached_results_stay_isolated_without_disabling_cache[cached-memory]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_writes_and_cache_invalidation_still_work[memory]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_writes_and_cache_invalidation_still_work[cached-memory]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_per_table_overrides_and_existing_table_identity[memory]
+ERROR ../../../../../../../..<aipod-checkout>/experiments/tinydb-large/acceptance_cases.py::test_per_table_overrides_and_existing_table_identity[cached-memory]
+15 failed, 1 passed, 18 errors in 0.17s

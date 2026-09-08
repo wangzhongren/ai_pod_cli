@@ -106,6 +106,63 @@ class RepositoryItem(Model, table=True):
     name: str
 
 
+def _behavior_interface_fixture(
+    project: Path, *, route="proof_route", params=None,
+    expression="result['value']", expected=8, pipeline_source=None,
+):
+    """Install a real registered route and frozen unittest acceptance for Pod tests."""
+    params = {"value": 7} if params is None else params
+    pipeline = project / "pipelines" / f"{route}.py"
+    pipeline.parent.mkdir(parents=True, exist_ok=True)
+    if not pipeline.exists():
+        pipeline.write_text(
+            pipeline_source or "def run(ctx):\n    return {'value': ctx.params['value'] + 1}\n",
+            encoding="utf-8",
+        )
+    routes_file = project / "routes.toml"
+    existing_routes = routes_file.read_text(encoding="utf-8") if routes_file.exists() else ""
+    if f"[{route}]" not in existing_routes:
+        routes_file.write_text(
+            existing_routes + f'\n[{route}]\npipeline = "pipelines/{route}.py"\n',
+            encoding="utf-8",
+        )
+    bundle = project / "interfaces" / "proof"
+    bundle.mkdir(parents=True, exist_ok=True)
+    runtime_path = "interfaces/proof/main.py"
+    test_path = "interfaces/proof/acceptance.py"
+    (project / runtime_path).write_text(
+        "from ai_pod_cli.config import load_beans\n"
+        "from ai_pod_cli.container import build_container\n"
+        "from ai_pod_cli.runner import PipelineRunner\n\n"
+        "def main():\n"
+        "    runner = build_container(load_beans()).get(PipelineRunner)\n"
+        f"    return runner.run({route!r}, {params!r})\n\n"
+        "if __name__ == '__main__':\n    main()\n",
+        encoding="utf-8",
+    )
+    (project / test_path).write_text(
+        "import unittest\nfrom ai_pod_cli.runner import PipelineRunner\n\n"
+        "class AcceptanceTests(unittest.TestCase):\n"
+        "    def test_route_result(self):\n"
+        f"        result = PipelineRunner().run({route!r}, {params!r})\n"
+        f"        self.assertEqual({expression}, {expected!r})\n",
+        encoding="utf-8",
+    )
+    return {
+        "name": "proof", "kind": "cli", "instruction": "Deliver the existing verified route.",
+        "artifacts": [
+            {"path": runtime_path, "role": "runtime", "format": "python", "instruction": "Run the registered route."},
+            {"path": test_path, "role": "behavior_test", "format": "python", "instruction": "Assert the route result."},
+        ],
+        "verify": [{
+            "name": "route_behavior", "kind": "behavior", "required": True,
+            "command": ["{python}", "-m", "ai_pod_cli.behavior_tests", test_path],
+            "cases": [{"test": "AcceptanceTests.test_route_result", "requirement": "The registered route returns its expected result."}],
+            "timeout": 10,
+        }],
+    }
+
+
 class RuntimeIntegrationTests(unittest.TestCase):
     def test_global_config_permission_error_is_not_reported_as_missing_key(self):
         output = io.StringIO()
@@ -1329,7 +1386,7 @@ class StudioApiTests(unittest.TestCase):
             task = api.pod_build_status(started["build_id"])["task"]
             self.assertEqual(task["requested_stage"], "auto")
 
-    def test_studio_accepts_verification_only_pod_completion(self):
+    def test_studio_rejects_legacy_smoke_only_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             previous_cwd = Path.cwd()
@@ -1359,10 +1416,10 @@ class StudioApiTests(unittest.TestCase):
             with patch("ai_pod_cli.commands.pod.handle_pod", return_value=None):
                 result = api.build_pod("verified app")
 
-            self.assertTrue(result["ok"])
+            self.assertFalse(result["ok"])
             self.assertEqual(
-                result["project"]["pod_agent"]["verification"]["status"],
-                "passed",
+                api.inspect_project()["project"]["pod_agent"]["verification"]["status"],
+                "pending",
             )
 
     def test_studio_pod_build_supports_cooperative_cancellation(self):
@@ -1564,6 +1621,7 @@ class StudioApiTests(unittest.TestCase):
                     'description = "Query public templates"\n',
                     encoding="utf-8",
                 )
+                interface = _behavior_interface_fixture(project, route="query_templates")
                 captured = {}
 
                 def respond(system, user, **_kwargs):
@@ -1571,7 +1629,7 @@ class StudioApiTests(unittest.TestCase):
                     return {
                         "pod_name": "interface_only",
                         "reuse_components": ["SecretTemplateService"],
-                        "components": [], "pipelines": [], "interfaces": [],
+                        "components": [], "pipelines": [], "interfaces": [interface],
                         "config_additions": {},
                     }
 
@@ -2263,7 +2321,7 @@ class StudioApiTests(unittest.TestCase):
             [],
         )
 
-    def test_optional_interface_check_does_not_fail_required_runtime(self):
+    def test_optional_interface_check_does_not_fail_required_behavior(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             previous = Path.cwd()
@@ -2273,21 +2331,12 @@ class StudioApiTests(unittest.TestCase):
                 state = _load_decision_plan("optional integration")
                 for record in state["stages"].values():
                     record["status"] = "complete"
-                state["stages"]["interfaces"]["plan"] = {
-                    "interfaces": [{
-                        "name": "demo", "kind": "cli",
-                        "artifacts": [{
-                            "path": "interfaces/demo/main.py", "role": "runtime",
-                            "format": "python", "instruction": "demo",
-                        }],
-                        "verify": [
-                            {"name": "runtime", "kind": "runtime", "required": True,
-                             "command": [sys.executable, "-c", "pass"], "timeout": 10},
-                            {"name": "installed", "kind": "installation", "required": False,
-                             "command": [sys.executable, "-c", "raise SystemExit(1)"], "timeout": 10},
-                        ],
-                    }],
-                }
+                interface = _behavior_interface_fixture(project)
+                interface["verify"].append({
+                    "name": "installed", "kind": "installation", "required": False,
+                    "command": [sys.executable, "-c", "raise SystemExit(1)"], "timeout": 10,
+                })
+                state["stages"]["interfaces"]["plan"] = {"interfaces": [interface]}
                 _save_decision_plan(state)
                 result = _verify_application("optional integration", state)
             finally:
@@ -2296,6 +2345,8 @@ class StudioApiTests(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         checks = result["checks"]["interfaces"]
         self.assertEqual([item["status"] for item in checks], ["passed", "failed"])
+        self.assertEqual(checks[0]["proof"]["route_calls"], 1)
+        self.assertGreater(checks[0]["proof"]["assertions"], 0)
 
     def test_provider_candidate_smoke_tests_declared_methods(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2410,16 +2461,23 @@ class StudioApiTests(unittest.TestCase):
                 (project / "pipelines" / "existing_route.py").write_text(
                     "def run(ctx):\n    return ctx.summary()\n", encoding="utf-8",
                 )
+                frozen_pipeline = (project / "pipelines/existing_route.py").read_bytes()
+                interface = _behavior_interface_fixture(
+                    project, route="existing_route", params={"probe": 7},
+                    expression="result['params']['probe']", expected=7,
+                )
                 plan = {
                     "pod_name": "reuse_test",
                     "reuse_components": ["ExistingService"],
                     "components": [{"name": "ExistingService", "category": "service", "description": "same"}],
-                    "pipelines": [{"name": "existing_route", "instruction": "reuse it"}],
+                    "pipelines": [{"name": "existing_route", "instruction": "reuse it",
+                                   "inputs": {"probe": "int"},
+                                   "verification_cases": [{"name": "actual_entry", "params": {"probe": 7}}]}],
+                    "interfaces": [interface],
                     "config_additions": {},
                 }
                 args = type("Args", (), {"desc": "reuse", "file": "", "yes": True, "json": True})()
                 state = _load_decision_plan("reuse")
-                state["agent"]["verification"]["command"] = [sys.executable, "-c", "pass"]
                 _save_decision_plan(state)
                 responses = [plan] * 5
                 output = io.StringIO()
@@ -2432,6 +2490,7 @@ class StudioApiTests(unittest.TestCase):
             finally:
                 os.chdir(previous_cwd)
 
+            self.assertEqual((project / "pipelines/existing_route.py").read_bytes(), frozen_pipeline)
             self.assertEqual(llm.call_count, 5)
             self.assertIn("ExistingService (reuse)", output.getvalue())
             self.assertIn("[Pipeline 复用] existing_route", output.getvalue())
@@ -2457,8 +2516,8 @@ class StudioApiTests(unittest.TestCase):
                     {"desc": "local app", "file": "", "yes": True, "json": True, "_pod_stage": 1},
                 )()
                 state = _load_decision_plan("local app", 1)
-                state["agent"]["verification"]["command"] = [sys.executable, "-c", "pass"]
                 _save_decision_plan(state)
+                interface = _behavior_interface_fixture(project)
                 plans = [
                     {
                         "pod_name": "no_external_providers",
@@ -2478,7 +2537,7 @@ class StudioApiTests(unittest.TestCase):
                     {
                         "pod_name": "interfaces",
                         "reuse_components": ["PipelineRunner"], "components": [],
-                        "pipelines": [], "interfaces": [], "config_additions": {},
+                        "pipelines": [], "interfaces": [interface], "config_additions": {},
                     },
                 ]
                 action_by_stage = {
@@ -2529,9 +2588,9 @@ class StudioApiTests(unittest.TestCase):
                     state = _load_decision_plan("agent retry")
                     for name in state["stages"]:
                         state["stages"][name]["status"] = "complete"
-                    state["agent"]["verification"]["command"] = [
-                        sys.executable, "-c", "pass",
-                    ]
+                    state["stages"]["interfaces"]["plan"] = {
+                        "interfaces": [_behavior_interface_fixture(project)],
+                    }
                     _save_decision_plan(state)
 
                 with (
@@ -2580,9 +2639,9 @@ class StudioApiTests(unittest.TestCase):
                     tool_calls.append(_args._pod_stage)
                     current = _load_decision_plan("existing app")
                     current["stages"]["interfaces"]["status"] = "complete"
-                    current["agent"]["verification"]["command"] = [
-                        sys.executable, "-c", "pass",
-                    ]
+                    current["stages"]["interfaces"]["plan"] = {
+                        "interfaces": [_behavior_interface_fixture(project)],
+                    }
                     _save_decision_plan(current)
 
                 with (
@@ -2615,18 +2674,13 @@ class StudioApiTests(unittest.TestCase):
             os.chdir(project)
             try:
                 init_config_if_not_exists()
-                entry = project / "engine_cli.py"
-                failing_line = 'raise RuntimeError("smoke failed")'
-                entry.write_text(
-                    "from ai_pod_cli.config import load_beans\n"
-                    "from ai_pod_cli.container import build_container\n\n"
-                    "def main():\n"
-                    "    build_container(load_beans())\n"
-                    f"    {failing_line}\n\n"
-                    "if __name__ == '__main__':\n"
-                    "    main()\n",
-                    encoding="utf-8",
-                )
+                entry = project / "pipelines" / "proof_route.py"
+                entry.parent.mkdir(parents=True, exist_ok=True)
+                failing_line = 'raise RuntimeError("route failed")'
+                repaired_line = "return {'value': ctx.params['value'] + 1}"
+                entry.write_text("def run(ctx):\n    " + failing_line + "\n", encoding="utf-8")
+                interface = _behavior_interface_fixture(project)
+                frozen_acceptance = (project / "interfaces/proof/acceptance.py").read_bytes()
                 stable = project / "modules" / "models" / "stable.py"
                 stable.parent.mkdir(parents=True, exist_ok=True)
                 stable.write_text("FROZEN = True\n", encoding="utf-8")
@@ -2634,13 +2688,10 @@ class StudioApiTests(unittest.TestCase):
                 state = _load_decision_plan("repair app")
                 for record in state["stages"].values():
                     record["status"] = "complete"
-                state["stages"]["interfaces"]["plan"] = {
-                    "interfaces": [{
-                        "name": "engine_cli", "kind": "cli",
-                        "instruction": "Run the `smoke` command without interaction.",
-                    }],
-                }
-                state["stages"]["interfaces"]["artifacts"] = ["engine_cli.py"]
+                state["stages"]["interfaces"]["plan"] = {"interfaces": [interface]}
+                state["stages"]["interfaces"]["artifacts"] = [
+                    "interfaces/proof/main.py", "interfaces/proof/acceptance.py",
+                ]
                 _save_decision_plan(state)
                 args = type("Args", (), {
                     "desc": "repair app", "file": "", "yes": True, "json": True,
@@ -2649,7 +2700,7 @@ class StudioApiTests(unittest.TestCase):
                 with (
                     patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
                     patch("ai_pod_cli.pod.verification.call_llm", return_value={
-                        "patches": [{"old": failing_line, "new": 'print("SMOKE OK")'}],
+                        "patches": [{"old": failing_line, "new": repaired_line}],
                     }) as llm,
                 ):
                     handle_pod(args)
@@ -2665,7 +2716,8 @@ class StudioApiTests(unittest.TestCase):
                 [item["action"] for item in final_state["agent"]["history"]],
                 ["verify_application", "repair_current_artifact", "verify_application"],
             )
-            self.assertIn('print("SMOKE OK")', entry.read_text(encoding="utf-8"))
+            self.assertIn(repaired_line, entry.read_text(encoding="utf-8"))
+            self.assertEqual((project / "interfaces/proof/acceptance.py").read_bytes(), frozen_acceptance)
             self.assertEqual(stable.read_text(encoding="utf-8"), "FROZEN = True\n")
 
     def test_studio_discovers_cli_interface_and_connected_routes(self):

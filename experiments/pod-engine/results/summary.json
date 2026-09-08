@@ -1,0 +1,46 @@
+{
+  "command": "aipod pod --file requirements.md --yes",
+  "exit_code": 1,
+  "agent_status": "blocked",
+  "stages": {
+    "models": "complete",
+    "providers": "complete",
+    "services": "complete",
+    "pipelines": "in_progress",
+    "interfaces": "pending"
+  },
+  "generated_components": [
+    {
+      "id": "Vec2",
+      "category": "model"
+    },
+    {
+      "id": "GameEntity",
+      "category": "model"
+    },
+    {
+      "id": "BreakoutSimulationService",
+      "category": "service"
+    },
+    {
+      "id": "PngSnapshotService",
+      "category": "service"
+    },
+    {
+      "id": "RunSummaryService",
+      "category": "service"
+    }
+  ],
+  "contract_conflict": {
+    "producer": {
+      "type": "array",
+      "items": {
+        "model": "modules.models.gameentity.GameEntity"
+      }
+    },
+    "consumer": "List[modules.models.gameentity.GameEntity] — 当前帧所有实体"
+  },
+  "gameplay_verified": false,
+  "manual_engine_code_changes": false,
+  "pipeline_conflict_occurrences": 5
+}

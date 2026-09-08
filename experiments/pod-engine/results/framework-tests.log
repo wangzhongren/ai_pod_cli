@@ -1,0 +1,58 @@
+....................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 164 tests in 1.586s
+
+OK
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ Pipeline 必须定义 run(ctx) 函数
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ Pipeline 必须定义 run(ctx) 函数
+📝 [需求] build invalid service
+📌 [复用冻结规划] services 阶段不再调用规划器。
+❌ [Plan Reduce] 1 个决策冲突，代码生成已停止：
+   ❌ UNKNOWN_MODEL_REFERENCE: 'BrokenService' references unknown Model 'modules.models.missing.MissingState'
+🔄 [services 规划已丢弃] 下一次重试将根据冲突证据重新规划。
+   [retry] 第 1 次: JSON 解析失败 (finish_reason=missing, 10 chars)
+   [retry] 流没有正常结束，下一次切换为非流式完整响应
+   [retry] 第 2/2 次重试...
+   [retry] 第 1 次: 输出达到上限 (100 tokens, 10 chars)
+   [retry] 下一次提高输出上限到 200 tokens
+   [retry] 第 2/2 次重试...
+   ❌ Artifact generation failed: interfaces/atomic/install.sh: Source artifact is empty
+   ✅ [Interface delivery] demo: 3 artifacts
+📝 [需求] Build a template browser
+❌ AI 未返回可创建或可复用的组件。
+🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe
+
+🧠 [Pod Agent · Step 1] generate_models (models)
+   决策摘要: The models stage is the earliest incomplete stage.
+🔁 [Pod Agent] 已观察到失败；下一步只允许重试当前 Build Tool。
+
+🧠 [Pod Agent · Step 2] generate_models (models)
+   决策摘要: Retry the current models stage after its governed tool failed.
+
+🧠 [Pod Agent · Step 3] verify_application (application)
+✅ [verify_application] 应用结构与实际运行命令均已通过。
+🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe
+
+🧠 [Pod Agent · Step 1] verify_application (application)
+🔁 [verify_application] 运行失败；下一步只允许修复证据指向的当前文件。
+
+🧠 [Pod Agent · Step 2] repair_current_artifact (application)
+🩹 [repair_current_artifact] 已修复 engine_cli.py；下一步重新执行同一验证命令。
+
+🧠 [Pod Agent · Step 3] verify_application (application)
+✅ [verify_application] 应用结构与实际运行命令均已通过。
+🧠 [Pod 影响分析] 最早受影响层: interfaces — Presentation-only change.
+🔧 [Pod 局部重建] 从 interfaces 层开始；上游已冻结，下游将重新生成并验证。
+🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe
+
+🧠 [Pod Agent · Step 1] generate_interfaces (interfaces)
+   决策摘要: The interfaces stage is the earliest incomplete stage.
+
+🧠 [Pod Agent · Step 2] verify_application (application)
+✅ [verify_application] 应用结构与实际运行命令均已通过。
+🤖 [1/1] 生成 ErrorCodes (model)...
+   ⛔ 当前阶段立即停止；不会继续生成同层后续组件。
+📋 [方案已保存] docs/aipod/todo_app_plan.md
+

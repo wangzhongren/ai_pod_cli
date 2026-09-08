@@ -17,6 +17,12 @@ from ai_pod_cli.pod.verification import (
 from ai_pod_cli.pod.revision import select_revision_stage
 
 
+MAX_APPLICATION_REPAIR_ATTEMPTS = 10
+# A repair and its verification are separate scheduler steps. Leave room for
+# all five build stages, their retries, and the final check after repair ten.
+DEFAULT_AGENT_MAX_STEPS = 40
+
+
 def _agent_project_observation(state: dict) -> dict:
     """Return compact public state that lets the Pod Agent choose its next tool."""
     beans = load_beans().get("beans", [])
@@ -142,9 +148,9 @@ def handle_pod(args):
         verification["status"] = "pending"
     _save_decision_plan(state)
     _set_agent_status(desc, "running")
-    max_steps = int(getattr(args, "_pod_agent_max_steps", 15))
+    max_steps = int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS))
     stage_failures: dict[int, int] = {}
-    repair_tool_failures = 0
+    acceptance_replans = 0
 
     print("🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe")
     if original_file:
@@ -155,6 +161,20 @@ def handle_pod(args):
         stage = _resume_stage(state)
         if stage is None:
             verification = state["agent"]["verification"]
+            if verification.get("required_action") == "replan_interfaces":
+                if acceptance_replans >= 1:
+                    _set_agent_status(desc, "blocked")
+                    print("⛔ 缺少有效行为验收；Interface 重新规划后仍未满足要求。")
+                    raise SystemExit(1)
+                issues = verification.get("last_result", {}).get("checks", {}).get("acceptance", {}).get("issues", [])
+                instruction = "补全独立行为验收，覆盖原始需求；不得用smoke或样本试跑代替。" + str(issues)
+                updated = prepare_stage_rebuild("interfaces", instruction)
+                updated["stages"]["interfaces"]["last_evidence"] = {"status": "rejected", "evidence": issues}
+                _save_decision_plan(updated)
+                args._pod_rebuild_from = 4
+                acceptance_replans += 1
+                print("🔁 缺少有效行为验收，重新规划 Interface 测试；已冻结上游保持不变。")
+                continue
             verification_status = verification.get("status", "pending")
             if verification_status == "passed":
                 _set_agent_status(desc, "complete")
@@ -188,7 +208,7 @@ def handle_pod(args):
                     "stage": "application",
                     "status": event_status,
                     "decision_status": "policy_selected",
-                    "summary": "Run the frozen application's deterministic smoke or test command.",
+                    "summary": "Run the frozen application's declared behavior acceptance and diagnostics.",
                     "observation": observation,
                 })
                 if result.get("status") == "passed":
@@ -198,16 +218,21 @@ def handle_pod(args):
                 print("🔁 [verify_application] 运行失败；下一步只允许修复证据指向的当前文件。")
                 continue
 
-            if int(verification.get("repairs", 0)) >= 3:
+            repair_attempts = max(
+                int(verification.get("repair_attempts", verification.get("repairs", 0))),
+                int(verification.get("repairs", 0)),
+            )
+            if repair_attempts >= MAX_APPLICATION_REPAIR_ATTEMPTS:
                 _set_agent_status(desc, "blocked")
-                print("⛔ [Pod Agent] 已达到 3 次受限修复上限，冻结上游保持不变。")
+                print(f"⛔ [Pod Agent] 已达到 {MAX_APPLICATION_REPAIR_ATTEMPTS} 轮应用修复上限，冻结上游保持不变。")
                 raise SystemExit(1)
+            verification["repair_attempts"] = repair_attempts + 1
+            _save_decision_plan(state)
             try:
                 repaired = _repair_current_artifact(
                     desc, state, getattr(args, "progress_callback", None),
                 )
             except Exception as error:
-                repair_tool_failures += 1
                 _append_agent_event(desc, {
                     "action": action,
                     "stage": "application",
@@ -216,13 +241,12 @@ def handle_pod(args):
                     "summary": "Repair only the evidence-selected current artifact.",
                     "observation": {"error": f"{type(error).__name__}: {error}"},
                 })
-                if repair_tool_failures >= 2:
+                if repair_attempts + 1 >= MAX_APPLICATION_REPAIR_ATTEMPTS:
                     _set_agent_status(desc, "blocked")
-                    print("⛔ [repair_current_artifact] 连续失败，未修改冻结上游。")
+                    print(f"⛔ [repair_current_artifact] 已用完 {MAX_APPLICATION_REPAIR_ATTEMPTS} 轮修复机会，未修改冻结上游。")
                     raise SystemExit(1)
                 print("🔁 [repair_current_artifact] 补丁未通过约束，将重试当前修复工具。")
                 continue
-            repair_tool_failures = 0
             _append_agent_event(desc, {
                 "action": action,
                 "stage": "application",

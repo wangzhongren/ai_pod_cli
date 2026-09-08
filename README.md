@@ -320,7 +320,8 @@ The manifest identifies the entry source and class:
   "artifacts": [
     {"path": "interfaces/order-monitor/adapter.py", "role": "adapter_entry"},
     {"path": "interfaces/order-monitor/queue_consumer.py", "role": "adapter_module"},
-    {"path": "interfaces/order-monitor/window.py", "role": "adapter_module"}
+    {"path": "interfaces/order-monitor/window.py", "role": "adapter_module"},
+    {"path": "interfaces/order-monitor/test_behavior.py", "role": "behavior_test", "format": "python"}
   ],
   "lifecycle": {
     "run": ["{python}", "-m", "ai_pod_cli", "interface", "run", "order-monitor"]
@@ -329,10 +330,18 @@ The manifest identifies the entry source and class:
   "verify": [
     {
       "name": "adapter_smoke",
-      "kind": "runtime",
+      "kind": "smoke",
       "required": true,
       "command": ["{python}", "-m", "ai_pod_cli", "interface", "smoke", "order-monitor"],
       "timeout": 30
+    },
+    {
+      "name": "order_behavior",
+      "kind": "behavior",
+      "required": true,
+      "command": ["{python}", "-m", "ai_pod_cli.behavior_tests", "interfaces/order-monitor/test_behavior.py"],
+      "cases": [{"test": "OrderBehavior.test_process_message", "requirement": "A supplied order message produces the expected order state"}],
+      "timeout": 60
     }
   ]
 }
@@ -340,7 +349,8 @@ The manifest identifies the entry source and class:
 
 All Adapter source files are staged together, loaded as a private Python package so
 relative imports work, and smoked in a disposable project. The complete Interface bundle
-is committed atomically only after every required check passes.
+is committed atomically after artifact and Adapter checks. Application completion
+additionally requires the declared behavior acceptance below.
 
 The Adapter is generated during construction. Running the finished application does not
 call AI.
@@ -367,6 +377,10 @@ class PriceOrder:
 
 The source response is not forced into JSON. The planned path must match exactly;
 multiple actions, nested operands, extra fields and malformed XML are rejected.
+If a metadata response also includes unrequested root-level `code` or `content`,
+those fields are discarded. Source is still requested separately through XML;
+discarded metadata code is never executed or used as a fallback. Contract fields
+named `code` or `content` inside inputs/outputs are preserved.
 CDATA splitting supports literal `]]>` in source, and the codec preserves source line endings.
 This uses the same strict ActUnit-compatible artifact subset as AIPod Node, implemented
 locally without requiring an unpublished ActUnit package or a Node process.
@@ -377,8 +391,9 @@ and exact-patch repair continue to use JSON. Python generation now normally need
 model calls per artifact because its metadata was previously generated with the source;
 this change does not claim a reduction in latency or model cost.
 
-Source requests default to a 32,768-token output budget and a 300-second SDK timeout.
-Metadata/planning calls retain their existing settings. `generate_source()` accepts
+Source requests default to a 65,536-token output budget and a 600-second SDK timeout.
+JSON metadata, planning and patch requests default to 32,768 tokens; the model client
+default timeout is 600 seconds. Internal stage-specific small limits have been removed. `generate_source()` accepts
 `source_max_tokens` and `source_timeout_seconds` overrides for controlled experiments
 or callers with different limits. The output budget can include model reasoning tokens;
 it does not represent the length of the generated source alone.
@@ -433,11 +448,47 @@ Validation happens before freezing, not only at the end:
 | Model | isolated import and class construction |
 | Provider | isolated import, DI construction, declared-method smoke |
 | Service | no Service visibility; DI construction and `execute(ctx)` with Contract-derived input |
-| Pipeline | isolated sequential/parallel/repeat/stream execution before route registration |
+| Pipeline | isolated execution with explicit real entry parameters before route registration |
 | Interface | every Artifact validated, Adapter package imported, smoke executed |
 
 After all layers complete, every required Interface verification command runs again.
 Optional installation checks remain visible but do not fail runtime proof.
+
+Pipeline planning declares public `inputs` and non-empty `verification_cases`, each with
+a unique `name` and explicit `params`. A default-starting application includes an empty
+parameter scenario; a route needing user input provides concrete values for that input.
+The Pipeline sandbox never derives sample parameters or files from downstream Service
+requirements. Each case uses its own disposable project, and exceptions, timeouts,
+unhandled Runtime Failure records, and premature process exits fail the check.
+Cases remain frozen while source is repaired. Reusing an existing Pipeline also reruns
+its entry scenarios. Public inputs are saved beside the source in `.contract.json` and
+referenced by `routes.toml`; inferred internal requirements do not replace this boundary.
+
+An entry scenario is a smoke check. Every Interface must also declare a required
+`kind: "behavior"` command using the framework's unittest driver, plus named `cases`
+mapping test methods to requirements. Plans missing these checks are rejected, and
+old smoke-only passes are invalidated. The driver is available directly:
+
+```bash
+python -m ai_pod_cli.behavior_tests tests/test_behavior.py
+```
+
+Each test uses a real registered route and `self.assert*` assertions on observed behavior.
+The driver rejects empty tests, missing real route execution, ignored framework failures,
+and tests containing only obviously constant assertions. Bare Python `assert` does not
+count as unittest evidence. Every declared case must execute and pass; a missing or skipped
+case cannot be replaced by another passing test. JSON proof includes per-test execution
+and assertion counts. Acceptance test files are excluded from automatic repair targets.
+
+Python Pod allows up to 10 application repair attempts, including rejected patches,
+and verifies again after every applied repair. Attempts persist across resumes;
+existing plans count their already-applied repairs toward this limit. The default
+scheduler budget is 40 steps so all 10 rounds and the final verification can run.
+
+These are minimum evidence checks, not a proof of complete requirements coverage or
+arbitrary test correctness. The planner must declare meaningful scenarios and expected
+outcomes; reviewers can inspect the frozen cases. Pure exception-only tests currently
+need a successful route invocation in the same test to satisfy the execution evidence.
 
 Run structure-only inspection:
 
@@ -472,6 +523,25 @@ Components publish machine-readable inputs and outputs. AIPod validates:
 
 Type, Model, missing-field, and nested-schema conflicts are errors. Similar-but-different
 field names are warnings because semantic similarity is heuristic.
+
+Python Contracts normalize equivalent structured schemas and type annotations before
+checking them. For example, these describe the same list of shared Models:
+
+```python
+{"type": "array", "items": {"model": "modules.models.gameentity.GameEntity"}}
+"List[modules.models.gameentity.GameEntity] — entities in the current frame"
+```
+
+Supported annotations include `List[T]`, `list[T]`, `typing.List[T]`, `Dict[str, T]`,
+`Optional[T]`, `Union[A, B]`, and `T | None`, including nested combinations. Normalization
+preserves Model path capitalization, item schemas, and `required`, `default`, and
+description metadata. Static Pipeline checks, runtime validation and Model
+materialization, and verification samples all use this same representation.
+
+This is a small Contract syntax, not full Python typing or JSON Schema support.
+Unknown legacy type names and unsupported generic tokens such as `Tuple[int, int]`
+remain compatible as type labels; retaining a label does not validate its elements.
+Malformed supported generics and executable type expressions are rejected.
 
 ## Native Studio
 
@@ -565,7 +635,7 @@ Python and Node.js use the same global model configuration file:
 OPENAI_API_KEY = "..."
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 OPENAI_MODEL = "your-model"
-OPENAI_TIMEOUT_SECONDS = "120"
+OPENAI_TIMEOUT_SECONDS = "600"
 ```
 
 They also share project-level `config.toml` and dot-notation `ConfigStore` access. Process

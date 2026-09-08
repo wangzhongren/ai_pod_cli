@@ -1,0 +1,83 @@
+{
+  "project": "msiemens/tinydb",
+  "revision": "4aa53111d72c9cbaafcdc039211caf49f4face6f",
+  "output": "<tmp>/aipod-tinydb-large-kri183ya",
+  "allowed_files": [
+    "tinydb/table.py",
+    "tinydb/database.py"
+  ],
+  "acceptance_hash": "4d69e732726d87438551475bf7b51d5fc38df0fee6f31b64ddebf358131de15b",
+  "calls": [
+    {
+      "channel": "json",
+      "requests": [
+        {
+          "max_tokens": 8192,
+          "timeout": null,
+          "finish_reason": "stop",
+          "response_characters": 136,
+          "usage": {
+            "prompt_tokens": 7937,
+            "completion_tokens": 332,
+            "total_tokens": 8269
+          },
+          "reasoning_tokens": 300,
+          "seconds": 3.464
+        }
+      ],
+      "seconds": 3.674
+    },
+    {
+      "channel": "xml",
+      "requests": [
+        {
+          "max_tokens": 65536,
+          "timeout": 600.0,
+          "error_type": "APIConnectionError",
+          "seconds": 359.367
+        }
+      ],
+      "error": "LLM 调用在 1 次重试后仍然失败: Connection error.",
+      "seconds": 359.369
+    }
+  ],
+  "stages": [
+    {
+      "file": "tinydb/table.py",
+      "attempts": [],
+      "status": "failed",
+      "error": "LLM 调用在 1 次重试后仍然失败: Connection error."
+    }
+  ],
+  "source_max_tokens": 65536,
+  "source_timeout_seconds": 600.0,
+  "max_retries": 1,
+  "size": {
+    "tinydb": 2255,
+    "tests": 2098
+  },
+  "tested_import": "<tmp>/aipod-tinydb-large-kri183ya/project/tinydb/__init__.py",
+  "baseline_tests": {
+    "exit_code": 0,
+    "summary": "222 passed in 0.23s",
+    "seconds": 0.357,
+    "log": "<tmp>/aipod-tinydb-large-kri183ya/baseline-original.log"
+  },
+  "baseline_types": {
+    "exit_code": 0,
+    "summary": "Success: no issues found in 19 source files",
+    "seconds": 1.252,
+    "log": "<tmp>/aipod-tinydb-large-kri183ya/baseline-types.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "15 failed, 1 passed, 18 errors in 0.16s",
+    "seconds": 0.261,
+    "log": "<tmp>/aipod-tinydb-large-kri183ya/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "success": false,
+  "changed_files": [],
+  "acceptance_unchanged": true,
+  "frozen_files": {}
+}

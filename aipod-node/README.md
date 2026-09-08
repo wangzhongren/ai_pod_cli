@@ -110,7 +110,7 @@ The Python and Node.js implementations read the same global file:
 OPENAI_API_KEY = "..."
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 OPENAI_MODEL = "your-model"
-OPENAI_TIMEOUT_SECONDS = "120"
+OPENAI_TIMEOUT_SECONDS = "600"
 ```
 
 Configuration priority is:
@@ -371,7 +371,9 @@ export class PriceOrder {
 The text request does not enable JSON response mode. Planning and bounded exact-patch
 repair still use JSON. Pipeline and Interface entry source remain locally generated.
 `OpenAICompatibleClient.completeJson()` and `completeText()` expose the separate modes;
-`complete()` remains the JSON-compatible alias. Custom `ModelClient` implementations
+`complete()` remains the JSON-compatible alias. JSON requests default to 32,768
+tokens, text/source requests to 65,536 tokens, and the request deadline to 600 seconds.
+Client options `jsonMaxTokens`, `sourceMaxTokens`, and `timeoutMs` override these defaults. Custom `ModelClient` implementations
 must supply `completeText()` to generate files; no silent JSON fallback is performed.
 
 The local codec supports only `create` with exactly one `path` and one `content`.

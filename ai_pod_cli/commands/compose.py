@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from ai_pod_cli.config import (
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipeline_contract
 from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.sandbox import verify_pipeline_candidate
+from ai_pod_cli.pipeline_validation import save_pipeline_inputs, validate_pipeline_inputs
 
 
 def _slugify(text: str) -> str:
@@ -125,9 +127,14 @@ def handle_compose(args):
     组件账本中的 inputs/outputs 是强制数据契约：
     - 账本中的组件已经验证并冻结；本轮唯一允许修复的对象是当前 Pipeline。
     - Pipeline 必须适配已有组件，禁止建议回头修改组件。
+    - 规划文字、示例或阶段描述与已冻结组件的 inputs/outputs 冲突时，以组件账本的契约为准。
     - 下游输入语义与上游输出相同时必须使用完全相同的字段名。
     - 禁止在 Pipeline 中通过复制或重命名制造 oxygen/oxygen_level 一类同义字段。
     - 如果所需字段没有上游生产者，它只能是明确的入口参数，不能伪装成同义新字段。
+    - inputs 必须描述需求中真实调用者提供的入口参数。内部计算结果不能因为缺少生产者就变成用户输入。
+    - verification_cases 给出真实调用示例的 name 和 params。默认启动应包含 params={{}} 的场景；
+      有必填入口参数时提供它们的明确值，禁止补上用户不会提供的下游状态来让试跑通过。
+      沙箱不会自动补任何参数或文件。这些场景只验证实际输入下的运行，应用还必须完成独立行为测试。
 
     各组件的 import 路径：
     {imports_hint}
@@ -153,10 +160,14 @@ def handle_compose(args):
        这会自动依次执行各组件并记录轨迹。
        **重要**：只有 service 类型组件可以放入管道链！provider 类型组件（如 ConfigStore、SqliteStore 等）
        没有 execute 方法，只能作为依赖注入到 service 中，绝对不能放进 S() 管道链里！
-    5. 严格按组件账本中的 inputs 键准备输入。Service 的 execute(ctx) 默认从 ctx.params 读取输入，
-       因此调用前使用 `ctx.params.update({{"action": "...", ...}})` 写入准确的输入键。
+       S() 只能引用账本中已注册的 Service，禁止在 Pipeline 中新建 Service 类来绕过冻结的组件边界。
+    5. 严格按组件账本中的 inputs 键准备输入。Runtime 校验输入时合并 ctx.params 与 ctx.data，
+       同名键以 ctx.data 为准，并将已物化的输入写回 ctx.data；ctx.get() 也优先读取 ctx.data。
+       Pipeline 修改下一次调用的同名输入时，必须同步入口参数和数据池，例如对合同声明的 action 键：
+       `ctx.params["action"] = next_action`，然后 `ctx.set("action", next_action)`。
+       仅更新 ctx.params 会被数据池中上一次调用的旧值遮蔽，循环中的逐帧输入也必须遵守此规则。
        **禁止**把输入包装成 `xxx_input` 后只调用 ctx.set("xxx_input", payload)，除非该名称明确列在组件 inputs 中。
-       ctx.set()/ctx.get() 用于组件输出和后续步骤之间的状态传递；从状态取值后仍需写入下一个 Service 声明的输入键。
+       上游输出已使用下游声明的同名输入键时直接复用；只有确实需要转换输入值时才同步更新该键。
     6. 需要条件分支时，用 if/else 分别串联不同的管道。
     7. 最后 return ctx.summary()。
     8. 加上清晰的中文注释。
@@ -164,7 +175,7 @@ def handle_compose(args):
        S(RemoteService).retry(3, delay_seconds=0.2).fallback(CacheService)
        retry 的 attempts 表示重试次数；fallback 可传组件类或 S(Component) 引用。
        不要默认添加策略，只在需求或组件性质明确需要时使用。
-    10. 只有需求明确涉及并发、异步 I/O 或流式数据时才使用以下确定性 Runtime API：
+    10. 只有需求明确涉及并发、异步 I/O、流式数据或重复执行时才使用相应的 Runtime API：
        - 异步：定义 `async def run(ctx)`，并 `await chain.execute_all_async(ctx)`。
        - 并行：`from ai_pod_cli.container import parallel`，使用
          `parallel(S(A), S(B), merge="strict", failure_policy="fail_fast")`。
@@ -173,14 +184,23 @@ def handle_compose(args):
          `stream(S(Source)).map(S(Transform), concurrency=4).batch(100)`，
          通过 `async for` 消费，或 `await ...execute_all_async(ctx)` 完整消费。
        - 循环：`from ai_pod_cli.container import repeat`，使用
-         `repeat(frame, until_field="quit_requested", max_iterations_field="max_frames")`。
-         循环条件只能引用 Context 字段，禁止 lambda、Service 内 while 或 Service 调用 Service。
+         `repeat(S(ComponentA) | S(ComponentB), until_field="quit_requested", max_iterations_field="max_frames").execute_all(ctx)`。
+         body 只能是 S(Service)、由 `|` 构建的管道或 parallel(...)；禁止传入自定义函数、lambda、
+         可调用对象或自行实现 execute_all 的对象。示例组件及字段仅在账本与入口契约声明时才可使用。
+         until_field 按 `bool(ctx.get(字段名))` 判断，不会比较状态字符串；"running" 等非空字符串也会终止循环。
+         max_iterations_field 必须对应正整数输入，或使用明确的正整数 max_iterations 上限。
+       - 若每帧需要转换输入或必须通过字符串相等判断结束条件，可以在 Pipeline 的 run(ctx) 中编写
+         `for ... in range(已验证的正整数上限)`，每轮通过 S(Service).execute_all(ctx) 或管道的
+         execute_all(ctx) 调用组件，按上面的同名输入规则同步 ctx.params 和 ctx.data，再进行下一次调用。
+         结束条件使用明确的 if 比较并 break；组件返回 Failure 时立即停止。禁止无上限循环、
+         Service 内循环编排或 Service 调用 Service，也不能把这段自定义循环包装为 repeat 的 body。
        `|` 永远只表示串行。并发度、失败策略和 merge 策略必须显式声明。
 
     【PipelineContext 的 API】：
-    - ctx.params: dict — 入口参数
+    - ctx.params: dict — 入口参数；同名键被 ctx.data 覆盖
+    - ctx.data: dict — 组件间数据池，包含已物化输入和组件输出
     - ctx.set(key, value): 写入数据池
-    - ctx.get(key, default=None): 读取数据池
+    - ctx.get(key, default=None): 优先读取数据池，键不存在时回退 ctx.params
     - ctx.record_step(component_id, result): 记录执行步骤
     - ctx.summary(): 返回执行摘要 dict
 
@@ -234,20 +254,55 @@ def handle_compose(args):
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
-        "pipeline_ids": ["组件ID_1", "组件ID_2"]
+        "pipeline_ids": ["组件ID_1", "组件ID_2"],
+        "inputs": {{"action": {{"type": "str"}}}},
+        "verification_cases": [{{"name": "真实入口示例", "params": {{"action": "具体操作"}}}}]
     }}
     """
 
     max_attempts = 3
     feedback = ""
+    frozen_metadata = None
+    planned_inputs = getattr(args, "pipeline_inputs", None)
+    planned_cases = getattr(args, "verification_cases", None)
+    if planned_inputs is not None or planned_cases is not None:
+        problems = validate_pipeline_inputs(planned_inputs, planned_cases)
+        if problems:
+            print("❌ Pipeline 入口规划无效：" + "; ".join(problems))
+            return False
+        system_prompt += "\n冻结的公开入口与场景（不得修改以通过验证）：\n" + json.dumps(
+            {"inputs": planned_inputs, "verification_cases": planned_cases}, ensure_ascii=False,
+        )
     for attempt in range(1, max_attempts + 1):
         try:
+            if frozen_metadata is None:
+                metadata = call_llm(
+                    system_prompt + "\n本轮只返回元数据，不返回 code/content。",
+                    f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1,
+                    progress_callback=getattr(args, "progress_callback", None),
+                    progress_label=f"Planning pipeline inputs: {args.name or args.cmd[:40]}",
+                )
+                if not isinstance(metadata, dict):
+                    raise ValueError("Pipeline metadata must be an object")
+                metadata = {key: value for key, value in metadata.items() if key not in {"code", "content"}}
+                if planned_inputs is not None:
+                    metadata.update(inputs=deepcopy(planned_inputs), verification_cases=deepcopy(planned_cases))
+                problems = validate_pipeline_inputs(metadata.get("inputs"), metadata.get("verification_cases"))
+                known_services = {bean.get("id") for bean in beans.get("beans", []) if bean.get("category") == "service"}
+                ids = metadata.get("pipeline_ids")
+                if not isinstance(ids, list) or not ids or any(not isinstance(cid, str) or cid not in known_services for cid in ids):
+                    problems.append("pipeline_ids must name registered Services")
+                if problems:
+                    feedback = repair_feedback(problems)
+                    raise ValueError("; ".join(problems))
+                frozen_metadata = deepcopy(metadata)
             result = generate_source(
                 call_llm, system_prompt, f"指令: {args.cmd}{feedback}",
                 Path(PIPELINES_DIR, f"{args.name or _slugify(args.cmd)}.py").as_posix(),
                 temperature=0.1,
                 progress_callback=getattr(args, "progress_callback", None),
                 progress_label=f"Composing pipeline: {args.name or args.cmd[:40]}",
+                frozen_metadata=frozen_metadata,
             )
 
             pipeline_ids = result.get("pipeline_ids", [])
@@ -300,6 +355,7 @@ def handle_compose(args):
             if not violations:
                 violations.extend(verify_pipeline_candidate(
                     Path.cwd(), generated_code, contract.get("inputs", {}), timeout=30,
+                    cases=frozen_metadata["verification_cases"],
                 ))
             if violations:
                 if not request_repair(
@@ -319,11 +375,12 @@ def handle_compose(args):
             print(f"❌ AI 编排失败: {e}")
             return False
 
-    print("🛡️  [生成预检通过] 语法、Contract 与隔离 Pipeline 运行均已通过")
+    print("🛡️  [生成预检通过] 语法、Contract 与明确入口场景运行通过；应用行为尚待验收")
 
     # 保存 pipeline 文件
     name = args.name or _slugify(args.cmd)
     filepath = _save_pipeline(generated_code, name, args.cmd)
+    input_contract = save_pipeline_inputs(filepath, frozen_metadata["inputs"], frozen_metadata["verification_cases"])
     print(f"💾 [Pipeline 已保存] {filepath}")
 
     # 注册到 routes.toml
@@ -331,6 +388,7 @@ def handle_compose(args):
         name=name,
         pipeline_path=filepath,
         description=args.cmd,
+        input_contract=input_contract,
     )
     print(f"📋 [路由已注册] {name} → {filepath}")
 

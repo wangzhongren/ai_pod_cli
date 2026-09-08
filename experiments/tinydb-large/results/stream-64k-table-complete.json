@@ -1,0 +1,148 @@
+{
+  "project": "msiemens/tinydb",
+  "revision": "4aa53111d72c9cbaafcdc039211caf49f4face6f",
+  "output": "<tmp>/aipod-tinydb-large-u_isilk8",
+  "allowed_files": [
+    "tinydb/table.py",
+    "tinydb/database.py"
+  ],
+  "acceptance_hash": "4d69e732726d87438551475bf7b51d5fc38df0fee6f31b64ddebf358131de15b",
+  "calls": [
+    {
+      "channel": "json",
+      "requests": [
+        {
+          "max_tokens": 8192,
+          "timeout": null,
+          "stream": true,
+          "response_characters": 338,
+          "reasoning_characters": 3181,
+          "usage": {
+            "prompt_tokens": 7937,
+            "completion_tokens": 753,
+            "total_tokens": 8690
+          },
+          "reasoning_tokens": 687,
+          "finish_reason": "stop",
+          "seconds": 7.455
+        }
+      ],
+      "seconds": 7.679
+    },
+    {
+      "channel": "xml",
+      "requests": [
+        {
+          "max_tokens": 65536,
+          "timeout": 600.0,
+          "stream": true,
+          "response_characters": 30913,
+          "reasoning_characters": 94867,
+          "seconds": 195.835,
+          "usage": {
+            "prompt_tokens": 8095,
+            "completion_tokens": 27951,
+            "total_tokens": 36046
+          },
+          "reasoning_tokens": 21443,
+          "finish_reason": "stop"
+        }
+      ],
+      "seconds": 195.837
+    },
+    {
+      "channel": "json",
+      "requests": [
+        {
+          "max_tokens": 8192,
+          "timeout": null,
+          "stream": true,
+          "response_characters": 0,
+          "reasoning_characters": 36611,
+          "seconds": 63.952,
+          "usage": {
+            "prompt_tokens": 8957,
+            "completion_tokens": 8192,
+            "total_tokens": 17149
+          },
+          "reasoning_tokens": 8192,
+          "finish_reason": "length"
+        }
+      ],
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192",
+      "seconds": 63.953
+    }
+  ],
+  "stages": [
+    {
+      "file": "tinydb/table.py",
+      "attempts": [
+        {
+          "scope_errors": [],
+          "original_tests": {
+            "exit_code": 0,
+            "summary": "222 passed in 0.13s",
+            "seconds": 0.275,
+            "log": "<tmp>/aipod-tinydb-large-u_isilk8/table-0-original.log"
+          },
+          "types": {
+            "exit_code": 0,
+            "summary": "Success: no issues found in 19 source files",
+            "seconds": 0.217,
+            "log": "<tmp>/aipod-tinydb-large-u_isilk8/table-0-types.log"
+          },
+          "acceptance": {
+            "exit_code": 0,
+            "summary": "1 passed, 33 deselected in 0.01s",
+            "seconds": 0.101,
+            "log": "<tmp>/aipod-tinydb-large-u_isilk8/table-0-acceptance.log"
+          },
+          "passed": true
+        }
+      ],
+      "status": "complete"
+    },
+    {
+      "file": "tinydb/database.py",
+      "attempts": [],
+      "status": "failed",
+      "error": "LLM 调用在 1 次重试后仍然失败: 模型输出达到 token 上限：finish_reason=length, characters=0, max_tokens=8192"
+    }
+  ],
+  "source_max_tokens": 65536,
+  "source_timeout_seconds": 600.0,
+  "max_retries": 1,
+  "stream": true,
+  "size": {
+    "tinydb": 2255,
+    "tests": 2098
+  },
+  "tested_import": "<tmp>/aipod-tinydb-large-u_isilk8/project/tinydb/__init__.py",
+  "baseline_tests": {
+    "exit_code": 0,
+    "summary": "222 passed in 0.22s",
+    "seconds": 0.347,
+    "log": "<tmp>/aipod-tinydb-large-u_isilk8/baseline-original.log"
+  },
+  "baseline_types": {
+    "exit_code": 0,
+    "summary": "Success: no issues found in 19 source files",
+    "seconds": 1.233,
+    "log": "<tmp>/aipod-tinydb-large-u_isilk8/baseline-types.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "15 failed, 1 passed, 18 errors in 0.16s",
+    "seconds": 0.266,
+    "log": "<tmp>/aipod-tinydb-large-u_isilk8/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "success": false,
+  "changed_files": [
+    "tinydb/table.py"
+  ],
+  "acceptance_unchanged": true,
+  "frozen_files": {
+    "tinydb/table.py": "eae2bb80d1a1104ddbe2973f24cca85504e36b0d96653360b7e2607efadf0da3"
+  }
+}

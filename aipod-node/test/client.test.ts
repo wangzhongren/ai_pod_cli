@@ -8,6 +8,7 @@ test("text generation sends no JSON mode and preserves the complete XML response
   context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     assert.equal(Object.hasOwn(body, "response_format"), false);
+    assert.equal(body.max_tokens, 65536);
     assert.equal(body.messages[0].content, system);
     return Response.json({ choices: [{ message: { content }, finish_reason: "stop" }] });
   });
@@ -31,6 +32,7 @@ test("JSON-mode client makes schema-only classification prompts acceptable to st
     assert.equal(url, "https://model.example/v1/chat/completions");
     const body = JSON.parse(String(init.body));
     assert.deepEqual(body.response_format, { type: "json_object" });
+    assert.equal(body.max_tokens, 32768);
     // Reproduce the configured endpoint's pre-generation JSON-mode validation.
     if (!body.messages.some((message: { content: string }) => /json/i.test(message.content))) {
       return new Response('Prompt must contain the word json', { status: 400 });
@@ -42,6 +44,28 @@ test("JSON-mode client makes schema-only classification prompts acceptable to st
   });
   const client = new OpenAICompatibleClient({ apiKey: "test-key", model: "test-model", baseUrl: "https://model.example/v1/" });
   assert.deepEqual(await client.complete(system, user), { stage: "services", targets: ["PriceOrder"] });
+});
+
+test("model defaults use a ten-minute deadline and preserve explicit limits", async (context) => {
+  const delays: Array<number | undefined> = [];
+  const timer = globalThis.setTimeout;
+  context.mock.method(globalThis, "setTimeout", (callback: () => void, delay?: number) => {
+    delays.push(delay);
+    return timer(callback, delay);
+  });
+  const budgets: number[] = [];
+  context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    budgets.push(body.max_tokens);
+    return Response.json({ choices: [{ message: { content: body.response_format ? '{}' : 'source' } }] });
+  });
+  await new OpenAICompatibleClient({ apiKey: "test", model: "test" }).complete("plan", "");
+  const custom = new OpenAICompatibleClient({ apiKey: "test", model: "test",
+    jsonMaxTokens: 512, sourceMaxTokens: 1024, timeoutMs: 5000 });
+  await custom.complete("plan", "");
+  await custom.completeText("source", "");
+  assert.deepEqual(budgets, [32768, 512, 1024]);
+  assert.deepEqual(delays, [600000, 5000, 5000]);
 });
 
 test("JSON-mode instruction preserves existing generation format requirements and source content", async (context) => {

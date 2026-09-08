@@ -1,0 +1,1020 @@
+{
+  "version": 6,
+  "objective": "创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。\n\n范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。\n\n需要具备：\n- 实体的位置、速度、尺寸和启用状态。\n- 固定时间步的更新循环，与图形显示/输入处理正确配合。\n- 矩形/圆形的基础碰撞检测及反弹，明确墙、球、挡板、砖块的行为。\n- 一个完整打砖块演示：左右移动挡板、发球、消除砖块、分数、胜负状态、暂停和重置。\n- 键盘左右方向键或 A/D 移动，空格发球，P 暂停，R 重置，关闭窗口可退出。\n- 核心更新逻辑可以在没有窗口、没有用户输入时独立运行，便于自动测试。\n- 可交互运行；也支持无窗口模式、固定帧数和固定随机种子，能明确结束，并保存最终画面 PNG 和可解析的 JSON 运行摘要。\n- 默认演示分辨率 800x600，无需下载外部图片、字体或音频资产。\n- 输出简明 README，说明依赖、交互启动、无窗口验证、保存截图及扩展实体/场景的方法。\n\n完整构建后必须执行真实验证。至少覆盖：运行 120 帧后正常结束；墙面/挡板反弹；砖块命中及分数变化；暂停不更新物理位置；重置恢复初始状态。验证必须失败时返回非零状态，不能用空测试或固定成功输出代替。\n\n请自主完成设计、代码生成、组装与验证，交付可以启动的引擎和演示。",
+  "current_stage": "interfaces",
+  "stages": {
+    "models": {
+      "status": "complete",
+      "plan": {
+        "pod_name": "GameEngineCoreModels",
+        "reuse_components": [],
+        "components": [
+          {
+            "name": "Vec2",
+            "category": "model",
+            "description": "Runtime 2D vector value object representing x/y coordinates, velocities, size vectors, etc. It is NOT a persistent Model and must never be registered with ModelRepository as an ORM table. Class will be implemented as a Python dataclass (or simple class) with immutable-style arithmetic helpers for game code. Constructor: Vec2(x: float, y: float). Fields: x: float, y: float. Methods: copy() -> Vec2; __add__(Vec2) -> Vec2; __sub__(Vec2) -> Vec2; __mul__(float) -> Vec2; __rmul__(float) -> Vec2; length() -> float; length_squared() -> float; normalize() -> Vec2; dot(Vec2) -> float; __iter__; __repr__; __eq__. All arithmetic creates the correct result, and invalid types raise clear exceptions. Keep implementation stdlib-only with no pygame dependency so it can run headless.",
+            "depends_on": [],
+            "models": [],
+            "requires": [],
+            "provides": [
+              "vector_arithmetic"
+            ],
+            "invariants": [
+              "x and y are finite numeric float values",
+              "normalize of zero-length vector raises ValueError or returns zero vector consistently",
+              "never persisted to database"
+            ]
+          },
+          {
+            "name": "GameEntity",
+            "category": "model",
+            "description": "Runtime value model describing a simulated game entity. Used by later physics, rendering, and game logic services. NOT a persistent model: never create an ORM table for this class. Class will be a Python dataclass with normal mutable fields because the world updates positions and velocities every tick. Fields: id: str (unique within a scene); kind: str (semantic category such as \"ball\", \"paddle\", \"brick\", \"wall\", or any future extension); position: Vec2 (entity center point); velocity: Vec2 (units per second); size: Vec2 (for shape=\"rect\" this is width/height; for shape=\"circle\" both components are equal and equal the diameter); shape: str (must be \"rect\" or \"circle\", default \"rect\"); enabled: bool (default True, disabled entities are ignored by physics/collision/render); static: bool (default False, static entities do not move but still collide, used for wall/bricks). Convenience read-only properties in generated code: radius -> float: returns size.x/2 when shape == \"circle\", otherwise raises/AttributeError; center -> Vec2: alias of position. Method: copy() -> GameEntity.",
+            "depends_on": [],
+            "models": [
+              "Vec2"
+            ],
+            "requires": [],
+            "provides": [
+              "simulated_game_entity"
+            ],
+            "invariants": [
+              "position and velocity are finite numbers",
+              "size.x and size.y are finite, non-negative numbers",
+              "when shape == 'circle', size.x == size.y (i.e. diameter)",
+              "enabled and static are booleans",
+              "kind is a non-empty string",
+              "id is unique among all entities in one running scene unless explicitly grouped by services",
+              "never persisted to database"
+            ]
+          }
+        ],
+        "pipelines": [],
+        "interfaces": [],
+        "config_additions": {}
+      },
+      "reduction": {
+        "stage": "models",
+        "status": "accepted",
+        "fragments": [
+          {
+            "id": "Vec2",
+            "kind": "model",
+            "decision": "Runtime 2D vector value object representing x/y coordinates, velocities, size vectors, etc. It is NOT a persistent Model and must never be registered with ModelRepository as an ORM table. Class will be implemented as a Python dataclass (or simple class) with immutable-style arithmetic helpers for game code. Constructor: Vec2(x: float, y: float). Fields: x: float, y: float. Methods: copy() -> Vec2; __add__(Vec2) -> Vec2; __sub__(Vec2) -> Vec2; __mul__(float) -> Vec2; __rmul__(float) -> Vec2; length() -> float; length_squared() -> float; normalize() -> Vec2; dot(Vec2) -> float; __iter__; __repr__; __eq__. All arithmetic creates the correct result, and invalid types raise clear exceptions. Keep implementation stdlib-only with no pygame dependency so it can run headless.",
+            "dependencies": [],
+            "models": [
+              "Vec2"
+            ],
+            "requires": [],
+            "provides": [
+              "vector_arithmetic"
+            ],
+            "invariants": [
+              "x and y are finite numeric float values",
+              "normalize of zero-length vector raises ValueError or returns zero vector consistently",
+              "never persisted to database"
+            ],
+            "status": "accepted"
+          },
+          {
+            "id": "GameEntity",
+            "kind": "model",
+            "decision": "Runtime value model describing a simulated game entity. Used by later physics, rendering, and game logic services. NOT a persistent model: never create an ORM table for this class. Class will be a Python dataclass with normal mutable fields because the world updates positions and velocities every tick. Fields: id: str (unique within a scene); kind: str (semantic category such as \"ball\", \"paddle\", \"brick\", \"wall\", or any future extension); position: Vec2 (entity center point); velocity: Vec2 (units per second); size: Vec2 (for shape=\"rect\" this is width/height; for shape=\"circle\" both components are equal and equal the diameter); shape: str (must be \"rect\" or \"circle\", default \"rect\"); enabled: bool (default True, disabled entities are ignored by physics/collision/render); static: bool (default False, static entities do not move but still collide, used for wall/bricks). Convenience read-only properties in generated code: radius -> float: returns size.x/2 when shape == \"circle\", otherwise raises/AttributeError; center -> Vec2: alias of position. Method: copy() -> GameEntity.",
+            "dependencies": [],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [],
+            "provides": [
+              "simulated_game_entity"
+            ],
+            "invariants": [
+              "position and velocity are finite numbers",
+              "size.x and size.y are finite, non-negative numbers",
+              "when shape == 'circle', size.x == size.y (i.e. diameter)",
+              "enabled and static are booleans",
+              "kind is a non-empty string",
+              "id is unique among all entities in one running scene unless explicitly grouped by services",
+              "never persisted to database"
+            ],
+            "status": "accepted"
+          }
+        ],
+        "conflicts": [],
+        "warnings": [],
+        "graph": {
+          "Vec2": {
+            "dependencies": [],
+            "models": [
+              "Vec2"
+            ],
+            "requires": [],
+            "provides": [
+              "vector_arithmetic"
+            ]
+          },
+          "GameEntity": {
+            "dependencies": [],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [],
+            "provides": [
+              "simulated_game_entity"
+            ]
+          }
+        }
+      },
+      "last_evidence": {
+        "status": "accepted",
+        "evidence": [],
+        "repair_scope": null
+      },
+      "runtime_checks": [
+        {
+          "component": "Vec2",
+          "status": "passed",
+          "check": "isolated_import_di_and_smoke"
+        },
+        {
+          "component": "GameEntity",
+          "status": "passed",
+          "check": "isolated_import_di_and_smoke"
+        }
+      ]
+    },
+    "providers": {
+      "status": "complete",
+      "plan": {
+        "pod_name": "2d_game_engine_providers",
+        "reuse_components": [],
+        "components": [],
+        "pipelines": [],
+        "interfaces": [],
+        "config_additions": {}
+      },
+      "reduction": {
+        "stage": "providers",
+        "status": "accepted",
+        "fragments": [],
+        "conflicts": [],
+        "warnings": [],
+        "graph": {}
+      },
+      "runtime_checks": []
+    },
+    "services": {
+      "status": "complete",
+      "plan": {
+        "pod_name": "breakout_engine_services",
+        "reuse_components": [
+          "ConfigStore",
+          "Vec2",
+          "GameEntity"
+        ],
+        "components": [
+          {
+            "name": "BreakoutSimulationService",
+            "category": "service",
+            "description": "Core fixed-timestep game simulation service for the Breakout demo. It does not open a window, read keyboard hardware, or render; it only updates a machine-readable Context. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nCoordinate contract: all GameEntity.rect entities use position as the AABB top-left corner; ball uses position as top-left of its bounding square, and its circle center is position + size/2. kind values used by this service: paddle, ball, brick. Enabled False semantic: disabled bricks are ignored entirely. \n\nState model stored on Context: ctx.entities is a list of GameEntity; ctx.game_state in READY|PLAYING|PAUSED|WON|LOST; ctx.score, ctx.lives, ctx.ball_attached, ctx.previous_commands, ctx.simulation_time, ctx.last_frame_events. \n\nInput contract: ctx.commands is a dict with booleans left, right, launch, pause, reset. left/right are continuous held flags; launch/pause/reset are one-shot/edge-triggered and compared against ctx.previous_commands. The service defaults missing commands to False and initializes ctx.previous_commands on first call. \n\nexecute algorithm: 1) If ctx.entities is absent/empty, create a standard Breakout scene from ConfigStore: screen size, paddle near bottom, ball attached to paddle center top in READY state, a grid of enabled brick rects, no wall entities are stored; boundary walls are virtual and handled during collision. 2) If reset edge is true, rebuild the scene and return without changing physics. 3) If pause edge is true, toggle between READY/PLAYING and PAUSED; if entering PAUSED, no physics change is allowed for that execute call. 4) If state is PAUSED, WON, or LOST, do not integrate movement or change score; only still record last_frame_events as empty and update no positions. 5) If state is READY and launch edge is true, set ctx.ball_attached=False, set ctx.game_state=PLAYING, and give the ball a deterministic initial velocity at config-provided angle and speed. 6) When READY and not launching, move the paddle with left/right commands and move the attached ball horizontally with the paddle so it stays centered above the paddle. 7) When PLAYING, move paddle from left/right and clamp it to screen bounds and horizontal virtual wall region; move only entities with kind=ball because paddle is deterministic-controlled and bricks/walls are static. 8) Boundary collision after ball integration: top wall reflects vertical velocity, left and right virtual walls reflect horizontal velocity; there is no bottom wall. If the ball's top coordinate leaves below screen_height + margin, lose a life: if lives remain, decrement lives and reset ball_attached=True/game_state=READY; if lives become less than base_lives? Not used; if lives reaches 0 before the loss? Implement proper life loss rule in code and document it in code comments; service must never show negative lives. 9) Paddle collision: if ball is moving downward and its AABB overlaps paddle AABB, reflect vertical velocity and make the horizontal bounce angle depend on where the ball hits relative to the paddle center; normalize magnitude back to config ball_speed; place ball just above paddle. 10) Brick collision: after paddle handling, test the circle-rect intersection against every enabled brick. For each hit, set brick.enabled=False, increase ctx.score by ConfigStore game.points_per_brick, reflect ball velocity using penetration normal/previous direction, and append event brick_hit:<brick_id>. 11) After all collisions, if no enabled brick remains, set ctx.game_state=WON. 12) Record last_frame_events list for this step e.g. wall_top, wall_left, wall_right, paddle_hit, brick_hit:<id>, life_lost, win, reset. 13) Bump ctx.frame_count once for every execute call and advance ctx.simulation_time by dt only when physics is actually simulated. \n\nThe service is deterministic: no random number generator is used and the same commands/dt sequence produces identical state. It therefore can be exercised headlessly by tests or by a later Pipeline repeat loop.",
+            "depends_on": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "dt",
+              "commands"
+            ],
+            "provides": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "ball_attached",
+              "last_frame_events",
+              "simulation_time"
+            ],
+            "invariants": [
+              "When ctx.game_state is PAUSED, a BreakoutSimulationService.execute call never changes the position/velocity of any entity or the score, unless a reset edge is also present.",
+              "Ball speed magnitude remains equal to game.ball_speed after every non-READY, non-paused simulation step.",
+              "Disabled entities are never drawn or involved in brick collision resolution.",
+              "Score increases only when a brick was actually hit during that step.",
+              "Reset edge always restores score=0, base lives, all bricks enabled, no ball velocity, and READY state.",
+              "No entity position falls outside the configured screen bounds after boundary/wall handling."
+            ]
+          },
+          {
+            "name": "PngSnapshotService",
+            "category": "service",
+            "description": "Renders the current Breakout world to a PNG file using pygame-ce without requiring a visible display. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe service reads ctx.entities (list of GameEntity), ctx.game_state, ctx.score, ctx.lives, ctx.frame_count and optionally ctx.screenshot_path. If ctx.screenshot_path is absent, use ConfigStore value run.screenshot_path and set ctx.screenshot_path to the resolved path. It creates the parent output directory when needed, creates a pygame.Surface of size game.screen_width x game.screen_height, fills the background, draws every enabled entity as follows: kind=ball as a filled circle using its position+size/2 as center; kind=paddle and kind=brick as filled rectangles using position/size. No external images/fonts/assets are loaded. It creates the surface with a plain pygame.Surface; if SDL needs initialization, it initializes pygame only for the dummy video driver and never opens a visible window. \n\nThe current frame is saved with pygame.image.save(surface, path). The service never mutates ctx.entities, ctx.score, ctx.game_state, ctx.lives. It does not import or call any other Service.",
+            "depends_on": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state"
+            ],
+            "provides": [
+              "screenshot_path"
+            ],
+            "invariants": [
+              "PngSnapshotService never modifies simulation state/entities.",
+              "The provided screenshot_path points to a generated PNG file after execute succeeds.",
+              "No external image, font, or audio asset is required."
+            ]
+          },
+          {
+            "name": "RunSummaryService",
+            "category": "service",
+            "description": "Writes a machine-readable JSON summary of a completed/headless Breakout run. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe summary path resolution order: ctx.summary_path if provided, else ConfigStore run.summary_path; the resolved path is set back as ctx.summary_path. It creates the parent directory if needed. JSON written contains at least: success (bool equal to game_state in WON|LOST? success is True when simulation reached an explicit terminal state without error, not necessarily won; include also outcome field), outcome, final_state, score, lives, frame_count, total_bricks, remaining_bricks, ball_position {x,y}, paddle_position {x,y}, output_files {screenshot_path, summary_path}, and an entities array with id/kind/enabled/position/size. All serialized values are JSON-native types; no custom object dumps. The service does not depend on simulation internals other than reading fields from Context. It does not call another Service. It must not produce non-zero exit by itself; file errors shall raise a clear exception so the test runner detects failure.",
+            "depends_on": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "frame_count"
+            ],
+            "provides": [
+              "summary_path"
+            ],
+            "invariants": [
+              "The output file contains valid JSON with at least final_state, score, lives, frame_count.",
+              "RunSummaryService does not mutate ctx.entities, score, lives, or game_state.",
+              "The summary is parseable by standard json.load."
+            ]
+          }
+        ],
+        "pipelines": [],
+        "interfaces": [],
+        "config_additions": {
+          "game": {
+            "screen_width": {
+              "value": 800,
+              "comment": "Playable screen width in pixels; default demo resolution."
+            },
+            "screen_height": {
+              "value": 600,
+              "comment": "Playable screen height in pixels; default demo resolution."
+            },
+            "fixed_timestep": {
+              "value": 0.016666666666666666,
+              "comment": "Fixed simulation timestep in seconds; 1/60."
+            },
+            "paddle_width": {
+              "value": 120,
+              "comment": "Paddle rectangle width in pixels."
+            },
+            "paddle_height": {
+              "value": 16,
+              "comment": "Paddle rectangle height in pixels."
+            },
+            "paddle_bottom_margin": {
+              "value": 24,
+              "comment": "Paddle bottom offset from screen bottom in pixels."
+            },
+            "paddle_speed": {
+              "value": 420,
+              "comment": "Paddle horizontal speed in pixels per second."
+            },
+            "ball_diameter": {
+              "value": 14,
+              "comment": "Ball diameter in pixels."
+            },
+            "ball_speed": {
+              "value": 330,
+              "comment": "Ball fixed speed magnitude in pixels per second."
+            },
+            "ball_start_angle_deg": {
+              "value": 60,
+              "comment": "Initial launch angle from vertical in degrees."
+            },
+            "base_lives": {
+              "value": 3,
+              "comment": "Starting life count."
+            },
+            "points_per_brick": {
+              "value": 10,
+              "comment": "Score awarded for each brick destroyed."
+            },
+            "brick_rows": {
+              "value": 6,
+              "comment": "Number of brick rows."
+            },
+            "brick_cols": {
+              "value": 10,
+              "comment": "Number of brick columns."
+            },
+            "brick_top_offset": {
+              "value": 64,
+              "comment": "Vertical offset where the brick grid starts."
+            },
+            "brick_height": {
+              "value": 20,
+              "comment": "Individual brick height in pixels."
+            },
+            "brick_horizontal_margin": {
+              "value": 12,
+              "comment": "Screen side margin for brick grid in pixels."
+            },
+            "brick_gap": {
+              "value": 4,
+              "comment": "Gap between bricks in pixels."
+            }
+          },
+          "run": {
+            "screenshot_path": {
+              "value": "out/breakout_final.png",
+              "comment": "Path where PngSnapshotService writes the final frame PNG."
+            },
+            "summary_path": {
+              "value": "out/run_summary.json",
+              "comment": "Path where RunSummaryService writes the parseable JSON run summary."
+            }
+          }
+        }
+      },
+      "reduction": {
+        "stage": "services",
+        "status": "accepted",
+        "fragments": [
+          {
+            "id": "BreakoutSimulationService",
+            "kind": "service",
+            "decision": "Core fixed-timestep game simulation service for the Breakout demo. It does not open a window, read keyboard hardware, or render; it only updates a machine-readable Context. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nCoordinate contract: all GameEntity.rect entities use position as the AABB top-left corner; ball uses position as top-left of its bounding square, and its circle center is position + size/2. kind values used by this service: paddle, ball, brick. Enabled False semantic: disabled bricks are ignored entirely. \n\nState model stored on Context: ctx.entities is a list of GameEntity; ctx.game_state in READY|PLAYING|PAUSED|WON|LOST; ctx.score, ctx.lives, ctx.ball_attached, ctx.previous_commands, ctx.simulation_time, ctx.last_frame_events. \n\nInput contract: ctx.commands is a dict with booleans left, right, launch, pause, reset. left/right are continuous held flags; launch/pause/reset are one-shot/edge-triggered and compared against ctx.previous_commands. The service defaults missing commands to False and initializes ctx.previous_commands on first call. \n\nexecute algorithm: 1) If ctx.entities is absent/empty, create a standard Breakout scene from ConfigStore: screen size, paddle near bottom, ball attached to paddle center top in READY state, a grid of enabled brick rects, no wall entities are stored; boundary walls are virtual and handled during collision. 2) If reset edge is true, rebuild the scene and return without changing physics. 3) If pause edge is true, toggle between READY/PLAYING and PAUSED; if entering PAUSED, no physics change is allowed for that execute call. 4) If state is PAUSED, WON, or LOST, do not integrate movement or change score; only still record last_frame_events as empty and update no positions. 5) If state is READY and launch edge is true, set ctx.ball_attached=False, set ctx.game_state=PLAYING, and give the ball a deterministic initial velocity at config-provided angle and speed. 6) When READY and not launching, move the paddle with left/right commands and move the attached ball horizontally with the paddle so it stays centered above the paddle. 7) When PLAYING, move paddle from left/right and clamp it to screen bounds and horizontal virtual wall region; move only entities with kind=ball because paddle is deterministic-controlled and bricks/walls are static. 8) Boundary collision after ball integration: top wall reflects vertical velocity, left and right virtual walls reflect horizontal velocity; there is no bottom wall. If the ball's top coordinate leaves below screen_height + margin, lose a life: if lives remain, decrement lives and reset ball_attached=True/game_state=READY; if lives become less than base_lives? Not used; if lives reaches 0 before the loss? Implement proper life loss rule in code and document it in code comments; service must never show negative lives. 9) Paddle collision: if ball is moving downward and its AABB overlaps paddle AABB, reflect vertical velocity and make the horizontal bounce angle depend on where the ball hits relative to the paddle center; normalize magnitude back to config ball_speed; place ball just above paddle. 10) Brick collision: after paddle handling, test the circle-rect intersection against every enabled brick. For each hit, set brick.enabled=False, increase ctx.score by ConfigStore game.points_per_brick, reflect ball velocity using penetration normal/previous direction, and append event brick_hit:<brick_id>. 11) After all collisions, if no enabled brick remains, set ctx.game_state=WON. 12) Record last_frame_events list for this step e.g. wall_top, wall_left, wall_right, paddle_hit, brick_hit:<id>, life_lost, win, reset. 13) Bump ctx.frame_count once for every execute call and advance ctx.simulation_time by dt only when physics is actually simulated. \n\nThe service is deterministic: no random number generator is used and the same commands/dt sequence produces identical state. It therefore can be exercised headlessly by tests or by a later Pipeline repeat loop.",
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "dt",
+              "commands"
+            ],
+            "provides": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "ball_attached",
+              "last_frame_events",
+              "simulation_time"
+            ],
+            "invariants": [
+              "When ctx.game_state is PAUSED, a BreakoutSimulationService.execute call never changes the position/velocity of any entity or the score, unless a reset edge is also present.",
+              "Ball speed magnitude remains equal to game.ball_speed after every non-READY, non-paused simulation step.",
+              "Disabled entities are never drawn or involved in brick collision resolution.",
+              "Score increases only when a brick was actually hit during that step.",
+              "Reset edge always restores score=0, base lives, all bricks enabled, no ball velocity, and READY state.",
+              "No entity position falls outside the configured screen bounds after boundary/wall handling."
+            ],
+            "status": "accepted"
+          },
+          {
+            "id": "PngSnapshotService",
+            "kind": "service",
+            "decision": "Renders the current Breakout world to a PNG file using pygame-ce without requiring a visible display. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe service reads ctx.entities (list of GameEntity), ctx.game_state, ctx.score, ctx.lives, ctx.frame_count and optionally ctx.screenshot_path. If ctx.screenshot_path is absent, use ConfigStore value run.screenshot_path and set ctx.screenshot_path to the resolved path. It creates the parent output directory when needed, creates a pygame.Surface of size game.screen_width x game.screen_height, fills the background, draws every enabled entity as follows: kind=ball as a filled circle using its position+size/2 as center; kind=paddle and kind=brick as filled rectangles using position/size. No external images/fonts/assets are loaded. It creates the surface with a plain pygame.Surface; if SDL needs initialization, it initializes pygame only for the dummy video driver and never opens a visible window. \n\nThe current frame is saved with pygame.image.save(surface, path). The service never mutates ctx.entities, ctx.score, ctx.game_state, ctx.lives. It does not import or call any other Service.",
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state"
+            ],
+            "provides": [
+              "screenshot_path"
+            ],
+            "invariants": [
+              "PngSnapshotService never modifies simulation state/entities.",
+              "The provided screenshot_path points to a generated PNG file after execute succeeds.",
+              "No external image, font, or audio asset is required."
+            ],
+            "status": "accepted"
+          },
+          {
+            "id": "RunSummaryService",
+            "kind": "service",
+            "decision": "Writes a machine-readable JSON summary of a completed/headless Breakout run. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe summary path resolution order: ctx.summary_path if provided, else ConfigStore run.summary_path; the resolved path is set back as ctx.summary_path. It creates the parent directory if needed. JSON written contains at least: success (bool equal to game_state in WON|LOST? success is True when simulation reached an explicit terminal state without error, not necessarily won; include also outcome field), outcome, final_state, score, lives, frame_count, total_bricks, remaining_bricks, ball_position {x,y}, paddle_position {x,y}, output_files {screenshot_path, summary_path}, and an entities array with id/kind/enabled/position/size. All serialized values are JSON-native types; no custom object dumps. The service does not depend on simulation internals other than reading fields from Context. It does not call another Service. It must not produce non-zero exit by itself; file errors shall raise a clear exception so the test runner detects failure.",
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "frame_count"
+            ],
+            "provides": [
+              "summary_path"
+            ],
+            "invariants": [
+              "The output file contains valid JSON with at least final_state, score, lives, frame_count.",
+              "RunSummaryService does not mutate ctx.entities, score, lives, or game_state.",
+              "The summary is parseable by standard json.load."
+            ],
+            "status": "accepted"
+          }
+        ],
+        "conflicts": [],
+        "warnings": [],
+        "graph": {
+          "BreakoutSimulationService": {
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "dt",
+              "commands"
+            ],
+            "provides": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "ball_attached",
+              "last_frame_events",
+              "simulation_time"
+            ]
+          },
+          "PngSnapshotService": {
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state"
+            ],
+            "provides": [
+              "screenshot_path"
+            ]
+          },
+          "RunSummaryService": {
+            "dependencies": [
+              "ConfigStore"
+            ],
+            "models": [
+              "Vec2",
+              "GameEntity"
+            ],
+            "requires": [
+              "entities",
+              "game_state",
+              "score",
+              "lives",
+              "frame_count"
+            ],
+            "provides": [
+              "summary_path"
+            ]
+          }
+        }
+      },
+      "last_evidence": {
+        "status": "accepted",
+        "evidence": [],
+        "repair_scope": null
+      },
+      "runtime_checks": [
+        {
+          "component": "BreakoutSimulationService",
+          "status": "passed",
+          "check": "isolated_import_di_and_smoke"
+        },
+        {
+          "component": "PngSnapshotService",
+          "status": "passed",
+          "check": "isolated_import_di_and_smoke"
+        },
+        {
+          "component": "RunSummaryService",
+          "status": "passed",
+          "check": "isolated_import_di_and_smoke"
+        }
+      ]
+    },
+    "pipelines": {
+      "status": "complete",
+      "plan": {
+        "pod_name": "breakout_headless_pipeline",
+        "reuse_components": [
+          "BreakoutSimulationService",
+          "PngSnapshotService",
+          "RunSummaryService"
+        ],
+        "components": [],
+        "pipelines": [
+          {
+            "name": "step_breakout_simulation",
+            "instruction": "推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。",
+            "execution": {
+              "mode": "sequential",
+              "concurrency": 1,
+              "failure_policy": "fail_fast",
+              "merge": "overwrite",
+              "batch_size": 1,
+              "until_field": null,
+              "max_iterations_field": null
+            }
+          },
+          {
+            "name": "run_headless_breakout",
+            "instruction": "运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。",
+            "execution": {
+              "mode": "sequential",
+              "concurrency": 1,
+              "failure_policy": "fail_fast",
+              "merge": "overwrite",
+              "batch_size": 1,
+              "until_field": null,
+              "max_iterations_field": null
+            }
+          }
+        ],
+        "interfaces": [],
+        "config_additions": {
+          "run": {
+            "max_frames": {
+              "value": 120,
+              "comment": "无头运行最大帧数；超过此帧数即使游戏未结束也强制停止"
+            },
+            "random_seed": {
+              "value": 42,
+              "comment": "固定随机种子，保证可复现；设为 null 则使用系统随机"
+            }
+          }
+        }
+      },
+      "reduction": {
+        "stage": "pipelines",
+        "status": "accepted",
+        "fragments": [],
+        "conflicts": [],
+        "warnings": [],
+        "graph": {}
+      },
+      "runtime_checks": [
+        {
+          "pipeline": "run_headless_breakout",
+          "status": "passed",
+          "check": "isolated_pipeline_execution"
+        }
+      ]
+    },
+    "interfaces": {
+      "status": "in_progress",
+      "plan": {
+        "pod_name": "breakout_interface",
+        "reuse_components": [],
+        "components": [],
+        "pipelines": [],
+        "interfaces": [
+          {
+            "name": "breakout_engine",
+            "kind": "cli",
+            "platform": "cross-platform",
+            "instruction": "Deliver a runnable 2D Breakout game engine interface. It exposes two frozen routes: 'step_breakout_simulation' (interactive frame-by-frame stepping) and 'run_headless_breakout' (headless full game run). The interface supports two modes selected by optional CLI flags: '--mode interactive' (default) opens a pygame window and repeatedly calls 'step_breakout_simulation' with commands built from keyboard input; '--mode headless' invokes 'run_headless_breakout' once with configurable max_frames, seed, screenshot_path, summary_path and then exits. Other flags: --max-frames, --seed, --screenshot, --summary. The adapter must only orchestrate and must not know any concrete Model/Provider/Service class paths.",
+            "adapter": {
+              "entry_path": "interfaces/breakout_engine/adapter.py",
+              "class_name": "GeneratedInterfaceAdapter",
+              "path": "interfaces/breakout_engine/adapter.py"
+            },
+            "artifacts": [
+              {
+                "path": "interfaces/breakout_engine/adapter.py",
+                "role": "adapter_entry",
+                "format": "python",
+                "instruction": "Define GeneratedInterfaceAdapter that inherits from ai_pod_cli.interface.InterfaceAdapter. Implement the standard interface method (e.g. run) to parse the CLI parameters, delegate to interactive_runner or headless_runner module, and never import Models/Providers/Services directly. All route invocations must be done through the adapter base class helper that exposes the frozen pipeline routes defined for this interface: 'step_breakout_simulation' and 'run_headless_breakout'."
+              },
+              {
+                "path": "interfaces/breakout_engine/arg_parser.py",
+                "role": "adapter_module",
+                "format": "python",
+                "instruction": "Provide parse_args(argv) that returns a plain dict with normalized keys: mode (interactive|headless, default interactive), max_frames (int, default 120), seed (int|None), screenshot_path (str|None), summary_path (str|None), and raw extra flags. Use only Python standard library argparse; do not access infrastructure components. This module is the single place for argument parsing."
+              },
+              {
+                "path": "interfaces/breakout_engine/input_state.py",
+                "role": "adapter_module",
+                "format": "python",
+                "instruction": "Implement a KeyboardState class that listens to pygame KEYDOWN/KEYUP events and builds the commands dict used by the step route. The dict must contain keys: left, right, fire, pause, reset with boolean values. Map Left/A to left, Right/D to right, Space to fire, P to pause, R to reset. Provide clear_event_queue() for non-interactive callers. Do not create any window or service."
+              },
+              {
+                "path": "interfaces/breakout_engine/interactive_runner.py",
+                "role": "adapter_module",
+                "format": "python",
+                "instruction": "Provide run_interactive(params) that starts a pygame window at 800x600 with clock, sets up KeyboardState, then in a loop: handles QUIT event to exit, collects commands from KeyboardState, calls the step route 'step_breakout_simulation' with {'commands': <commands>}, draws a basic visual representation of the returned entities and game state using pygame primitives only (rectangles/circles), and refreshes the display. The loop must use a fixed timestep (e.g. 60 FPS). The function may import pygame but must not invoke any model/service provider directly; all simulation updates go through the exposed route call on the adapter base class."
+              },
+              {
+                "path": "interfaces/breakout_engine/headless_runner.py",
+                "role": "adapter_module",
+                "format": "python",
+                "instruction": "Provide run_headless(params) that calls the route 'run_headless_breakout' once with params: max_frames (int), seed (optional), screenshot_path (str), summary_path (str). Return the dict produced by the route. Do not import or reference any concrete service/model class. This module must be importable and runnable without a display (no pygame window), and is intended for automated testing."
+              },
+              {
+                "path": "interfaces/breakout_engine/README.md",
+                "role": "docs",
+                "format": "markdown",
+                "instruction": "Write concise user documentation covering: project purpose; dependencies (python>=3.10, pygame-ce, ai-pod-cli); interactive launch command (`ai_pod_cli interface --project-root . run breakout_engine -- --mode interactive`); headless verification command (`--mode headless --max-frames 120 --seed 42 --screenshot out.png --summary summary.json`); controls list; file output description; and a short extension guide for adding new entity types or scenes by modifying game behavior through route params."
+              },
+              {
+                "path": "interfaces/breakout_engine/metadata.json",
+                "role": "metadata",
+                "format": "json",
+                "instruction": "Produce metadata describing the interface: id 'breakout_engine', kind 'cli', version '0.1.0', supported platforms ['cross-platform'], exposed routes names ['step_breakout_simulation', 'run_headless_breakout'], and dependency list ['pygame-ce', 'ai-pod-cli']."
+              },
+              {
+                "path": "interfaces/breakout_engine/install.sh",
+                "role": "installer",
+                "format": "shell",
+                "instruction": "Write a POSIX shell script that installs dependencies without root if possible: create a virtual environment (optionally) or install pygame-ce and any missing ai-pod-cli package using pip. The script should be idempotent, not modify system config outside normal package installation, and exit with zero on success."
+              },
+              {
+                "path": "interfaces/breakout_engine/uninstall.sh",
+                "role": "installer",
+                "format": "shell",
+                "instruction": "Write a POSIX shell script that best-effort removes the Python packages installed by install.sh (pygame-ce and ai-pod-cli). It may uninstall using pip and must exit with zero even if packages are absent to remain idempotent."
+              }
+            ],
+            "lifecycle": {
+              "run": [
+                "{python}",
+                "-m",
+                "ai_pod_cli",
+                "interface",
+                "--project-root",
+                "{project_root}",
+                "run",
+                "breakout_engine"
+              ],
+              "install": [
+                "sh",
+                "interfaces/breakout_engine/install.sh"
+              ],
+              "uninstall": [
+                "sh",
+                "interfaces/breakout_engine/uninstall.sh"
+              ]
+            },
+            "permissions": [
+              "filesystem_write"
+            ],
+            "support": {
+              "level": "supported",
+              "manual_steps": []
+            },
+            "verify": [
+              {
+                "name": "adapter_smoke",
+                "kind": "runtime",
+                "required": true,
+                "command": [
+                  "{python}",
+                  "-m",
+                  "ai_pod_cli",
+                  "interface",
+                  "--project-root",
+                  "{project_root}",
+                  "smoke",
+                  "breakout_engine"
+                ],
+                "timeout": 60
+              }
+            ]
+          }
+        ],
+        "config_additions": {}
+      },
+      "reduction": {
+        "stage": "interfaces",
+        "status": "accepted",
+        "fragments": [],
+        "conflicts": [],
+        "warnings": [],
+        "graph": {}
+      }
+    }
+  },
+  "agent": {
+    "status": "succeeded",
+    "step": 6,
+    "history": [
+      {
+        "step": 1,
+        "action": "generate_models",
+        "stage": "models",
+        "status": "succeeded",
+        "decision_status": "policy_selected",
+        "summary": "The models stage is the earliest incomplete stage.",
+        "success_criteria": [
+          "The models stage is complete and frozen."
+        ],
+        "observation": {
+          "current_stage": "models",
+          "stages": {
+            "models": "complete",
+            "providers": "pending",
+            "services": "pending",
+            "pipelines": "pending",
+            "interfaces": "pending"
+          },
+          "component_counts": {
+            "model": 2,
+            "provider": 3,
+            "service": 0
+          },
+          "routes": [],
+          "verification": {
+            "status": "pending",
+            "attempts": 0,
+            "repairs": 0
+          },
+          "recent_actions": []
+        }
+      },
+      {
+        "step": 2,
+        "action": "generate_providers",
+        "stage": "providers",
+        "status": "succeeded",
+        "decision_status": "policy_selected",
+        "summary": "The providers stage is the earliest incomplete stage.",
+        "success_criteria": [
+          "The providers stage is complete and frozen."
+        ],
+        "observation": {
+          "current_stage": "providers",
+          "stages": {
+            "models": "complete",
+            "providers": "complete",
+            "services": "pending",
+            "pipelines": "pending",
+            "interfaces": "pending"
+          },
+          "component_counts": {
+            "model": 2,
+            "provider": 3,
+            "service": 0
+          },
+          "routes": [],
+          "verification": {
+            "status": "pending",
+            "attempts": 0,
+            "repairs": 0
+          },
+          "recent_actions": [
+            {
+              "step": 1,
+              "action": "generate_models",
+              "stage": "models",
+              "status": "succeeded",
+              "summary": "The models stage is the earliest incomplete stage."
+            }
+          ]
+        }
+      },
+      {
+        "step": 3,
+        "action": "generate_services",
+        "stage": "services",
+        "status": "succeeded",
+        "decision_status": "policy_selected",
+        "summary": "The services stage is the earliest incomplete stage.",
+        "success_criteria": [
+          "The services stage is complete and frozen."
+        ],
+        "observation": {
+          "current_stage": "services",
+          "stages": {
+            "models": "complete",
+            "providers": "complete",
+            "services": "complete",
+            "pipelines": "pending",
+            "interfaces": "pending"
+          },
+          "component_counts": {
+            "model": 2,
+            "provider": 3,
+            "service": 3
+          },
+          "routes": [],
+          "verification": {
+            "status": "pending",
+            "attempts": 0,
+            "repairs": 0
+          },
+          "recent_actions": [
+            {
+              "step": 1,
+              "action": "generate_models",
+              "stage": "models",
+              "status": "succeeded",
+              "summary": "The models stage is the earliest incomplete stage."
+            },
+            {
+              "step": 2,
+              "action": "generate_providers",
+              "stage": "providers",
+              "status": "succeeded",
+              "summary": "The providers stage is the earliest incomplete stage."
+            }
+          ]
+        }
+      },
+      {
+        "step": 4,
+        "action": "compose_pipelines",
+        "stage": "pipelines",
+        "status": "failed",
+        "decision_status": "policy_selected",
+        "summary": "The pipelines stage is the earliest incomplete stage.",
+        "observation": {
+          "exit_code": 1,
+          "stage_status": "in_progress"
+        }
+      },
+      {
+        "step": 5,
+        "action": "compose_pipelines",
+        "stage": "pipelines",
+        "status": "failed",
+        "decision_status": "policy_retry",
+        "summary": "Retry the current pipelines stage after its governed tool failed.",
+        "observation": {
+          "exit_code": 1,
+          "stage_status": "in_progress"
+        }
+      },
+      {
+        "step": 6,
+        "action": "compose_pipelines",
+        "stage": "pipelines",
+        "status": "succeeded",
+        "decision_status": "policy_retry",
+        "summary": "Retry the current pipelines stage after its governed tool failed.",
+        "success_criteria": [
+          "The pipelines stage is complete and frozen."
+        ],
+        "observation": {
+          "current_stage": "pipelines",
+          "stages": {
+            "models": "complete",
+            "providers": "complete",
+            "services": "complete",
+            "pipelines": "complete",
+            "interfaces": "pending"
+          },
+          "component_counts": {
+            "model": 2,
+            "provider": 3,
+            "service": 3
+          },
+          "routes": [
+            "step_breakout_simulation",
+            "run_headless_breakout"
+          ],
+          "verification": {
+            "status": "pending",
+            "attempts": 0,
+            "repairs": 0
+          },
+          "recent_actions": [
+            {
+              "step": 1,
+              "action": "generate_models",
+              "stage": "models",
+              "status": "succeeded",
+              "summary": "The models stage is the earliest incomplete stage."
+            },
+            {
+              "step": 2,
+              "action": "generate_providers",
+              "stage": "providers",
+              "status": "succeeded",
+              "summary": "The providers stage is the earliest incomplete stage."
+            },
+            {
+              "step": 3,
+              "action": "generate_services",
+              "stage": "services",
+              "status": "succeeded",
+              "summary": "The services stage is the earliest incomplete stage."
+            },
+            {
+              "step": 4,
+              "action": "compose_pipelines",
+              "stage": "pipelines",
+              "status": "failed",
+              "summary": "The pipelines stage is the earliest incomplete stage."
+            },
+            {
+              "step": 5,
+              "action": "compose_pipelines",
+              "stage": "pipelines",
+              "status": "failed",
+              "summary": "Retry the current pipelines stage after its governed tool failed."
+            }
+          ]
+        }
+      }
+    ],
+    "verification": {
+      "status": "pending",
+      "attempts": 0,
+      "repairs": 0
+    },
+    "last_action": "compose_pipelines",
+    "last_observation": {
+      "current_stage": "pipelines",
+      "stages": {
+        "models": "complete",
+        "providers": "complete",
+        "services": "complete",
+        "pipelines": "complete",
+        "interfaces": "pending"
+      },
+      "component_counts": {
+        "model": 2,
+        "provider": 3,
+        "service": 3
+      },
+      "routes": [
+        "step_breakout_simulation",
+        "run_headless_breakout"
+      ],
+      "verification": {
+        "status": "pending",
+        "attempts": 0,
+        "repairs": 0
+      },
+      "recent_actions": [
+        {
+          "step": 1,
+          "action": "generate_models",
+          "stage": "models",
+          "status": "succeeded",
+          "summary": "The models stage is the earliest incomplete stage."
+        },
+        {
+          "step": 2,
+          "action": "generate_providers",
+          "stage": "providers",
+          "status": "succeeded",
+          "summary": "The providers stage is the earliest incomplete stage."
+        },
+        {
+          "step": 3,
+          "action": "generate_services",
+          "stage": "services",
+          "status": "succeeded",
+          "summary": "The services stage is the earliest incomplete stage."
+        },
+        {
+          "step": 4,
+          "action": "compose_pipelines",
+          "stage": "pipelines",
+          "status": "failed",
+          "summary": "The pipelines stage is the earliest incomplete stage."
+        },
+        {
+          "step": 5,
+          "action": "compose_pipelines",
+          "stage": "pipelines",
+          "status": "failed",
+          "summary": "Retry the current pipelines stage after its governed tool failed."
+        }
+      ]
+    }
+  }
+}

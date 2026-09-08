@@ -34,7 +34,6 @@ def select_revision_stage(
         + json.dumps(observation, ensure_ascii=False),
         json_mode=True,
         temperature=0.0,
-        max_tokens=512,
         progress_callback=progress_callback,
         progress_label="Classifying earliest affected Pod layer",
     )

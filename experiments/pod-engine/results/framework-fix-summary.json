@@ -1,0 +1,62 @@
+{
+  "framework_regression_tests": {
+    "passed": 164,
+    "failed": 0
+  },
+  "original_contract_analysis": {
+    "valid": true,
+    "issues": []
+  },
+  "original_generated_files_changed": [],
+  "resume": {
+    "exit_code": 130,
+    "stop_reason": "Operator interrupted during interface generation after independent application acceptance established failures",
+    "stages": {
+      "models": "complete",
+      "providers": "complete",
+      "services": "complete",
+      "pipelines": "complete",
+      "interfaces": "in_progress"
+    },
+    "full_application_verified": false,
+    "manual_engine_source_edits": false
+  },
+  "independent_acceptance": {
+    "passed": 5,
+    "failed": 3,
+    "checks": [
+      {
+        "name": "default_headless_120_frames_and_outputs",
+        "status": "failed"
+      },
+      {
+        "name": "single_step_launch",
+        "status": "passed"
+      },
+      {
+        "name": "left_wall_reflection",
+        "status": "passed"
+      },
+      {
+        "name": "paddle_reflection",
+        "status": "passed"
+      },
+      {
+        "name": "brick_collision_and_score",
+        "status": "failed"
+      },
+      {
+        "name": "pause_keeps_physics_unchanged",
+        "status": "passed"
+      },
+      {
+        "name": "held_pause_is_one_key_edge",
+        "status": "failed"
+      },
+      {
+        "name": "reset_restores_initial_scene",
+        "status": "passed"
+      }
+    ]
+  }
+}

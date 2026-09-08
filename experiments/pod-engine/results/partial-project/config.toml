@@ -1,0 +1,32 @@
+# AIPodCli 项目配置
+# 组件通过注入 ConfigStore 读取此文件
+# 你可以自由添加自己的 [section] 和 key
+
+[database]
+url = "sqlite:///database.db"
+
+[game]
+screen_width = 800 # Playable screen width in pixels; default demo resolution.
+screen_height = 600 # Playable screen height in pixels; default demo resolution.
+fixed_timestep = 0.016666666666666666 # Fixed simulation timestep in seconds; 1/60.
+paddle_width = 120 # Paddle rectangle width in pixels.
+paddle_height = 16 # Paddle rectangle height in pixels.
+paddle_bottom_margin = 24 # Paddle bottom offset from screen bottom in pixels.
+paddle_speed = 420 # Paddle horizontal speed in pixels per second.
+ball_diameter = 14 # Ball diameter in pixels.
+ball_speed = 330 # Ball fixed speed magnitude in pixels per second.
+ball_start_angle_deg = 60 # Initial launch angle from vertical in degrees.
+base_lives = 3 # Starting life count.
+points_per_brick = 10 # Score awarded for each brick destroyed.
+brick_rows = 6 # Number of brick rows.
+brick_cols = 10 # Number of brick columns.
+brick_top_offset = 64 # Vertical offset where the brick grid starts.
+brick_height = 20 # Individual brick height in pixels.
+brick_horizontal_margin = 12 # Screen side margin for brick grid in pixels.
+brick_gap = 4 # Gap between bricks in pixels.
+
+[run]
+screenshot_path = "out/breakout_final.png" # Path where PngSnapshotService writes the final frame PNG.
+summary_path = "out/run_summary.json" # Path where RunSummaryService writes the parseable JSON run summary.
+max_frames = 120 # 无头运行最大帧数；超过此帧数即使游戏未结束也强制停止
+random_seed = 42 # 固定随机种子，保证可复现；设为 null 则使用系统随机

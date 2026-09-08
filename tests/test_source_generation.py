@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ai_pod_cli.client import call_llm
+from ai_pod_cli.client import call_llm, get_client
 from ai_pod_cli.source_codec import decode_source_artifact, encode_source_artifact
 from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.commands.create import handle_create
@@ -19,12 +19,35 @@ from ai_pod_cli.config import init_config_if_not_exists
 
 
 class SourceGenerationTests(unittest.TestCase):
+    def test_client_default_timeout_and_explicit_environment_override(self):
+        for environment, expected in [({}, 600), ({"OPENAI_TIMEOUT_SECONDS": "45"}, 45)]:
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test", **environment}, clear=True), patch(
+                "ai_pod_cli.client._client", None,
+            ), patch("ai_pod_cli.client.OpenAI") as constructor:
+                get_client()
+                self.assertEqual(constructor.call_args.kwargs["timeout"], expected)
+
+    def test_client_channel_budgets_and_truncation_retry_ceiling(self):
+        requests = []
+        def create(**kwargs):
+            requests.append(dict(kwargs))
+            content = '{}' if 'response_format' in kwargs else 'source'
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content),
+                finish_reason='length' if len(requests) == 1 else 'stop')], usage=None)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch("ai_pod_cli.client.get_client", return_value=client), patch("ai_pod_cli.client.get_model", return_value="test"), redirect_stdout(io.StringIO()):
+            call_llm("plan", "", json_mode=True, max_retries=2, retry_delay=0)
+            call_llm("source", "", max_retries=1)
+            call_llm("explicit", "", json_mode=True, max_tokens=512, max_retries=1)
+        self.assertEqual([r['max_tokens'] for r in requests], [32768, 65536, 65536, 512])
+
     def test_pipeline_command_requests_xml_and_keeps_planned_filename(self):
         modes = []
         def llm(*args, **options):
             modes.append(options["json_mode"])
             if options["json_mode"]:
-                return {"pipeline_ids": ["Base"]}
+                return {"pipeline_ids": ["Base"], "inputs": {},
+                        "verification_cases": [{"name": "default", "params": {}}]}
             return encode_source_artifact("pipelines/demo.py", "def run(ctx):\n    return ctx.summary()\n")
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,9 +165,39 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertEqual(result["outputs"], metadata["outputs"])
         self.assertNotIn("code", metadata)
 
-    def test_source_cannot_be_smuggled_into_metadata(self):
-        with self.assertRaisesRegex(ValueError, "must not contain source"):
-            generate_source(lambda *a, **k: {"code": "print(1)"}, "rules", "build", "app.py")
+    def test_metadata_source_is_discarded_and_xml_remains_mandatory(self):
+        for content_key in ("code", "content"):
+            metadata = {"code": "untrusted_old_code", "content": "untrusted_old_content",
+                        "inputs": {"content": "str"}, "outputs": {"code": "str"}}
+            modes = []
+            def llm(system, user, **options):
+                modes.append(options["json_mode"])
+                if options["json_mode"]:
+                    return metadata
+                self.assertNotIn("untrusted_old_", user)
+                return encode_source_artifact("app.py", "print('XML')")
+            result = generate_source(llm, "rules", "build", "app.py", content_key=content_key)
+            self.assertEqual(modes, [True, False])
+            self.assertEqual(result[content_key], "print('XML')")
+            self.assertNotIn("content" if content_key == "code" else "code", result)
+            self.assertEqual(result["inputs"], {"content": "str"})
+            self.assertEqual(result["outputs"], {"code": "str"})
+            self.assertEqual(metadata["code"], "untrusted_old_code")
+
+    def test_discarded_metadata_source_is_never_an_xml_failure_fallback(self):
+        def llm(*args, **options):
+            return {"code": "print('old')"} if options["json_mode"] else "broken XML"
+        with self.assertRaises(ValueError):
+            generate_source(llm, "rules", "build", "app.py")
+
+    def test_metadata_path_is_checked_before_requesting_source(self):
+        modes = []
+        def llm(*args, **options):
+            modes.append(options["json_mode"])
+            return {"path": "../escape.py", "code": "print('old')"}
+        with self.assertRaisesRegex(ValueError, "planned path"):
+            generate_source(llm, "rules", "build", "app.py")
+        self.assertEqual(modes, [True])
 
     def test_invalid_xml_retries_are_bounded(self):
         modes = []
@@ -167,8 +220,8 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertEqual(result["code"], "print(1)")
         self.assertEqual(requests[0]["response_format"], {"type": "json_object"})
         self.assertNotIn("response_format", requests[1])
-        self.assertEqual(requests[1]["max_tokens"], 32768)
-        self.assertEqual(requests[1]["timeout"], 300)
+        self.assertEqual(requests[1]["max_tokens"], 65536)
+        self.assertEqual(requests[1]["timeout"], 600)
         self.assertNotIn("timeout", requests[0])
         self.assertTrue(requests[0]["messages"][0]["content"].endswith("Return a strict JSON object."))
         self.assertFalse(requests[1]["messages"][0]["content"].endswith("Return a strict JSON object."))
@@ -181,8 +234,8 @@ class SourceGenerationTests(unittest.TestCase):
         generate_source(llm, "rules", "build", "app.py", max_tokens=512)
         self.assertEqual(requests[0]["max_tokens"], 512)
         self.assertNotIn("timeout_seconds", requests[0])
-        self.assertEqual(requests[1]["max_tokens"], 32768)
-        self.assertEqual(requests[1]["timeout_seconds"], 300)
+        self.assertEqual(requests[1]["max_tokens"], 65536)
+        self.assertEqual(requests[1]["timeout_seconds"], 600)
         requests.clear()
         generate_source(llm, "rules", "build", "app.py", max_tokens=512,
                         source_max_tokens=8192, source_timeout_seconds=120)

@@ -1,5 +1,9 @@
 import type { ModelClient } from "./types.js";
 
+export const DEFAULT_JSON_MAX_TOKENS = 32_768;
+export const DEFAULT_SOURCE_MAX_TOKENS = 65_536;
+export const DEFAULT_MODEL_TIMEOUT_MS = 600_000;
+
 function parseJson(content: string): Record<string, unknown> {
   const trimmed = content.trim();
   try {
@@ -21,6 +25,8 @@ export class OpenAICompatibleClient implements ModelClient {
       model: string;
       baseUrl?: string;
       timeoutMs?: number;
+      jsonMaxTokens?: number;
+      sourceMaxTokens?: number;
     },
   ) {}
 
@@ -38,7 +44,7 @@ export class OpenAICompatibleClient implements ModelClient {
 
   async #request(system: string, user: string, jsonMode: boolean): Promise<string> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 120_000);
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS);
     try {
       const base = (this.options.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
       const response = await fetch(`${base}/chat/completions`, {
@@ -49,6 +55,9 @@ export class OpenAICompatibleClient implements ModelClient {
         },
         body: JSON.stringify({
           model: this.options.model,
+          max_tokens: jsonMode
+            ? this.options.jsonMaxTokens ?? DEFAULT_JSON_MAX_TOKENS
+            : this.options.sourceMaxTokens ?? DEFAULT_SOURCE_MAX_TOKENS,
           messages: [
             // JSON-mode endpoints can reject requests before generation unless
             // the messages explicitly request JSON, even if they show a schema.

@@ -13,76 +13,100 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ai_pod_cli.contracts import normalize_type
+from ai_pod_cli.contracts import canonical_contract, normalize_type
 
 
 def sample_value(name: str, spec) -> object:
     """Return a deterministic, side-effect-free sample for a contract field."""
     lowered = name.lower()
-    if isinstance(spec, dict) and isinstance(spec.get("enum"), list) and spec["enum"]:
+    raw_spec = spec
+    spec = canonical_contract(spec)
+    field_type = normalize_type(spec)
+    if isinstance(spec.get("enum"), list) and spec["enum"]:
         return spec["enum"][0]
-    if isinstance(spec, str):
+    if isinstance(raw_spec, str) and field_type in {"str", "any"} and not spec.get("anyOf"):
         # Keep domain validation intact by using a value explicitly advertised by
         # the Contract instead of the generic string "test".  AI-generated
         # contracts commonly describe enums as 'IN' | 'OUT' | 'ADJUST'.
-        quoted_choices = re.findall(r"['\"]([^'\"]+)['\"]", spec)
+        quoted_choices = re.findall(r"['\"]([^'\"]+)['\"]", raw_spec)
         if len(quoted_choices) >= 2:
             return quoted_choices[0]
-        upper_choices = re.findall(r"\b[A-Z][A-Z0-9_]{1,}\b", spec)
+        upper_choices = re.findall(r"\b[A-Z][A-Z0-9_]{1,}\b", raw_spec)
         if len(upper_choices) >= 2:
             return upper_choices[0]
-    if lowered in {"sql", "query", "statement"}:
-        return "SELECT 1"
-    if "color" in lowered or "colour" in lowered:
-        return "#ffffff"
-    if lowered in {"rect", "rectangle", "bounds", "aabb"}:
-        return [0, 0, 16, 16]
-    if lowered in {"position", "point", "center", "origin", "size"}:
-        return [0, 0] if lowered != "size" else [16, 16]
-    if lowered in {"params", "parameters", "bindings", "args"}:
-        return []
-    field_type = normalize_type(spec)
-    if "|" in field_type:
-        field_type = next(
-            (item for item in field_type.split("|") if item not in {"none", "null"}),
-            "any",
+    alternatives = spec.get("anyOf")
+    if isinstance(alternatives, list) and alternatives:
+        # Exercise a real value for optional inputs rather than skipping their
+        # behavior with None. Recursive sampling retains nested Model types.
+        selected = next(
+            (item for item in alternatives if normalize_type(item) != "null"),
+            alternatives[0],
         )
-    if lowered in {
+        if isinstance(raw_spec, str) and normalize_type(selected) == "str":
+            description = re.split(r"\s*(?:—|–)\s*", raw_spec, maxsplit=1)
+            if len(description) == 2:
+                return sample_value(name, "str — " + description[1])
+        return sample_value(name, selected)
+    if field_type == "model" and spec.get("model"):
+        module_name, class_name = spec["model"].rsplit(".", 1)
+        model_class = getattr(importlib.import_module(module_name), class_name)
+        return model_class.sample_instance()
+    if field_type == "null":
+        return None
+    if field_type in {"str", "any"} and lowered in {"sql", "query", "statement"}:
+        return "SELECT 1"
+    if field_type in {"str", "any"} and ("color" in lowered or "colour" in lowered):
+        return "#ffffff"
+    item_spec = canonical_contract(spec.get("items", {}))
+    numeric_sequence = (
+        field_type in {"list", "any"}
+        and not item_spec.get("anyOf")
+        and normalize_type(item_spec) in {"int", "float", "any"}
+    )
+    if numeric_sequence:
+        if lowered in {"rect", "rectangle", "bounds", "aabb"}:
+            return [0, 0, 16, 16]
+        if lowered in {"position", "point", "center", "origin", "size"}:
+            return [0, 0] if lowered != "size" else [16, 16]
+    if field_type in {"list", "any"} and "items" not in spec and lowered in {
+        "params", "parameters", "bindings", "args",
+    }:
+        return []
+    if field_type in {"str", "any", "datetime", "datetime.datetime"} and lowered in {
         "dt", "datetime", "timestamp", "time_value", "period_start", "period_end",
         "start_time", "end_time",
     }:
         moment = datetime(2024, 1, 1, tzinfo=timezone.utc)
         return moment if field_type in {"datetime", "datetime.datetime"} else moment.isoformat()
-    if lowered.endswith(("_minutes", "_days", "_seconds", "_count", "_size", "_limit")):
+    if field_type in {"int", "float", "any"} and lowered.endswith(
+        ("_minutes", "_days", "_seconds", "_count", "_size", "_limit")
+    ):
         return 1.0 if field_type == "float" else 1
     if field_type in {"datetime", "datetime.datetime"}:
         return datetime(2024, 1, 1, tzinfo=timezone.utc)
-    if field_type == "model" and isinstance(spec, dict):
-        module_name, class_name = spec["model"].rsplit(".", 1)
-        model_class = getattr(importlib.import_module(module_name), class_name)
-        return model_class.sample_instance()
     if field_type == "bool":
         return False
     if field_type == "int":
         return 1
     if field_type == "float":
         return 1.0
-    if field_type.startswith("list"):
-        if isinstance(spec, dict) and "items" in spec:
+    if field_type == "list":
+        if "items" in spec:
             return [sample_value(name, spec["items"])]
         return []
     if field_type in {"dict", "object"}:
-        if isinstance(spec, dict):
-            if "additionalProperties" in spec:
-                return {"sample": sample_value("value", spec["additionalProperties"])}
-            properties = spec.get("properties", {})
-            required = spec.get("required", [])
-            if isinstance(properties, dict) and isinstance(required, list):
-                return {
-                    key: sample_value(key, properties.get(key, {}))
-                    for key in required
-                }
-        return {}
+        properties = spec.get("properties", {})
+        required = spec.get("required", [])
+        values = {}
+        if isinstance(properties, dict) and isinstance(required, list):
+            values = {
+                key: sample_value(key, properties.get(key, {}))
+                for key in required
+            }
+        additional = spec.get("additionalProperties")
+        if not values and isinstance(additional, (str, dict)):
+            values["sample"] = sample_value("value", additional)
+        return values
     if "incident" in lowered:
         return "FIRE"
     if lowered == "action":
@@ -300,55 +324,102 @@ def verify_pipeline_candidate(
     code: str,
     contract_inputs: dict,
     timeout: int = 30,
+    *,
+    cases: list[dict] | None = None,
 ) -> list[str]:
-    """Execute a candidate Pipeline in a disposable copy of the project."""
+    """Run explicitly supplied entry scenarios, independently of inferred schemas.
+
+    ``contract_inputs`` is retained for caller compatibility, but never supplies
+    values. Passing these checks establishes scenario execution, not behavioral
+    acceptance. Each case gets its own project copy, process, and Context.
+    """
+    del contract_inputs
+    invalid_cases = (
+        "Pipeline 沙箱未提供有效的实际输入场景：cases 必须是非空列表，"
+        "每项包含唯一非空 name 和 params 对象；不会根据契约合成输入。"
+    )
+    if not isinstance(cases, list) or not cases:
+        return [invalid_cases]
+    names = set()
+    payloads = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            return [f"{invalid_cases} cases[{index}] 不是对象。"]
+        name, params = case.get("name"), case.get("params")
+        if not isinstance(name, str) or not name.strip() or not isinstance(params, dict):
+            return [f"{invalid_cases} cases[{index}] 的 name 或 params 无效。"]
+        name = name.strip()
+        if name in names:
+            return [f"{invalid_cases} 场景名称重复：{name}。"]
+        if not all(isinstance(key, str) for key in params):
+            return [f"{invalid_cases} 场景 {name} 的入口参数名必须是字符串。"]
+        names.add(name)
+        try:
+            payload = json.dumps({"params": params}, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            return [f"{invalid_cases} 场景 {name} 的 params 不是有效 JSON：{error}"]
+        payloads.append((name, payload))
+
     project_root = Path(project_root).resolve()
-    with tempfile.TemporaryDirectory(prefix="aipod_pipeline_") as tmp:
-        root = Path(tmp) / "project"
-        shutil.copytree(project_root, root, ignore=shutil.ignore_patterns("__pycache__", ".aipod"))
-        modules_init = root / "modules" / "__init__.py"
-        modules_init.parent.mkdir(parents=True, exist_ok=True)
-        modules_init.touch(exist_ok=True)
-        candidate = root / ".aipod_candidate_pipeline.py"
-        candidate.write_text(code, encoding="utf-8")
-        helper = r'''
+    helper = r'''
 import importlib.util
 import asyncio
 import inspect
 import json
+import sys
 from pathlib import Path
 from ai_pod_cli.context import PipelineContext
-from ai_pod_cli.sandbox import materialize_path_fixtures, sample_value
+from ai_pod_cli.result import Failure
 
 payload = json.loads(Path('.aipod_sandbox_payload.json').read_text(encoding='utf-8'))
 spec = importlib.util.spec_from_file_location('aipod_candidate_pipeline', '.aipod_candidate_pipeline.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-ctx = PipelineContext({
-    name: sample_value(name, spec)
-    for name, spec in payload['input_specs'].items()
-})
-materialize_path_fixtures(ctx.params)
+ctx = PipelineContext(payload['params'])
 entry = getattr(module, 'run_async', None) or module.run
 result = entry(ctx)
 if inspect.isawaitable(result):
     result = asyncio.run(result)
+failures = []
+if isinstance(result, Failure):
+    failures.append(result.error)
+if isinstance(getattr(ctx, 'failure', None), Failure):
+    failures.append(ctx.failure.error)
+# These are framework execution statuses, not a business output's status key.
+# Aggregates already account for explicit parallel-ignore / stream-skip policy.
+for step in ctx.steps:
+    if isinstance(step, dict) and step.get('status') == 'failure':
+        failures.append(str(step.get('component', 'unknown')) + ': ' + str(step.get('result')))
+if failures:
+    raise RuntimeError('Pipeline 场景返回框架失败：' + '; '.join(failures))
 print(json.dumps(result or ctx.summary(), ensure_ascii=False, default=str))
+Path(sys.argv[1]).write_text('passed', encoding='utf-8')
 '''
-        (root / ".aipod_sandbox_payload.json").write_text(
-            json.dumps({"input_specs": contract_inputs}, ensure_ascii=False), encoding="utf-8",
-        )
-        env = os.environ.copy()
-        env["PYTHONUTF8"] = "1"
-        try:
-            completed = subprocess.run(
-                [sys.executable, "-c", helper], cwd=root, env=env,
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            return [f"Pipeline 沙箱运行超过 {timeout} 秒"]
-        if completed.returncode:
-            detail = (completed.stderr or completed.stdout).strip()
-            return ["Pipeline 沙箱实际运行失败：\n" + detail[-5000:]]
-        return []
+    errors = []
+    for name, payload in payloads:
+        with tempfile.TemporaryDirectory(prefix="aipod_pipeline_") as tmp:
+            root = Path(tmp) / "project"
+            shutil.copytree(project_root, root, ignore=shutil.ignore_patterns("__pycache__", ".aipod"))
+            modules_init = root / "modules" / "__init__.py"
+            modules_init.parent.mkdir(parents=True, exist_ok=True)
+            modules_init.touch(exist_ok=True)
+            (root / ".aipod_candidate_pipeline.py").write_text(code, encoding="utf-8")
+            (root / ".aipod_sandbox_payload.json").write_text(payload, encoding="utf-8")
+            completed_path = Path(tmp) / "completed"
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            try:
+                completed = subprocess.run(
+                    [sys.executable, "-c", helper, str(completed_path)], cwd=root, env=env,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append(f"Pipeline 沙箱场景 '{name}' 运行超过 {timeout} 秒")
+                continue
+            if completed.returncode:
+                detail = (completed.stderr or completed.stdout).strip()
+                errors.append(f"Pipeline 沙箱场景 '{name}' 实际运行失败：\n" + detail[-5000:])
+            elif not completed_path.is_file() or completed_path.read_text(encoding="utf-8") != "passed":
+                errors.append(f"Pipeline 沙箱场景 '{name}' 未完成运行检查，进程提前退出。")
+    return errors

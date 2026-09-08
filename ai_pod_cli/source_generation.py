@@ -4,13 +4,15 @@ import json
 from collections.abc import Callable
 from pathlib import PurePosixPath, PureWindowsPath
 
+from ai_pod_cli.client import DEFAULT_SOURCE_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
 from ai_pod_cli.source_codec import decode_source_artifact, encode_source_artifact
 
 
 def generate_source(
     llm: Callable, system: str, user: str, path: str | Callable[[dict], str], *,
-    content_key: str = "code", source_max_tokens: int = 32768,
-    source_timeout_seconds: float = 300, **options,
+    content_key: str = "code", source_max_tokens: int = DEFAULT_SOURCE_MAX_TOKENS,
+    source_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    frozen_metadata: dict | None = None, **options,
 ) -> dict:
     """Freeze JSON metadata, then request one source file through text mode.
 
@@ -20,14 +22,16 @@ def generate_source(
     """
     if source_max_tokens < 1 or source_timeout_seconds <= 0:
         raise ValueError("Source token budget and timeout must be positive")
-    metadata = llm(
+    metadata = frozen_metadata if frozen_metadata is not None else llm(
         system + "\n本轮只返回 JSON 元数据，不生成源码，不要返回 code 或 content 字段。",
         user, json_mode=True, **options,
     )
     if not isinstance(metadata, dict):
         raise ValueError("Component metadata must be a JSON object")
-    if "code" in metadata or "content" in metadata:
-        raise ValueError("Metadata response must not contain source code")
+    # Some endpoints still include unrequested source alongside valid metadata.
+    # Discard only these reserved root fields; source must come from the later
+    # XML request, never from this JSON response or a fallback to it.
+    metadata = {key: value for key, value in metadata.items() if key not in {"code", "content"}}
     path = path(metadata) if callable(path) else path
     if (not isinstance(path, str) or path in ("", ".") or "\\" in path
             or PureWindowsPath(path).drive

@@ -1,0 +1,79 @@
+test_brick (_aipod_project_behavior_tests.EngineBehavior.test_brick) ... ERROR
+test_default_headless (_aipod_project_behavior_tests.EngineBehavior.test_default_headless) ... FAIL
+test_held_pause (_aipod_project_behavior_tests.EngineBehavior.test_held_pause) ... FAIL
+test_launch (_aipod_project_behavior_tests.EngineBehavior.test_launch) ... ok
+test_paddle (_aipod_project_behavior_tests.EngineBehavior.test_paddle) ... ok
+test_pause (_aipod_project_behavior_tests.EngineBehavior.test_pause) ... ok
+test_reset (_aipod_project_behavior_tests.EngineBehavior.test_reset) ... ok
+test_wall (_aipod_project_behavior_tests.EngineBehavior.test_wall) ... ok
+
+======================================================================
+ERROR: test_brick (_aipod_project_behavior_tests.EngineBehavior.test_brick)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private<engine-copy>/tests/test_behavior.py", line 105, in test_brick
+    after = self.step(before)
+  File "/private<engine-copy>/tests/test_behavior.py", line 35, in step
+    _, ctx = PipelineRunner().run_with_context("step_breakout_simulation", params)
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<aipod-checkout>/ai_pod_cli/behavior_tests.py", line 221, in run_with_context
+    returned = original_sync(runner, route_name, params)
+  File "<aipod-checkout>/ai_pod_cli/runner.py", line 72, in run_with_context
+    result = module.run(ctx)
+  File "/private<engine-copy>/pipelines/step_breakout_simulation.py", line 39, in run
+    (S(BreakoutSimulationService)).execute_all(ctx)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 262, in execute_all
+    result, normalized, metadata = self._execute_with_policy(ctx)
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 165, in _execute_with_policy
+    raw_result = self.execute(ctx)
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 97, in execute
+    return self._instance.execute(ctx)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/private<engine-copy>/modules/services/breakoutsimulationservice.py", line 237, in execute
+    if self._brick_hit(ball, brick, previous_brick_center):
+       ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private<engine-copy>/modules/services/breakoutsimulationservice.py", line 556, in _brick_hit
+    self._reflect_with_normal(ball, normal_x, normal_y)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private<engine-copy>/modules/services/breakoutsimulationservice.py", line 586, in _reflect_with_normal
+    ball.velocity = Vec2(
+                    ~~~~^
+        ball.velocity.x - 2.0 * dot * normal_x,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ball.velocity.y - 2.0 * dot * normal_y,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+TypeError: SQLModel.__init__() takes 1 positional argument but 3 were given
+
+======================================================================
+FAIL: test_default_headless (_aipod_project_behavior_tests.EngineBehavior.test_default_headless)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private<engine-copy>/tests/test_behavior.py", line 66, in test_default_headless
+    self.assertEqual(actual_calls, 120, f"Reported frames must match real simulation calls; route error: {error}")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<aipod-checkout>/ai_pod_cli/behavior_tests.py", line 245, in assertion
+    returned = original(test, *args, **kwargs)
+AssertionError: 60 != 120 : Reported frames must match real simulation calls; route error: inputs schema validation failed: RunSummaryService.total_bricks: required field is missing; RunSummaryService.remaining_bricks: required field is missing; RunSummaryService.ball_position: required field is missing; RunSummaryService.paddle_position: required field is missing
+
+======================================================================
+FAIL: test_held_pause (_aipod_project_behavior_tests.EngineBehavior.test_held_pause)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private<engine-copy>/tests/test_behavior.py", line 121, in test_held_pause
+    self.assertEqual(after["game_state"], "PAUSED")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<aipod-checkout>/ai_pod_cli/behavior_tests.py", line 245, in assertion
+    returned = original(test, *args, **kwargs)
+AssertionError: 'PLAYING' != 'PAUSED'
+- PLAYING
++ PAUSED
+
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.441s
+
+FAILED (failures=2, errors=1)

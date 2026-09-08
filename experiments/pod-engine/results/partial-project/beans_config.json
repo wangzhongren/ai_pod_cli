@@ -1,0 +1,263 @@
+{
+  "beans": [
+    {
+      "id": "ConfigStore",
+      "category": "provider",
+      "type": "human_added",
+      "class_path": "ai_pod_cli.config_store.ConfigStore",
+      "file": "config_store.py",
+      "methods": {
+        "get": {
+          "inputs": {
+            "key": "str — dot-notation 键路径，如 database.sqlite_path",
+            "default": "any — 默认值"
+          },
+          "outputs": "any — 配置值"
+        },
+        "get_section": {
+          "inputs": {
+            "section": "str — 段名，如 database"
+          },
+          "outputs": "dict — 该段所有键值对"
+        },
+        "sections": {
+          "inputs": {},
+          "outputs": "list[str] — 所有段名"
+        },
+        "reload": {
+          "inputs": {},
+          "outputs": "无返回值 — 重新加载 config.toml"
+        }
+      },
+      "description": "集中式配置组件。从 config.toml 读取配置，通过 get('section.key') 访问。其他组件应注入 ConfigStore 来获取配置值，而非直接读环境变量。"
+    },
+    {
+      "id": "ModelRepository",
+      "category": "provider",
+      "type": "human_added",
+      "class_path": "ai_pod_cli.repository.ModelRepository",
+      "file": "repository.py",
+      "dependencies": [
+        "ConfigStore"
+      ],
+      "methods": {
+        "init_db": {
+          "inputs": {},
+          "outputs": "null"
+        },
+        "save": {
+          "inputs": {
+            "instance": "model"
+          },
+          "outputs": "model"
+        },
+        "get": {
+          "inputs": {
+            "model": "type",
+            "object_id": "any"
+          },
+          "outputs": "model|null"
+        },
+        "list": {
+          "inputs": {
+            "model": "type"
+          },
+          "outputs": "list[model]"
+        },
+        "find": {
+          "inputs": {
+            "model": "type",
+            "filters": "dict"
+          },
+          "outputs": "list[model]"
+        },
+        "delete": {
+          "inputs": {
+            "instance": "model"
+          },
+          "outputs": "null"
+        }
+      },
+      "description": "SQLModel 通用仓库。自动导入全部项目 Model 并建表；Service 只能通过它保存和读取持久化 Model，禁止手写 SQL。"
+    },
+    {
+      "id": "PipelineRunner",
+      "category": "provider",
+      "type": "human_added",
+      "class_path": "ai_pod_cli.runner.PipelineRunner",
+      "file": "runner.py",
+      "methods": {
+        "run": {
+          "inputs": {
+            "route_name": "str — routes.toml 中的路由名",
+            "params": "dict — 入口参数"
+          },
+          "outputs": "dict — 执行摘要"
+        },
+        "route_names": {
+          "inputs": {},
+          "outputs": "list[str] — 所有已注册路由名"
+        }
+      },
+      "description": "管线运行器。从 routes.toml 加载并执行 pipeline。入口文件通过容器注入此组件来运行管线，无需直接依赖底层 Bean。"
+    },
+    {
+      "id": "Vec2",
+      "category": "model",
+      "type": "ai_created",
+      "class_path": "modules.models.vec2.Vec2",
+      "file": "vec2.py",
+      "dependencies": [],
+      "inputs": {},
+      "outputs": {},
+      "methods": {},
+      "description": "Runtime 2D vector value object representing x/y coordinates, velocities, size vectors, etc. It is NOT a persistent Model and must never be registered with ModelRepository as an ORM table. Class will be implemented as a Python dataclass (or simple class) with immutable-style arithmetic helpers for game code. Constructor: Vec2(x: float, y: float). Fields: x: float, y: float. Methods: copy() -> Vec2; __add__(Vec2) -> Vec2; __sub__(Vec2) -> Vec2; __mul__(float) -> Vec2; __rmul__(float) -> Vec2; length() -> float; length_squared() -> float; normalize() -> Vec2; dot(Vec2) -> float; __iter__; __repr__; __eq__. All arithmetic creates the correct result, and invalid types raise clear exceptions. Keep implementation stdlib-only with no pygame dependency so it can run headless.。技术规格: Vec2 is a runtime 2D vector value object, NOT a persistent entity. It inherits from ai_pod_cli.Model but is intentionally NOT a SQLModel table (no `table=True`, no id field, never registered with ModelRepository). Implemented as a dataclass (frozen optional) or simple class in modules/models/vec2.py. Fields: x: float, y: float. Constructor: __init__(self, x: float, y: float) -> None. All numeric operations return a new Vec2 instance (immutable-style). Methods: copy() -> Vec2; __add__(other: Vec2) -> Vec2 (validate type); __sub__(other: Vec2) -> Vec2; __mul__(scalar: float) -> Vec2; __rmul__(scalar: float) -> Vec2; length() -> float (√(x²+y²)); length_squared() -> float (x²+y²); normalize() -> Vec2 (returns zero vector for zero-length, otherwise divides by length); dot(other: Vec2) -> float; __iter__ -> Iterator[float] yielding (x, y); __repr__ -> str; __eq__ compares both type and coordinates. x and y must be numeric (int/float accepted); convert to float on assignment. Raise TypeError for invalid operand types. No external dependencies — stdlib only (math, numbers). Does not use injector, PipelineContext, or any provider dependency.",
+      "fields": {
+        "x": "float",
+        "y": "float"
+      }
+    },
+    {
+      "id": "GameEntity",
+      "category": "model",
+      "type": "ai_created",
+      "class_path": "modules.models.gameentity.GameEntity",
+      "file": "gameentity.py",
+      "dependencies": [],
+      "inputs": {},
+      "outputs": {},
+      "methods": {},
+      "description": "Runtime value model describing a simulated game entity. Used by later physics, rendering, and game logic services. NOT a persistent model: never create an ORM table for this class. Class will be a Python dataclass with normal mutable fields because the world updates positions and velocities every tick. Fields: id: str (unique within a scene); kind: str (semantic category such as \"ball\", \"paddle\", \"brick\", \"wall\", or any future extension); position: Vec2 (entity center point); velocity: Vec2 (units per second); size: Vec2 (for shape=\"rect\" this is width/height; for shape=\"circle\" both components are equal and equal the diameter); shape: str (must be \"rect\" or \"circle\", default \"rect\"); enabled: bool (default True, disabled entities are ignored by physics/collision/render); static: bool (default False, static entities do not move but still collide, used for wall/bricks). Convenience read-only properties in generated code: radius -> float: returns size.x/2 when shape == \"circle\", otherwise raises/AttributeError; center -> Vec2: alias of position. Method: copy() -> GameEntity.。技术规格: Runtime value model for a simulated game entity. NOT persistent, do not create ORM table. Class: GameEntity, file: modules/models/game_entity.py. Dataclass with mutable fields. Fields: id: str (unique within a scene); kind: str (semantic category such as \"ball\", \"paddle\", \"brick\", \"wall\"); position: Vec2 (entity center point); velocity: Vec2 (units per second); size: Vec2 (for shape=\"rect\" width/height; for shape=\"circle\" both components equal diameter); shape: str (must be \"rect\" or \"circle\", default \"rect\"); enabled: bool (default True); static: bool (default False). Convenience read-only properties: radius -> float returns size.x/2 when shape == \"circle\" else raise AttributeError; center -> Vec2 alias of position. Method: copy() -> GameEntity returns a copy. Field types use existing Vec2 from modules.models.vec2.Vec2.",
+      "fields": {
+        "id": "str",
+        "kind": "str",
+        "position": "Vec2",
+        "velocity": "Vec2",
+        "size": "Vec2",
+        "shape": "str",
+        "enabled": "bool",
+        "static": "bool"
+      }
+    },
+    {
+      "id": "BreakoutSimulationService",
+      "category": "service",
+      "type": "ai_created",
+      "class_path": "modules.services.breakoutsimulationservice.BreakoutSimulationService",
+      "file": "breakoutsimulationservice.py",
+      "dependencies": [
+        "ConfigStore"
+      ],
+      "inputs": {
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      },
+      "outputs": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "model": "modules.models.gameentity.GameEntity"
+          }
+        },
+        "game_state": {
+          "type": "str"
+        },
+        "score": {
+          "type": "int"
+        },
+        "lives": {
+          "type": "int"
+        },
+        "ball_attached": {
+          "type": "bool"
+        },
+        "previous_commands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "simulation_time": {
+          "type": "float"
+        },
+        "frame_count": {
+          "type": "int"
+        },
+        "last_frame_events": {
+          "type": "array",
+          "items": {
+            "type": "str"
+          }
+        }
+      },
+      "methods": {},
+      "description": "Core fixed-timestep game simulation service for the Breakout demo. It does not open a window, read keyboard hardware, or render; it only updates a machine-readable Context. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nCoordinate contract: all GameEntity.rect entities use position as the AABB top-left corner; ball uses position as top-left of its bounding square, and its circle center is position + size/2. kind values used by this service: paddle, ball, brick. Enabled False semantic: disabled bricks are ignored entirely. \n\nState model stored on Context: ctx.entities is a list of GameEntity; ctx.game_state in READY|PLAYING|PAUSED|WON|LOST; ctx.score, ctx.lives, ctx.ball_attached, ctx.previous_commands, ctx.simulation_time, ctx.last_frame_events. \n\nInput contract: ctx.commands is a dict with booleans left, right, launch, pause, reset. left/right are continuous held flags; launch/pause/reset are one-shot/edge-triggered and compared against ctx.previous_commands. The service defaults missing commands to False and initializes ctx.previous_commands on first call. \n\nexecute algorithm: 1) If ctx.entities is absent/empty, create a standard Breakout scene from ConfigStore: screen size, paddle near bottom, ball attached to paddle center top in READY state, a grid of enabled brick rects, no wall entities are stored; boundary walls are virtual and handled during collision. 2) If reset edge is true, rebuild the scene and return without changing physics. 3) If pause edge is true, toggle between READY/PLAYING and PAUSED; if entering PAUSED, no physics change is allowed for that execute call. 4) If state is PAUSED, WON, or LOST, do not integrate movement or change score; only still record last_frame_events as empty and update no positions. 5) If state is READY and launch edge is true, set ctx.ball_attached=False, set ctx.game_state=PLAYING, and give the ball a deterministic initial velocity at config-provided angle and speed. 6) When READY and not launching, move the paddle with left/right commands and move the attached ball horizontally with the paddle so it stays centered above the paddle. 7) When PLAYING, move paddle from left/right and clamp it to screen bounds and horizontal virtual wall region; move only entities with kind=ball because paddle is deterministic-controlled and bricks/walls are static. 8) Boundary collision after ball integration: top wall reflects vertical velocity, left and right virtual walls reflect horizontal velocity; there is no bottom wall. If the ball's top coordinate leaves below screen_height + margin, lose a life: if lives remain, decrement lives and reset ball_attached=True/game_state=READY; if lives become less than base_lives? Not used; if lives reaches 0 before the loss? Implement proper life loss rule in code and document it in code comments; service must never show negative lives. 9) Paddle collision: if ball is moving downward and its AABB overlaps paddle AABB, reflect vertical velocity and make the horizontal bounce angle depend on where the ball hits relative to the paddle center; normalize magnitude back to config ball_speed; place ball just above paddle. 10) Brick collision: after paddle handling, test the circle-rect intersection against every enabled brick. For each hit, set brick.enabled=False, increase ctx.score by ConfigStore game.points_per_brick, reflect ball velocity using penetration normal/previous direction, and append event brick_hit:<brick_id>. 11) After all collisions, if no enabled brick remains, set ctx.game_state=WON. 12) Record last_frame_events list for this step e.g. wall_top, wall_left, wall_right, paddle_hit, brick_hit:<id>, life_lost, win, reset. 13) Bump ctx.frame_count once for every execute call and advance ctx.simulation_time by dt only when physics is actually simulated. \n\nThe service is deterministic: no random number generator is used and the same commands/dt sequence produces identical state. It therefore can be exercised headlessly by tests or by a later Pipeline repeat loop.。技术规格: BreakoutSimulationService.execute(ctx) receives a PipelineContext whose get('commands') is a dict with boolean keys left/right/launch/pause/reset; absent commands default to False. previous_commands is read from ctx and defaults to all False on first invocation; it is written back as an output every call so edge-triggered commands are consumed once. If entities are absent the service builds the standard Breakout scene from ConfigStore game.* settings: one paddle GameEntity(kind='paddle'), one circular ball GameEntity(kind='ball'), and a grid of static rectangular brick entities; wall entities are not created. No return path may omit an output key. In particular, every branch must emit ctx.set('last_frame_events', events) and include 'last_frame_events' in the returned result; WON/LOST/PAUSED/no-event branches must emit an empty list, not skip the key. Bricks with enabled=False are ignored. GameEntity.rect entities store position as AABB top-left; the ball stores its bounding-square top-left and has center position + size/2. Paddle x is clamped to [0, screen_width - paddle_width]. Ball top/left/right walls are virtual and reflect velocity; there is no bottom wall. After losing a life with lives remaining, service resets to READY and attaches the ball; when the final life is lost, lives becomes 0 and state becomes LOST. Paddle and brick collisions only run while PLAYING. Paddle hit reflects vertical velocity and derives horizontal angle from ball-hit offset relative to paddle center, renormalizing speed to game.ball_speed. Each brick hit disables that brick, adds game.points_per_brick to score, reflects the ball, appends 'brick_hit:<id>', and checks for WON. Live event strings are wall_top, wall_left, wall_right, paddle_hit, brick_hit:<id>, life_lost, win, and reset. frame_count increments every execute call; simulation_time advances only while physics is actually simulated. No random number generator may be used."
+    },
+    {
+      "id": "PngSnapshotService",
+      "category": "service",
+      "type": "ai_created",
+      "class_path": "modules.services.pngsnapshotservice.PngSnapshotService",
+      "file": "pngsnapshotservice.py",
+      "dependencies": [
+        "ConfigStore"
+      ],
+      "inputs": {
+        "entities": "List[modules.models.gameentity.GameEntity] — 当前帧所有实体",
+        "game_state": "str — 当前游戏状态（如 running、over）",
+        "score": "int — 当前得分",
+        "lives": "int — 剩余生命",
+        "frame_count": "int — 帧计数",
+        "screenshot_path": "Optional[str] — 截图保存路径；若未提供，使用 config run.screenshot_path"
+      },
+      "outputs": {
+        "screenshot_path": "str — 实际写入的 PNG 完整路径"
+      },
+      "methods": {},
+      "description": "Renders the current Breakout world to a PNG file using pygame-ce without requiring a visible display. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe service reads ctx.entities (list of GameEntity), ctx.game_state, ctx.score, ctx.lives, ctx.frame_count and optionally ctx.screenshot_path. If ctx.screenshot_path is absent, use ConfigStore value run.screenshot_path and set ctx.screenshot_path to the resolved path. It creates the parent output directory when needed, creates a pygame.Surface of size game.screen_width x game.screen_height, fills the background, draws every enabled entity as follows: kind=ball as a filled circle using its position+size/2 as center; kind=paddle and kind=brick as filled rectangles using position/size. No external images/fonts/assets are loaded. It creates the surface with a plain pygame.Surface; if SDL needs initialization, it initializes pygame only for the dummy video driver and never opens a visible window. \n\nThe current frame is saved with pygame.image.save(surface, path). The service never mutates ctx.entities, ctx.score, ctx.game_state, ctx.lives. It does not import or call any other Service.。技术规格: PngSnapshotService.execute(ctx) 从 ctx 读取 entities、game_state、score、lives、frame_count 和可选的 screenshot_path。若 screenshot_path 为空，通过已注入的 ConfigStore.get('run.screenshot_path') 获得并 ctx.set('screenshot_path') 回写。渲染前确保输出目录存在（os.makedirs）。为 headless 渲染设置 os.environ['SDL_VIDEODRIVER']='dummy'，并在需要时 pygame.init()，绝不创建可见窗口。用 game.screen_width 和 game.screen_height 创建 pygame.Surface，填充背景。遍历 entities 中 enabled 的实体：kind='ball' 时用 entity.position 作为圆心、entity.size.x/2 作半径画圆；kind='paddle' 或 'brick' 时以位置为中心、size 为矩形画填充矩形。最后 pygame.image.save(surface, path)。服务只读输入，不修改 ctx.entities/ctx.game_state/ctx.score/ctx.lives，也不调用其它 Service；仅依赖 ConfigStore。"
+    },
+    {
+      "id": "RunSummaryService",
+      "category": "service",
+      "type": "ai_created",
+      "class_path": "modules.services.runsummaryservice.RunSummaryService",
+      "file": "runsummaryservice.py",
+      "dependencies": [
+        "ConfigStore"
+      ],
+      "inputs": {
+        "summary_path": "str — optional output JSON file path; resolved into ctx.summary_path",
+        "screenshot_path": "str — optional screenshot file path written to output_files.screenshot_path; falls back to ConfigStore run.screenshot_path",
+        "game_state": "str — current simulation state; values: running|won|lost|error",
+        "outcome": "str — human-readable result, e.g. cleared|lost, used in summary",
+        "final_state": "str — terminal status label, e.g. terminal, used in summary",
+        "score": "int",
+        "lives": "int",
+        "frame_count": "int",
+        "total_bricks": "int",
+        "remaining_bricks": "int",
+        "ball_position": {
+          "model": "modules.models.vec2.Vec2"
+        },
+        "paddle_position": {
+          "model": "modules.models.vec2.Vec2"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "model": "modules.models.gameentity.GameEntity"
+          }
+        }
+      },
+      "outputs": {
+        "summary_path": "str — resolved path where summary JSON was written"
+      },
+      "methods": {},
+      "description": "Writes a machine-readable JSON summary of a completed/headless Breakout run. Constructor dependency: ConfigStore. Public entrypoint: execute(ctx) -> ctx. \n\nThe summary path resolution order: ctx.summary_path if provided, else ConfigStore run.summary_path; the resolved path is set back as ctx.summary_path. It creates the parent directory if needed. JSON written contains at least: success (bool equal to game_state in WON|LOST? success is True when simulation reached an explicit terminal state without error, not necessarily won; include also outcome field), outcome, final_state, score, lives, frame_count, total_bricks, remaining_bricks, ball_position {x,y}, paddle_position {x,y}, output_files {screenshot_path, summary_path}, and an entities array with id/kind/enabled/position/size. All serialized values are JSON-native types; no custom object dumps. The service does not depend on simulation internals other than reading fields from Context. It does not call another Service. It must not produce non-zero exit by itself; file errors shall raise a clear exception so the test runner detects failure.。技术规格: Constructor receives ConfigStore. execute(ctx) reads inputs via ctx.get; missing required inputs raise a clear ValueError. summary_path and screenshot_path are optional and fall back to ConfigStore.get('run.summary_path') / ConfigStore.get('run.screenshot_path'). Creates the parent directory of the resolved summary_path if missing. Computes success = game_state.lower() in ('won', 'lost') — true when the simulation reached an explicit terminal state without error. Serializes ball_position and paddle_position as JSON-native {x, y}; serializes each GameEntity in entities as {id, kind, enabled, position: {x, y}, size: {x, y}}. Builds payload containing success, outcome, final_state, score, lives, frame_count, total_bricks, remaining_bricks, ball_position, paddle_position, output_files {screenshot_path, summary_path}, and entities. Uses json.dump to write the file. Sets ctx.summary_path to the resolved path and returns the same ctx. Missing fields, invalid types, or write errors are raised as informative exceptions; the service never exits the process itself."
+    }
+  ]
+}

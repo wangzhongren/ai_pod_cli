@@ -1,0 +1,620 @@
+{
+  "evaluator": "Independent evaluator; not Pod-generated application tests",
+  "source_project": "<tmp>/aipod-engine-pod-zck4zzba",
+  "started_at": "2026-09-08T05:26:54.868278+00:00",
+  "execution": "Unmodified disposable copy, registered PipelineRunner routes, no mocks or model calls",
+  "source_sha256": {
+    "beans_config.json": "08236ac161103839dbaca7567a87bf32312ef75c2090bbb2cd00715f0df89925",
+    "routes.toml": "b8abbfcfe01e84b790844f26d1ba20b6382cd9342540c630919849041133e7c8",
+    "config.toml": "9b4d3f419c325fd409e3cf067ab9a55d3dfe80204b9f28e001264a7d12bd1cd6",
+    "modules/__init__.py": "396f7cca5419465ecdd33bb5d0cb8a3748dfd5abece505cb200208d174bbb216",
+    "modules/models/__init__.py": "a3becdf4bf70a0dbcbd856e17225d448300a757333d2ca56e2cbe7b072217bf0",
+    "modules/models/gameentity.py": "3b3c860359667b6094ee704ac7b06201337a2a211e718145165983a057a52200",
+    "modules/models/vec2.py": "58455f02aabd5fce0459140e86177273a44a7a49a2ac3c1bd95016f8c452dec0",
+    "modules/providers/__init__.py": "6d860df61ba1f43bf33751082d953001d9ac3e485e3cbc9036d6cf05cee36b18",
+    "modules/services/__init__.py": "e52921832fee2d937bf510fcbdc3a2270e411acc4fb6abdc9284aa9344cd4996",
+    "modules/services/breakoutsimulationservice.py": "d22e29006fe33952e9ffdbd556e7d39d03b258e774fbf4fceec7aa5c4a081f2f",
+    "modules/services/pngsnapshotservice.py": "97cf6810271fad1b24b6edc45859d4c55e6b86117cf452af95c0a769b264b24b",
+    "modules/services/runsummaryservice.py": "b5b1df472006d05eae2f3df99a6c9edb9f2040bf6d461d68b73eb83dedb5b880",
+    "pipelines/run_headless_breakout.py": "5ee9d596078525eefab915503735e67a346c55992e564b071987fce0b1be66b4",
+    "pipelines/step_breakout_simulation.py": "57cbfaf8233a5db05766baf3180c6b78f4ce9989a30724943fe0f79d3350bb4d"
+  },
+  "registered_routes": [
+    "step_breakout_simulation",
+    "run_headless_breakout"
+  ],
+  "checks": [
+    {
+      "name": "default_headless_120_frames_and_outputs",
+      "status": "failed",
+      "evidence": {
+        "artifacts": {
+          "screenshot": "<aipod-checkout>/experiments/pod-engine/results/independent-acceptance/headless-0wyuum9u/headless-120.png",
+          "summary": "<aipod-checkout>/experiments/pod-engine/results/independent-acceptance/headless-0wyuum9u/headless-120.json"
+        },
+        "actual_simulation_calls": 60,
+        "first_frame": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "final_simulation_frame": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 119,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "distinct_ball_positions": 1,
+        "screenshot_exists": true,
+        "summary_exists": false,
+        "final_state": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 120,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "runtime_error": "ValueError: inputs schema validation failed: RunSummaryService.total_bricks: required field is missing; RunSummaryService.remaining_bricks: required field is missing; RunSummaryService.ball_position: required field is missing; RunSummaryService.paddle_position: required field is missing",
+        "checks": {
+          "route_completed": false,
+          "executed_120_physics_steps": false,
+          "ball_really_moved": false,
+          "reported_frame_count_matches_calls": false,
+          "png_written": true,
+          "summary_written": false
+        }
+      },
+      "error": {
+        "type": "AssertionError",
+        "message": "Headless acceptance failed: route_completed, executed_120_physics_steps, ball_really_moved, reported_frame_count_matches_calls, summary_written"
+      },
+      "traceback": "Traceback (most recent call last):\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 117, in test\n    check(detail)\n    ~~~~~^^^^^^^^\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 195, in headless\n    require(all(checks.values()), \"Headless acceptance failed: \" + \", \".join(\n    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        name for name, passed in checks.items() if not passed\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ))\n    ^^\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 71, in require\n    raise AssertionError(message)\nAssertionError: Headless acceptance failed: route_completed, executed_120_physics_steps, ball_really_moved, reported_frame_count_matches_calls, summary_written\n",
+      "duration_seconds": 0.4002
+    },
+    {
+      "name": "single_step_launch",
+      "status": "passed",
+      "evidence": {
+        "before": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "after": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.016666666666666666,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 395.75,
+            "y": 541.2368602791856
+          },
+          "ball_velocity": {
+            "x": 165.00000000000003,
+            "y": -285.78838324886476
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "duration_seconds": 0.0047
+    },
+    {
+      "name": "left_wall_reflection",
+      "status": "passed",
+      "evidence": {
+        "before": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 0.5,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": -180.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "after": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.016666666666666666,
+          "ball_attached": false,
+          "last_frame_events": [
+            "wall_left"
+          ],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 2.5,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 180.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "duration_seconds": 0.0042
+    },
+    {
+      "name": "paddle_reflection",
+      "status": "passed",
+      "evidence": {
+        "before": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 545.5
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 180.0
+          },
+          "remaining_bricks": 60
+        },
+        "after": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.016666666666666666,
+          "ball_attached": false,
+          "last_frame_events": [
+            "paddle_hit"
+          ],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": -330.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "duration_seconds": 0.0042
+    },
+    {
+      "name": "brick_collision_and_score",
+      "status": "failed",
+      "evidence": {
+        "before": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 42.0,
+            "y": 204.5
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": -180.0
+          },
+          "remaining_bricks": 60
+        },
+        "target_brick": {
+          "id": "brick_r5_c0",
+          "kind": "brick",
+          "position": {
+            "x": 12.0,
+            "y": 184.0
+          },
+          "velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "x": 74.0,
+            "y": 20.0
+          },
+          "shape": "rect",
+          "enabled": true,
+          "static": true
+        },
+        "partial_state": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 42.0,
+            "y": 204.5
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": -180.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "error": {
+        "type": "TypeError",
+        "message": "SQLModel.__init__() takes 1 positional argument but 3 were given"
+      },
+      "traceback": "Traceback (most recent call last):\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 117, in test\n    check(detail)\n    ~~~~~^^^^^^^^\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 245, in brick\n    after = step(before)\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 93, in step\n    result, ctx = runner.run_with_context(STEP_ROUTE, params)\n                  ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"<aipod-checkout>/ai_pod_cli/runner.py\", line 72, in run_with_context\n    result = module.run(ctx)\n  File \"<tmp>/aipod-independent-engine-mvzpkgqi/project/pipelines/step_breakout_simulation.py\", line 39, in run\n    (S(BreakoutSimulationService)).execute_all(ctx)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^\n  File \"<aipod-checkout>/ai_pod_cli/container.py\", line 262, in execute_all\n    result, normalized, metadata = self._execute_with_policy(ctx)\n                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^\n  File \"<aipod-checkout>/ai_pod_cli/container.py\", line 165, in _execute_with_policy\n    raw_result = self.execute(ctx)\n  File \"<aipod-checkout>/ai_pod_cli/container.py\", line 97, in execute\n    return self._instance.execute(ctx)\n           ~~~~~~~~~~~~~~~~~~~~~~^^^^^\n  File \"<tmp>/aipod-independent-engine-mvzpkgqi/project/modules/services/breakoutsimulationservice.py\", line 237, in execute\n    if self._brick_hit(ball, brick, previous_brick_center):\n       ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<tmp>/aipod-independent-engine-mvzpkgqi/project/modules/services/breakoutsimulationservice.py\", line 556, in _brick_hit\n    self._reflect_with_normal(ball, normal_x, normal_y)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<tmp>/aipod-independent-engine-mvzpkgqi/project/modules/services/breakoutsimulationservice.py\", line 586, in _reflect_with_normal\n    ball.velocity = Vec2(\n                    ~~~~^\n        ball.velocity.x - 2.0 * dot * normal_x,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        ball.velocity.y - 2.0 * dot * normal_y,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\nTypeError: SQLModel.__init__() takes 1 positional argument but 3 were given\n",
+      "duration_seconds": 0.0041
+    },
+    {
+      "name": "pause_keeps_physics_unchanged",
+      "status": "passed",
+      "evidence": {
+        "before": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 400.0,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 60
+        },
+        "paused": {
+          "game_state": "PAUSED",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 400.0,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 60
+        },
+        "next_frame": {
+          "game_state": "PAUSED",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 3,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 400.0,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "duration_seconds": 0.0063
+    },
+    {
+      "name": "held_pause_is_one_key_edge",
+      "status": "failed",
+      "evidence": {
+        "paused": {
+          "game_state": "PAUSED",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 400.0,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 60
+        },
+        "held_next_frame": {
+          "game_state": "PLAYING",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 3,
+          "simulation_time": 0.016666666666666666,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 402.0,
+            "y": 399.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "error": {
+        "type": "AssertionError",
+        "message": "Holding pause for two frames toggled the state twice"
+      },
+      "traceback": "Traceback (most recent call last):\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 117, in test\n    check(detail)\n    ~~~~~^^^^^^^^\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 268, in held_pause\n    require(held[\"game_state\"] == \"PAUSED\", \"Holding pause for two frames toggled the state twice\")\n    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<aipod-checkout>/experiments/pod-engine/check_generated_engine.py\", line 71, in require\n    raise AssertionError(message)\nAssertionError: Holding pause for two frames toggled the state twice\n",
+      "duration_seconds": 0.0064
+    },
+    {
+      "name": "reset_restores_initial_scene",
+      "status": "passed",
+      "evidence": {
+        "initial": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 1,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        },
+        "changed": {
+          "game_state": "PLAYING",
+          "score": 70,
+          "lives": 1,
+          "frame_count": 1,
+          "simulation_time": 9.0,
+          "ball_attached": false,
+          "last_frame_events": [],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 400.0,
+            "y": 400.0
+          },
+          "ball_velocity": {
+            "x": 120.0,
+            "y": -60.0
+          },
+          "remaining_bricks": 59
+        },
+        "reset": {
+          "game_state": "READY",
+          "score": 0,
+          "lives": 3,
+          "frame_count": 2,
+          "simulation_time": 0.0,
+          "ball_attached": true,
+          "last_frame_events": [
+            "reset"
+          ],
+          "previous_commands": {
+            "left": false,
+            "right": false,
+            "launch": false,
+            "pause": false,
+            "reset": false
+          },
+          "ball_position": {
+            "x": 393.0,
+            "y": 546.0
+          },
+          "ball_velocity": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "remaining_bricks": 60
+        }
+      },
+      "duration_seconds": 0.0058
+    }
+  ],
+  "passed": 5,
+  "failed": 3,
+  "status": "failed",
+  "finished_at": "2026-09-08T05:26:55.311671+00:00"
+}

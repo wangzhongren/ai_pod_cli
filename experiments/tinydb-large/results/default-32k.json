@@ -1,0 +1,90 @@
+{
+  "project": "msiemens/tinydb",
+  "revision": "4aa53111d72c9cbaafcdc039211caf49f4face6f",
+  "output": "<tmp>/aipod-tinydb-large-gulxmn1t",
+  "allowed_files": [
+    "tinydb/table.py",
+    "tinydb/database.py"
+  ],
+  "acceptance_hash": "4d69e732726d87438551475bf7b51d5fc38df0fee6f31b64ddebf358131de15b",
+  "calls": [
+    {
+      "channel": "json",
+      "requests": [
+        {
+          "max_tokens": 8192,
+          "timeout": null,
+          "finish_reason": "stop",
+          "response_characters": 185,
+          "usage": {
+            "prompt_tokens": 7937,
+            "completion_tokens": 189,
+            "total_tokens": 8126
+          },
+          "reasoning_tokens": 152,
+          "seconds": 2.022
+        }
+      ],
+      "seconds": 2.234
+    },
+    {
+      "channel": "xml",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "timeout": 300,
+          "finish_reason": "length",
+          "response_characters": 0,
+          "usage": {
+            "prompt_tokens": 8070,
+            "completion_tokens": 32768,
+            "total_tokens": 40838
+          },
+          "reasoning_tokens": 32768,
+          "seconds": 230.79
+        },
+        {
+          "max_tokens": 32768,
+          "timeout": 300,
+          "seconds": 99.568
+        }
+      ],
+      "seconds": 332.363
+    }
+  ],
+  "stages": [
+    {
+      "file": "tinydb/table.py",
+      "attempts": []
+    }
+  ],
+  "source_max_tokens": 32768,
+  "source_timeout_seconds": 300,
+  "max_retries": 3,
+  "size": {
+    "tinydb": 2255,
+    "tests": 2098
+  },
+  "tested_import": "<tmp>/aipod-tinydb-large-gulxmn1t/project/tinydb/__init__.py",
+  "baseline_tests": {
+    "exit_code": 0,
+    "summary": "222 passed in 0.23s",
+    "seconds": 0.357,
+    "log": "<tmp>/aipod-tinydb-large-gulxmn1t/baseline-original.log"
+  },
+  "baseline_types": {
+    "exit_code": 0,
+    "summary": "Success: no issues found in 19 source files",
+    "seconds": 1.293,
+    "log": "<tmp>/aipod-tinydb-large-gulxmn1t/baseline-types.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "15 failed, 1 passed, 18 errors in 0.17s",
+    "seconds": 0.273,
+    "log": "<tmp>/aipod-tinydb-large-gulxmn1t/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "stopped_early": true,
+  "stopped_reason": "First source request exhausted 32768 tokens entirely in reasoning with no source. Interrupted the following repeated-budget request after 99.568 seconds for a separately recorded larger-budget diagnostic."
+}

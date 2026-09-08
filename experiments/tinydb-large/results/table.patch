@@ -1,0 +1,183 @@
+--- a/tinydb/table.py
++++ b/tinydb/table.py
+@@ -1,9 +1,11 @@
++
+ """
+ This module implements tables, the central place for accessing and manipulating
+ data in TinyDB.
+ """
+ 
+ from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping
++from copy import deepcopy
+ from typing import (
+     NoReturn,
+     Optional,
+@@ -69,6 +71,10 @@
+     :param name: The table name
+     :param cache_size: Maximum capacity of query cache
+     :param persist_empty: Store new table even with no operations on it
++    :param copy_on_read: If enabled, documents and their nested structures
++                         are deep-copied before being returned to callers,
++                         making read results independent from storage and
++                         query-cache state.
+     """
+ 
+     #: The class used to represent documents
+@@ -96,7 +102,8 @@
+         storage: Storage,
+         name: str,
+         cache_size: int = default_query_cache_capacity,
+-        persist_empty: bool = False
++        persist_empty: bool = False,
++        copy_on_read: bool = False
+     ):
+         """
+         Create a table instance.
+@@ -104,6 +111,8 @@
+ 
+         self._storage = storage
+         self._name = name
++        self._copy_on_read = copy_on_read
++
+         self._query_cache: LRUCache[QueryLike, list[Document]] \
+             = self.query_cache_class(capacity=cache_size)
+ 
+@@ -222,6 +231,9 @@
+         """
+         Get all documents stored in the table.
+ 
++        When ``copy_on_read`` is enabled, the returned documents are
++        deep copies and may be mutated safely.
++
+         :returns: a list with all documents.
+         """
+ 
+@@ -237,10 +249,11 @@
+         Search for all documents matching a 'where' cond.
+ 
+         Note: a repeated search with the same ``cond`` is served from an
+-        internal cache. The returned list is a fresh copy, but its
+-        documents are the same objects held by the cache -- treat them as
+-        read-only, since mutating one (a key or a nested value) corrupts
+-        what a later identical search returns.
++        internal cache. By default, the returned list is a fresh copy, but
++        its documents are the same objects held by the cache -- treat them
++        as read-only, since mutating one (a key or a nested value) corrupts
++        what a later identical search returns. When ``copy_on_read`` is
++        enabled, documents are deeply copied before being returned.
+ 
+         :param cond: the condition to check against
+         :returns: list of matching documents
+@@ -250,13 +263,15 @@
+         # query
+         cached_results = self._query_cache.get(cond)
+         if cached_results is not None:
+-            return cached_results[:]
++            return [self._copy_document(doc) for doc in cached_results]
+ 
+         # Perform the search by applying the query to all documents.
+         # Then, only if the document matches the query, convert it
+         # to the document class and document ID class.
+         docs = [
+-            self.document_class(doc, self.document_id_class(doc_id))
++            self._copy_document(
++                self.document_class(doc, self.document_id_class(doc_id))
++            )
+             for doc_id, doc in self._read_table().items()
+             if cond(doc)
+         ]
+@@ -280,6 +295,11 @@
+             # Update the query cache
+             self._query_cache[cond] = docs[:]
+ 
++            # Do not expose the cached document objects to the caller when
++            # copy-on-read is enabled.
++            if self._copy_on_read:
++                return [self._copy_document(doc) for doc in docs]
++
+         return docs
+ 
+     @overload
+@@ -330,7 +350,10 @@
+         Get exactly one document specified by a query or a document ID.
+         However, if multiple document IDs are given then returns all
+         documents in a list.
+-        
++
++        When ``copy_on_read`` is enabled, returned documents are deep
++        copies and may be mutated safely.
++
+         Returns ``None`` if the document doesn't exist.
+ 
+         :param cond: the condition to check against
+@@ -349,7 +372,9 @@
+                 return None
+ 
+             # Convert the raw data to the document class
+-            return self.document_class(raw_doc, doc_id)
++            return self._copy_document(
++                self.document_class(raw_doc, doc_id)
++            )
+ 
+         elif doc_ids is not None:
+             # Filter the table by extracting out all those documents which
+@@ -361,7 +386,11 @@
+ 
+             # Now return the filtered documents in form of list
+             return [
+-                self.document_class(doc, self.document_id_class(doc_id))
++                self._copy_document(
++                    self.document_class(
++                        doc, self.document_id_class(doc_id)
++                    )
++                )
+                 for doc_id, doc in table.items()
+                 if doc_id in doc_ids_set
+             ]
+@@ -374,9 +403,11 @@
+             # parameter and is an optional `int`.
+             for doc_id_, doc in self._read_table().items():
+                 if cond(doc):
+-                    return self.document_class(
+-                        doc,
+-                        self.document_id_class(doc_id_)
++                    return self._copy_document(
++                        self.document_class(
++                            doc,
++                            self.document_id_class(doc_id_)
++                        )
+                     )
+ 
+             return None
+@@ -716,13 +747,30 @@
+         """
+         Iterate over all documents stored in the table.
+ 
++        When ``copy_on_read`` is enabled, each yielded document is a deep
++        copy and may be mutated safely.
++
+         :returns: an iterator over all documents.
+         """
+ 
+         # Iterate all documents and their IDs
+         for doc_id, doc in self._read_table().items():
+             # Convert documents to the document class
+-            yield self.document_class(doc, self.document_id_class(doc_id))
++            yield self._copy_document(
++                self.document_class(doc, self.document_id_class(doc_id))
++            )
++
++    def _copy_document(self, document: Document) -> Document:
++        """
++        Return a deep copy of *document* when copy-on-read is enabled.
++
++        Disabled copy-on-read preserves the default sharing behavior by
++        returning the original document unchanged.
++        """
++        if self._copy_on_read:
++            return cast(Document, deepcopy(document))
++
++        return document
+ 
+     def _get_next_id(self):
+         """

@@ -107,6 +107,16 @@ def _artifact_prompt(
       AIPod container/runtime internals or project components.
     - role=adapter_module files contain one focused transport/UI/queue concern and use
       relative imports within the Interface bundle. They share the same import boundary.
+    - role=behavior_test defines unittest.TestCase classes with the exact test method
+      names in the frozen verification cases. Use absolute standard-library/public SDK
+      imports (no relative imports). Invoke real routes with PipelineRunner or InterfaceContext;
+      do not mock routes, replace components, fill missing internal outputs, or weaken cases.
+      Each test must call a real route and use self.assert* on behavior-derived values.
+      Python bare assert does not count as unittest assertion evidence. A constant True,
+      printing success, or checking only a file's existence is insufficient acceptance.
+      For stateful behavior, exercise multiple calls and assert state transitions and
+      invariants. Never catch a failure and then report success. Use temporary output paths.
+      The framework runs this file with python -m ai_pod_cli.behavior_tests <path>.
     - Optional queue, UI, desktop, and web dependencies must be imported lazily inside
       start(); required_routes() and smoke() must not connect to external systems or open UI.
     - Runtime code must implement every declared runtime verification mode, including
@@ -206,7 +216,7 @@ def _generate_artifact(
         try:
             result = generate_source(
                 call_llm, system_prompt, user_prompt + feedback, path,
-                content_key="content", temperature=0.1, max_tokens=16384,
+                content_key="content", temperature=0.1,
                 progress_callback=progress_callback,
                 progress_label=f"Generating Interface artifact: {path}",
             )

@@ -250,7 +250,7 @@ def handle_create(args):
                         patch_result = call_llm(
                             "你是严格的 Python 最小补丁生成器，只能按要求返回 JSON patches。",
                             patch_prompt(generated_code, violations, failure_kind),
-                            json_mode=True, temperature=0.0, max_tokens=8192,
+                            json_mode=True, temperature=0.0,
                         )
                         candidate_result = dict(result)
                         candidate_result["code"] = apply_code_patches(

@@ -11,6 +11,7 @@ from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
 from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.run_store import get_run_trace, list_run_traces
 from ai_pod_cli.pod.state import load_current_plan
+from ai_pod_cli.pipeline_validation import load_pipeline_inputs
 
 
 SCHEMA_VERSION = "1.0"
@@ -99,6 +100,7 @@ def load_project_graph() -> tuple[list[dict], list[dict]]:
                     "name": str(name),
                     "pipeline": pipeline_path,
                     "description": str(route.get("description", "")),
+                    "input_contract": str(route.get("input_contract", "")),
                     "services": extract_pipeline_services(pipeline_path, class_to_id),
                     "execution": extract_pipeline_execution(pipeline_path),
                     "exists": Path(pipeline_path).exists(),
@@ -170,6 +172,16 @@ def build_project_model() -> dict:
                 "path": pipeline["pipeline"],
             })
         contract = analyze_pipeline_contracts(pipeline.get("services", []), components)
+        contract["input_source"] = "inferred"
+        if pipeline.get("input_contract"):
+            try:
+                boundary = load_pipeline_inputs(pipeline["input_contract"])
+                contract["inferred_inputs"] = contract["inputs"]
+                contract["inputs"] = boundary["inputs"]
+                contract["input_source"] = "declared"
+            except (OSError, ValueError, TypeError, AttributeError) as error:
+                issues.append({"code": "invalid_pipeline_input_contract", "pipeline": pipeline["name"],
+                               "message": str(error)})
         pipeline["contract"] = contract
         for issue in contract["issues"]:
             issues.append({**issue, "pipeline": pipeline["name"]})

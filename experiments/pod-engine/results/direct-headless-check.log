@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "<aipod-checkout>/ai_pod_cli/runner.py", line 72, in run_with_context
+    result = module.run(ctx)
+  File "<engine-project>/pipelines/run_headless_breakout.py", line 138, in run
+    (S(RunSummaryService)).execute_all(ctx)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 262, in execute_all
+    result, normalized, metadata = self._execute_with_policy(ctx)
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 160, in _execute_with_policy
+    raise ValueError("inputs schema validation failed: " + "; ".join(input_errors))
+ValueError: inputs schema validation failed: RunSummaryService.total_bricks: required field is missing; RunSummaryService.remaining_bricks: required field is missing; RunSummaryService.ball_position: required field is missing; RunSummaryService.paddle_position: required field is missing
+{"status": "failed", "error": "inputs schema validation failed: RunSummaryService.total_bricks: required field is missing; RunSummaryService.remaining_bricks: required field is missing; RunSummaryService.ball_position: required field is missing; RunSummaryService.paddle_position: required field is missing", "frame_count": 120, "game_state": "READY", "ball_attached": true}

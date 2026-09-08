@@ -14,7 +14,9 @@ _model: str | None = None
 # 默认重试配置
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_DELAY = 2  # 秒
-DEFAULT_TIMEOUT_SECONDS = 120.0
+DEFAULT_TIMEOUT_SECONDS = 600.0
+DEFAULT_JSON_MAX_TOKENS = 32768
+DEFAULT_SOURCE_MAX_TOKENS = 65536
 
 
 def _parse_json_content(raw_content: str) -> dict:
@@ -49,7 +51,7 @@ def get_client() -> OpenAI:
             base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             timeout=float(os.environ.get("OPENAI_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)),
             # call_llm owns the visible retry policy.  Leaving SDK retries enabled
-            # nests several silent 120-second attempts inside one displayed attempt.
+            # nests several silent attempts inside one displayed attempt.
             max_retries=0,
         )
     return _client
@@ -71,7 +73,7 @@ def call_llm(
     temperature: float = 0.1,
     max_retries: int = DEFAULT_MAX_RETRIES,
     retry_delay: float = DEFAULT_RETRY_DELAY,
-    max_tokens: int = 32768,
+    max_tokens: int | None = None,
     timeout_seconds: float | None = None,
     progress_callback: Callable[[dict], None] | None = None,
     progress_label: str = "Model response",
@@ -102,7 +104,9 @@ def call_llm(
             {"role": "user", "content": user_content},
         ],
         "temperature": temperature,
-        "max_tokens": max_tokens,
+        "max_tokens": max_tokens if max_tokens is not None else (
+            DEFAULT_JSON_MAX_TOKENS if json_mode else DEFAULT_SOURCE_MAX_TOKENS
+        ),
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
@@ -162,7 +166,7 @@ def call_llm(
 
             if finish_reason == "length":
                 previous_limit = int(kwargs["max_tokens"])
-                next_limit = min(previous_limit * 2, 32768)
+                next_limit = min(previous_limit * 2, DEFAULT_SOURCE_MAX_TOKENS)
                 last_error = ValueError(
                     f"模型输出达到 token 上限：finish_reason=length, "
                     f"characters={len(raw_content or '')}, max_tokens={previous_limit}"

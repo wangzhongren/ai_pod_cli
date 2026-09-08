@@ -23,6 +23,8 @@ from ai_pod_cli.pod.tools.interfaces import (
     generate_interfaces, generate_pod_entry as _generate_pod_entry,
 )
 from ai_pod_cli.pod.tools.pipelines import generate_pipelines
+from ai_pod_cli.pipeline_validation import validate_pipeline_inputs
+from ai_pod_cli.project_model import build_project_model
 
 
 
@@ -83,7 +85,10 @@ def _execute_pod_build_tool(args):
     toml_keys = load_config_toml_safe()
     stage_names = STAGE_NAMES
     stage_name = stage_names[min(stage, len(stage_names) - 1)]
-    frozen_routes = _load_routes_map() if stage == 4 else {}
+    frozen_routes = {
+        item["name"]: {"description": item.get("description", ""), **item.get("contract", {})}
+        for item in build_project_model().get("pipelines", [])
+    } if stage == 4 else {}
     visible_components = (
         "[hidden from Interface planning; use frozen routes only]"
         if stage == 4 else existing_beans
@@ -96,7 +101,7 @@ def _execute_pod_build_tool(args):
         0: "只规划共享 data model。components 只能包含 model；pipelines 必须为空。每个 Model 项只对应一个 Python 类。明确区分运行时 Value Model（不持久化）和 Persistent Model（需要 ModelRepository/数据库）；禁止把 Vector2、Transform、事件、碰撞结果等瞬时值规划成数据库表。",
         1: "只规划用户明确要求连接的外部基础设施 provider。不得因为需求出现 Web/CLI/Desktop/Worker 就创建 HTTP Server、调度器、Redis、消息队列、邮件或通知 Provider；这些属于后续 Interface，除非用户明确指定真实外部系统。没有明确外部系统时 components 必须为空并复用 ModelRepository。数据库能力只能复用内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 或 SQL Provider。",
         2: "只规划业务 service。Service 看不到其他 Service：depends_on 只能填写 Provider Bean ID，禁止依赖、导入、实例化或调用其他 Service；Service 组合只能由 Pipeline 完成。数据库持久化必须依赖内置 ModelRepository，禁止 DatabaseProvider、SchemaProvider 和原始 SQL。components 只能包含 service；pipelines 必须为空。每个 Service 只对应一个 execute(ctx)。components.models 必须填写 Bean Pool 中已有 Model 的精确 Bean ID，禁止填写或猜测 class_path；后续代码生成器会从冻结注册表取得精确 class_path。Model 只能普通 import，不能写入 depends_on。",
-        3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。Service 之间的唯一组合位置就是 Pipeline。默认同步串行；只有需求明确需要时才声明 async、parallel、stream 或 repeat。循环必须使用 Runtime repeat 节点和 Context 字段条件，禁止让 Service 调用 Service 或在 Service 中编排 while。并发分支必须给出 merge、failure_policy 和 concurrency，流式执行必须给出 concurrency、batch_size 和 failure_policy。",
+        3: "只规划 Pipeline。components 必须为空；reuse_components 列出 Pipeline 使用的现有 Service；根据已经冻结的 Service inputs/outputs 规划 pipelines，禁止假设不存在的组件。Service 之间的唯一组合位置就是 Pipeline。默认同步串行；只有需求明确需要时才声明 async、parallel、stream 或 repeat。repeat只接受S(Service)/管道/parallel节点，until_field按真值停止；逐帧转换或字符串比较可使用Pipeline中有上限的for循环并通过S调用服务。禁止让Service调用Service或在Service中编排while。并发分支必须给出merge、failure_policy和concurrency，流式执行必须给出concurrency、batch_size和failure_policy。",
         4: "只规划用户入口 Interface。Interface 的全部能力视图就是已冻结 route；不得知道、猜测或导入 Model、Provider、Service 和其类路径。reuse_components、components 和 pipelines 必须为空。把 Interface 规划为可交付单元：多个 Artifact、安装/运行/卸载命令、权限、平台支持级别和多项验证。复杂 Adapter 必须拆成 adapter_entry 和多个 adapter_module，每个文件只承担一个输入适配职责。所有 Artifact 必须位于 interfaces/<interface-id>/ 下。verify 命令必须非交互、可重复且不得执行安装、卸载或修改用户系统。",
     }[min(stage, 4)]
 
@@ -141,6 +146,22 @@ def _execute_pod_build_tool(args):
     3. pipeline 的 name 应该是简短的英文标识（如 create_auth）。
     4. execution.mode 只能是 sequential、async、parallel、stream 或 repeat。默认 sequential。
        parallel/stream 的策略由 Runtime 执行，不要要求 Service 自己管理 asyncio 任务。
+    5. 每条 Pipeline 必须声明 inputs（真实调用者提供的公开入口参数）和非空 verification_cases。
+       每个场景包括唯一 name 和明确 params；默认可启动的需求必须包含空参数默认场景。
+       必填入口参数必须给出实际值。不得因下游缺字段就要求调用者提供内部计算结果，
+       不得人为补样本数据让运行通过。沙盒严格执行这些参数，不会合成字段或文件。
+       这些字段在源码生成前冻结，修复代码时不得削弱场景。
+
+    【Interface 行为验收（仅 interfaces 阶段适用）】：
+    1. smoke 只证明入口/契约可加载。每个 Interface 还必须有 required=true、kind=behavior 的检查。
+    2. 把用户需求中的可验证行为逐项映射到检查的 cases，每项是
+       {{"test":"BehaviorTests.test_exact_name","requirement":"具体输入场景和必须观察到的结果"}}。
+       包含完整默认运行、关键分支和连续状态变化；例如物理需求包含发球后实际移动、碰撞反弹/计分、
+       暂停保持位置和重置，不能只检查退出码或输出文件存在。测试名称和需求在生成源码前冻结。
+    3. 为行为检查规划 role=behavior_test 的 Python unittest Artifact，命令只能是
+       ["{{python}}","-m","ai_pod_cli.behavior_tests","interfaces/<id>/test_behavior.py"]。
+       tests由真实注册route执行，不mock、不合成内部输出；每项测试必须执行实际route并用self.assert*检查结果。
+       该驱动拒绝零测试、未执行route、没有断言和忽略的Runtime Failure；已声明case缺失也不通过。
 
     请严格以标准 JSON 格式返回（不要包含 Markdown 块标记）：
     {{
@@ -162,6 +183,8 @@ def _execute_pod_build_tool(args):
             {{
                 "name": "pipeline 英文标识",
                 "instruction": "自然语言业务指令（AI 据此规划执行链）",
+                "inputs": {{"action": {{"type": "str"}}}},
+                "verification_cases": [{{"name": "真实用户调用", "params": {{"action": "具体操作"}}}}],
                 "execution": {{
                     "mode": "sequential|async|parallel|stream|repeat",
                     "concurrency": 1,
@@ -186,6 +209,7 @@ def _execute_pod_build_tool(args):
                 "artifacts": [
                     {{"path": "interfaces/interface-id/adapter.py", "role": "adapter_entry", "format": "python", "instruction": "只定义继承 ai_pod_cli.interface.InterfaceAdapter 的入口类；复杂逻辑拆到其他 adapter_module Artifact"}},
                     {{"path": "interfaces/interface-id/transport.py", "role": "adapter_module", "format": "python", "instruction": "只实现消息、HTTP、UI 或其他项目特有输入适配；文件之间使用相对导入"}},
+                    {{"path": "interfaces/interface-id/test_behavior.py", "role": "behavior_test", "format": "python", "instruction": "unittest真实行为验收，逐项实现verify.cases中冻结的测试名和期望结果"}},
                     {{"path": "interfaces/interface-id/install.sh", "role": "installer", "format": "shell", "instruction": "平台需要时生成安装脚本，否则不规划"}},
                     {{"path": "interfaces/interface-id/metadata.json", "role": "metadata", "format": "json", "instruction": "平台需要时生成声明元数据"}}
                 ],
@@ -197,7 +221,9 @@ def _execute_pod_build_tool(args):
                 "permissions": ["filesystem_write"],
                 "support": {{"level": "supported|supported_with_manual_step|prototype_only|unsupported", "manual_steps": []}},
                 "verify": [
-                    {{"name": "adapter_smoke", "kind": "runtime", "required": true, "command": ["{{python}}", "-m", "ai_pod_cli", "interface", "--project-root", "{{project_root}}", "smoke", "interface-id"], "timeout": 30}}
+                    {{"name": "adapter_smoke", "kind": "smoke", "required": true, "command": ["{{python}}", "-m", "ai_pod_cli", "interface", "--project-root", "{{project_root}}", "smoke", "interface-id"], "timeout": 30}},
+                    {{"name": "behavior", "kind": "behavior", "required": true, "command": ["{{python}}", "-m", "ai_pod_cli.behavior_tests", "interfaces/interface-id/test_behavior.py"], "timeout": 60,
+                      "cases": [{{"test": "BehaviorTests.test_expected_behavior", "requirement": "需求中的具体场景及可观察结果；按实际需求展开全部必要用例"}}]}}
                 ]
             }}
         ],
@@ -221,7 +247,6 @@ def _execute_pod_build_tool(args):
                 f"需求: {desc}",
                 json_mode=True,
                 temperature=0.2,
-                max_tokens=8192,
                 progress_callback=progress_callback,
                 progress_label=f"Planning stage {stage + 1}/5: {stage_name}",
             )
@@ -239,6 +264,23 @@ def _execute_pod_build_tool(args):
         normalize_interface_plan(plan)
         plan["reuse_components"] = []
         _save_decision_plan(decision_state)
+
+    planning_errors = []
+    if stage == 3:
+        for pipe in plan.get("pipelines", []):
+            planning_errors.extend(validate_pipeline_inputs(pipe.get("inputs"), pipe.get("verification_cases")))
+    elif stage == 4:
+        from ai_pod_cli.pod.verification import _application_verification_issues
+        planning_errors = [issue["message"] for issue in _application_verification_issues(
+            decision_state, require_files=False,
+        )]
+    if planning_errors:
+        stage_record.update(status="pending", plan=None, last_evidence={
+            "status": "rejected", "repair_scope": stage_name, "evidence": planning_errors,
+        })
+        _save_decision_plan(decision_state)
+        print("❌ 验证规划不完整：" + "; ".join(planning_errors))
+        raise SystemExit(1)
 
     reduction = reduce_decision_fragments(plan, beans.get("beans", []), stage_name)
     stage_record["reduction"] = reduction
@@ -510,7 +552,7 @@ def _execute_pod_build_tool(args):
         for pipeline_name in generated_pipelines:
             stage_record.setdefault("runtime_checks", []).append({
                 "pipeline": pipeline_name, "status": "passed",
-                "check": "isolated_pipeline_execution",
+                "check": "explicit_entry_scenarios",
             })
         _save_decision_plan(decision_state)
         _set_stage_status(decision_state, stage, "complete")

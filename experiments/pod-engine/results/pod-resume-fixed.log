@@ -1,0 +1,239 @@
+🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe
+🧩 [Pod Agent] 需求来源: requirements.md
+
+🧠 [Pod Agent · Step 6] compose_pipelines (pipelines)
+   决策摘要: Retry the current pipelines stage after its governed tool failed.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+📌 [复用冻结规划] pipelines 阶段不再调用规划器。
+
+📋 [阶段规划 4/5 · pipelines] breakout_headless_pipeline
+   组件: 0 个  |  Pipeline: 2 条  |  Interface: 0 个
+
+   📦 组件:
+      ♻️  BreakoutSimulationService (reuse)
+      ♻️  PngSnapshotService (reuse)
+      ♻️  RunSummaryService (reuse)
+
+   🔗 Pipeline:
+      1. step_breakout_simulation
+         → 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+      2. run_headless_breakout
+         → 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+
+⚙️  建议新增配置项:
+   [run] max_frames = 120  # 无头运行最大帧数；超过此帧数即使游戏未结束也强制停止
+   [run] random_seed = 42  # 固定随机种子，保证可复现；设为 null 则使用系统随机
+
+📋 [方案已保存] docs/aipod/breakout_headless_pipeline_plan.md
+
+⚙️  [配置追加] 2 个新配置项写入 config.toml
+
+
+==================================================
+🧩 [Pod 阶段组件完成] breakout_headless_pipeline
+   ✅ 组件成功: 0 个 — (无)
+
+🔗 [生成 Pipeline] 2 条
+
+   [1/2] step_breakout_simulation: 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+   ♻️  [Pipeline 复用] step_breakout_simulation
+
+   [2/2] run_headless_breakout: 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+🎬 [compose] 人类宏观指令: '运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。'
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ Pipeline 沙箱实际运行失败：
+Traceback (most recent call last):
+  File "<string>", line 20, in <module>
+    result = entry(ctx)
+  File "<tmp>/.aipod_candidate_pipeline.py", line 59, in run
+    repeat(
+    ~~~~~~^
+        _simulation_frame,
+        ^^^^^^^^^^^^^^^^^^
+        until_field="terminated",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+        max_iterations_field="max_frames",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ).execute_all(ctx)
+    ^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 597, in repeat
+    return _RepeatNode(
+        body, until_field=until_field, max_iterations=max_iterations,
+        max_iterations_field=max_iterations_field, output_field=output_field,
+        trace_limit=trace_limit,
+    )
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 478, in __init__
+    raise TypeError("repeat body must be an S(Component), pipe chain, or parallel group")
+TypeError: repeat body must be an S(Component), pipe chain, or parallel group
+   Studio 将校验问题反馈给 AI 并自动重试。
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检通过] 语法、Contract 与隔离 Pipeline 运行均已通过
+💾 [Pipeline 已保存] pipelines/run_headless_breakout.py
+📋 [路由已注册] run_headless_breakout → pipelines/run_headless_breakout.py
+
+🎉 [compose 完成] Pipeline 已生成并注册。
+   运行方式: 通过你的入口文件调用 PipelineRunner().run("run_headless_breakout", params)
+
+   🔗 Pipeline 成功: 1 条 — run_headless_breakout
+
+✅ [pipelines 阶段已冻结] 控制权返回 Pod Agent。
+
+🧠 [Pod Agent · Step 7] generate_interfaces (interfaces)
+   决策摘要: The interfaces stage is the earliest incomplete stage.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+
+📋 [阶段规划 5/5 · interfaces] breakout_interface
+   组件: 0 个  |  Pipeline: 0 条  |  Interface: 1 个
+
+   📦 组件:
+
+   🖥️  Interfaces:
+      1. breakout_engine (cli)
+         → Deliver a runnable 2D Breakout game engine interface. It exposes two frozen routes: 'step_breakout_simulation' (interactive frame-by-frame stepping) and 'run_headless_breakout' (headless full game run). The interface supports two modes selected by optional CLI flags: '--mode interactive' (default) opens a pygame window and repeatedly calls 'step_breakout_simulation' with commands built from keyboard input; '--mode headless' invokes 'run_headless_breakout' once with configurable max_frames, seed, screenshot_path, summary_path and then exits. Other flags: --max-frames, --seed, --screenshot, --summary. The adapter must only orchestrate and must not know any concrete Model/Provider/Service class paths.
+
+📋 [方案已保存] docs/aipod/breakout_interface_plan.md
+
+
+==================================================
+🧩 [Pod 阶段组件完成] breakout_interface
+   ✅ 组件成功: 0 个 — (无)
+
+🚀 [生成 Interface deliveries] 1 个
+   [1/1] breakout_engine (cli)
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 入口导入了未声明或不存在的包 'pygame'；AIPod 的 Python 导入名固定为 'ai_pod_cli'，入口不得导入项目名、Pod 名、modules 或 pipelines
+   Studio 将校验问题反馈给 AI 并自动重试。
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "<aipod-checkout>/ai_pod_cli/__main__.py", line 5, in <module>
+    main()
+    ~~~~^^
+  File "<aipod-checkout>/ai_pod_cli/cli.py", line 165, in main
+    handle_pod(args)
+    ~~~~~~~~~~^^^^^^
+  File "<aipod-checkout>/ai_pod_cli/pod/agent.py", line 263, in handle_pod
+    _execute_pod_build_tool(args)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "<aipod-checkout>/ai_pod_cli/pod/build.py", line 519, in _execute_pod_build_tool
+    entry_files, available_components = generate_interfaces(
+                                        ~~~~~~~~~~~~~~~~~~~^
+        desc=desc, interfaces=interfaces, reused=reused, generated=generated,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        args=args, decision_state=decision_state, stage=stage,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        progress_callback=progress_callback, replace_existing=rebuild_active,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "<aipod-checkout>/ai_pod_cli/pod/tools/interfaces.py", line 391, in generate_interfaces
+    result = generate_interface_delivery(
+        desc, interface, progress_callback=progress_callback,
+        auto_repair=bool(getattr(args, "auto_repair", False) or args.yes),
+        replace_existing=replace_existing,
+    )
+  File "<aipod-checkout>/ai_pod_cli/pod/tools/interfaces.py", line 294, in generate_interface_delivery
+    result = _generate_artifact(
+        desc, interface, artifact, route_capabilities,
+        progress_callback=progress_callback, auto_repair=auto_repair,
+    )
+  File "<aipod-checkout>/ai_pod_cli/pod/tools/interfaces.py", line 207, in _generate_artifact
+    result = generate_source(
+        call_llm, system_prompt, user_prompt + feedback, path,
+    ...<2 lines>...
+        progress_label=f"Generating Interface artifact: {path}",
+    )
+  File "<aipod-checkout>/ai_pod_cli/source_generation.py", line 24, in generate_source
+    metadata = llm(
+        system + "\n本轮只返回 JSON 元数据，不生成源码，不要返回 code 或 content 字段。",
+        user, json_mode=True, **options,
+    )
+  File "<aipod-checkout>/ai_pod_cli/client.py", line 129, in call_llm
+    response = client.chat.completions.create(**kwargs)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_utils/_utils.py", line 298, in wrapper
+    return func(*args, **kwargs)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/resources/chat/completions/completions.py", line 1296, in create
+    return self._post(
+           ~~~~~~~~~~^
+        "/chat/completions",
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<53 lines>...
+        stream_cls=Stream[ChatCompletionChunk],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_base_client.py", line 1368, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_base_client.py", line 1076, in request
+    response = self._send_request(
+        request,
+        stream=stream or self._should_stream_response_body(request=request),
+        **kwargs,
+    )
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_client.py", line 591, in _send_request
+    response = self._send_with_auth_retry(request, stream=stream, **kwargs)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_client.py", line 570, in _send_with_auth_retry
+    response = super()._send_request(request, stream=stream, **kwargs)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/openai/_base_client.py", line 999, in _send_request
+    return self._client.send(request, stream=stream, **kwargs)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpx2/_client.py", line 980, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpx2/_client.py", line 1008, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpx2/_client.py", line 1043, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpx2/_client.py", line 1076, in _send_single_request
+    response = transport.handle_request(request)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpx2/_transports/default.py", line 245, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/connection_pool.py", line 242, in handle_request
+    raise exc from None
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/connection_pool.py", line 224, in handle_request
+    response = connection.handle_request(pool_request.request)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/http_proxy.py", line 325, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/http11.py", line 125, in handle_request
+    raise exc
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/http11.py", line 97, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/http11.py", line 167, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_sync/http11.py", line 200, in _receive_event
+    data = self._network_stream.read(self.READ_NUM_BYTES, timeout=timeout)
+  File "/private/tmp/aipod-python-xml-venv/lib/python3.14/site-packages/httpcore2/_backends/sync.py", line 127, in read
+    return self._sock.recv(max_bytes)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/ssl.py", line 1285, in recv
+    return self.read(buflen)
+           ~~~~~~~~~^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/ssl.py", line 1140, in read
+    return self._sslobj.read(len)
+           ~~~~~~~~~~~~~~~~~^^^^^
+KeyboardInterrupt

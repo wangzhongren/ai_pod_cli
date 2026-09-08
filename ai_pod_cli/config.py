@@ -389,7 +389,7 @@ def save_config(config: dict):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
-def register_route(name: str, pipeline_path: str, description: str = ""):
+def register_route(name: str, pipeline_path: str, description: str = "", *, input_contract: str = ""):
     """Register or update a route in routes.toml using tomlkit."""
     import tomlkit
 
@@ -406,6 +406,8 @@ def register_route(name: str, pipeline_path: str, description: str = ""):
     table.add("pipeline", pipeline_path)
     if description:
         table.add("description", description)
+    if input_contract:
+        table.add("input_contract", input_contract)
 
     doc[name] = table
 

@@ -1,6 +1,11 @@
 """Pipeline composition tool for frozen Services."""
 
 from ai_pod_cli.commands.compose import handle_compose
+from pathlib import Path
+from ai_pod_cli.config import register_route
+from ai_pod_cli.pipeline_validation import save_pipeline_inputs, validate_pipeline_inputs
+from ai_pod_cli.sandbox import verify_pipeline_candidate
+from ai_pod_cli.runner import PipelineRunner
 
 
 def generate_pipelines(
@@ -26,8 +31,30 @@ def generate_pipelines(
                     + str(execution)
                 )
             print(f"\n   [{i}/{len(pipelines)}] {pipe_name}: {instruction}")
+            boundary_errors = validate_pipeline_inputs(pipe.get("inputs"), pipe.get("verification_cases"))
+            if boundary_errors:
+                print("   ❌ Pipeline 缺少有效的入口与验证场景：" + "; ".join(boundary_errors))
+                failed_pipelines.append(pipe_name)
+                continue
             if pipe_name in existing_routes:
                 if not replace_existing:
+                    # load_routes() is a name -> description view; only the
+                    # real registry contains the executable Pipeline path.
+                    existing_route = PipelineRunner().get_route(pipe_name) or {}
+                    filepath = str(existing_route.get("pipeline", ""))
+                    try:
+                        violations = verify_pipeline_candidate(
+                            Path.cwd(), Path(filepath).read_text(encoding="utf-8"), {},
+                            cases=pipe["verification_cases"],
+                        )
+                    except (OSError, ValueError) as error:
+                        violations = [str(error)]
+                    if violations:
+                        print("   ❌ 复用 Pipeline 未通过真实入口场景：" + "; ".join(violations))
+                        failed_pipelines.append(pipe_name)
+                        continue
+                    boundary_path = save_pipeline_inputs(filepath, pipe["inputs"], pipe["verification_cases"])
+                    register_route(pipe_name, filepath, instruction, input_contract=boundary_path)
                     reused_pipelines.append(pipe_name)
                     print(f"   ♻️  [Pipeline 复用] {pipe_name}")
                     continue
@@ -43,6 +70,8 @@ def generate_pipelines(
             compose_args.progress_callback = progress_callback
             compose_args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
             compose_args.json = getattr(args, "json", False)
+            compose_args.pipeline_inputs = pipe["inputs"]
+            compose_args.verification_cases = pipe["verification_cases"]
 
             try:
                 compose_succeeded = handle_compose(compose_args)

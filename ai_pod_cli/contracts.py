@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import ast
+from copy import deepcopy
 import importlib
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -35,28 +37,141 @@ def _model_path(spec: Any) -> str | None:
     return None
 
 
-def normalize_type(spec: Any) -> str:
-    """Extract a stable type token from legacy or structured field metadata."""
-    if _model_path(spec):
-        return "model"
-    if isinstance(spec, dict):
-        spec = spec.get("type", "any")
-    if not isinstance(spec, str) or not spec.strip():
-        return "any"
+def _type_text(spec: str) -> str:
     token = re.split(r"\s*(?:—|–|-|:)\s*", spec.strip(), maxsplit=1)[0]
-    token = re.sub(r"\s+", "", token).lower()
-    token = re.sub(r"\((?:optional|required)\)$", "", token)
-    scalar_with_qualifier = re.match(
-        r"^(str|string|int|integer|float|number|bool|boolean)\([^)]*\)$", token,
+    token = re.sub(r"\s+", "", token)
+    token = re.sub(r"\((?:optional|required)\)$", "", token, flags=re.I)
+    qualified = re.fullmatch(
+        r"(str|string|int|integer|float|number|bool|boolean)\([^)]*\)", token, re.I,
     )
-    if scalar_with_qualifier:
-        token = scalar_with_qualifier.group(1)
-    return _TYPE_ALIASES.get(token, token or "any")
+    return qualified.group(1) if qualified else token
 
 
-def types_compatible(produced: str, required: str) -> bool:
+def _annotation_path(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return _annotation_path(node.value) + "." + node.attr
+    raise ValueError("Unsupported contract type expression")
+
+
+def _annotation_schema(node: ast.AST) -> dict:
+    # Parse syntax only: annotations never execute code or resolve imports here.
+    if isinstance(node, ast.Constant):
+        if node.value is None:
+            return {"type": "null"}
+        if isinstance(node.value, str):
+            return _annotation_schema(ast.parse(node.value, mode="eval").body)
+        raise ValueError("Unsupported contract type literal")
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return {"anyOf": [_annotation_schema(node.left), _annotation_schema(node.right)]}
+    if isinstance(node, ast.Subscript):
+        name = _annotation_path(node.value).lower().removeprefix("typing.")
+        args = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        if name in {"list", "array"} and len(args) == 1:
+            return {"type": "list", "items": _annotation_schema(args[0])}
+        if name in {"dict", "mapping"} and len(args) == 2:
+            if _annotation_schema(args[0]) != {"type": "str"}:
+                raise ValueError("Dictionary contracts require string keys")
+            return {"type": "dict", "propertyNames": {"type": "str"},
+                    "additionalProperties": _annotation_schema(args[1])}
+        if name == "optional" and len(args) == 1:
+            return {"anyOf": [_annotation_schema(args[0]), {"type": "null"}]}
+        if name == "union" and len(args) >= 2:
+            return {"anyOf": [_annotation_schema(arg) for arg in args]}
+        # Keep unsupported legacy annotations visible rather than treating them
+        # as a supported container with unchecked element types.
+        if name in {"list", "array", "dict", "mapping", "optional", "union"}:
+            raise ValueError("Unsupported generic contract arity")
+        return {"type": re.sub(r"\s+", "", ast.unparse(node)).lower()}
+    path = _annotation_path(node)
+    if _model_path(path):
+        return {"type": "model", "model": path}
+    name = path.lower().removeprefix("typing.")
+    return {"type": _TYPE_ALIASES.get(name, name)}
+
+
+def canonical_contract(spec: Any) -> dict:
+    """Normalize legacy annotations and structured schemas without losing items.
+
+    Model paths retain their case. This is a small syntax parser, not eval().
+    Unknown bare legacy type names remain unchanged for backwards compatibility.
+    """
+    if isinstance(spec, dict):
+        result = deepcopy(spec)
+        if _model_path(spec):
+            result.update(type="model", model=_model_path(spec))
+        elif "type" in spec:
+            base = canonical_contract(spec["type"])
+            result = {**base, **result}
+            if "type" in base:
+                result["type"] = base["type"]
+            else:
+                result.pop("type", None)
+        elif "anyOf" not in spec:
+            result["type"] = "any"
+        if isinstance(result.get("properties"), dict):
+            result["properties"] = {key: canonical_contract(value) for key, value in result["properties"].items()}
+        for key in ("items", "additionalProperties", "propertyNames"):
+            if isinstance(result.get(key), (dict, str)):
+                result[key] = canonical_contract(result[key])
+        if result.get("type") == "dict" and isinstance(result.get("additionalProperties"), dict):
+            result.setdefault("propertyNames", {"type": "str"})
+        if isinstance(result.get("anyOf"), list):
+            branches = []
+            pending = [canonical_contract(branch) for branch in result["anyOf"]]
+            while pending:
+                branch = pending.pop(0)
+                if "anyOf" in branch:
+                    pending[0:0] = branch["anyOf"]
+                    continue
+                keys = ("properties", "additionalProperties", "propertyNames") if branch.get("type") == "dict" else ("items",) if branch.get("type") == "list" else ()
+                for key in keys:
+                    if key not in result:
+                        continue
+                    if key not in branch or branch[key] == {"type": "any"}:
+                        branch[key] = deepcopy(result[key])
+                    elif key == "properties":
+                        for name, child in result[key].items():
+                            if name in branch[key] and branch[key][name] != child:
+                                raise ValueError("Conflicting union property constraints are unsupported")
+                            branch[key][name] = deepcopy(child)
+                    elif branch[key] != result[key] and result[key] != {"type": "any"}:
+                        raise ValueError("Conflicting union container constraints are unsupported")
+                if branch.get("type") == "dict" and isinstance(result.get("required"), list):
+                    existing = branch.get("required", [])
+                    branch["required"] = sorted(set(existing if isinstance(existing, list) else []) | set(result["required"]))
+                branches.append(branch)
+            result["anyOf"] = branches
+        return result
+    if not isinstance(spec, str) or not spec.strip():
+        return {"type": "any"}
+    token = _type_text(spec)
+    try:
+        expression = ast.parse(token, mode="eval")
+    except SyntaxError as error:
+        if re.match(r"^(?:typing\.)?(?:list|array|dict|mapping|optional|union)\[", token, re.I):
+            raise ValueError("Malformed generic contract type") from error
+        return {"type": token.lower() or "any"}
+    if any(isinstance(node, (ast.Call, ast.Lambda, ast.NamedExpr, ast.ListComp,
+                             ast.SetComp, ast.DictComp, ast.GeneratorExp))
+           for node in ast.walk(expression)):
+        raise ValueError("Contract type expressions cannot execute code")
+    return _annotation_schema(expression.body)
+
+
+def normalize_type(spec: Any) -> str:
+    """Return the outer type; canonical_contract retains nested type information."""
+    schema = canonical_contract(spec)
+    return "any" if "anyOf" in schema else schema.get("type", "any")
+
+
+def types_compatible(produced: Any, required: Any) -> bool:
     """Return whether a produced value may satisfy a required field type."""
-    produced, required = normalize_type(produced), normalize_type(required)
+    return not schema_compatibility(produced, required)
+
+
+def _outer_types_compatible(produced: str, required: str) -> bool:
     if "any" in (produced, required) or produced == required:
         return True
     # An int is valid wherever a general numeric float is accepted.
@@ -72,9 +187,17 @@ def _required_properties(spec: Any) -> set[str]:
 
 def schema_compatibility(produced: Any, required: Any, path: str = "") -> list[dict]:
     """Return nested schema mismatches using a small, backwards-compatible JSON Schema subset."""
+    produced, required = canonical_contract(produced), canonical_contract(required)
+    if "anyOf" in produced or "anyOf" in required:
+        alternatives = required.get("anyOf", [required])
+        errors = []
+        for branch in produced.get("anyOf", [produced]):
+            if not any(not schema_compatibility(branch, target, path) for target in alternatives):
+                errors.append({"path": path or "$", "produced": branch, "required": required})
+        return errors
     mismatches: list[dict] = []
     produced_type, required_type = normalize_type(produced), normalize_type(required)
-    if not types_compatible(produced_type, required_type):
+    if not _outer_types_compatible(produced_type, required_type):
         return [{"path": path or "$", "produced": produced_type, "required": required_type}]
     if required_type == "model":
         produced_model = _model_path(produced)
@@ -108,11 +231,31 @@ def schema_compatibility(produced: Any, required: Any, path: str = "") -> list[d
         mismatches.extend(schema_compatibility(
             produced.get("items", {}), required["items"], f"{path}[]" if path else "$[]",
         ))
+    if required_type == "dict" and isinstance(required.get("additionalProperties"), dict):
+        # Named properties also flow through a string-map contract, including
+        # optional properties that may be present at runtime.
+        for name, child in produced.get("properties", {}).items():
+            if name not in required.get("properties", {}):
+                mismatches.extend(schema_compatibility(
+                    child, required["additionalProperties"],
+                    f"{path}.{name}" if path else name,
+                ))
+        if produced.get("additionalProperties") is not False:
+            mismatches.extend(schema_compatibility(
+                produced.get("additionalProperties", {}), required["additionalProperties"],
+                f"{path}.*" if path else "$.*",
+            ))
     return mismatches
 
 
 def validate_contract_value(value: Any, spec: Any, path: str = "$") -> list[str]:
     """Validate a runtime value against the supported contract schema subset."""
+    spec = canonical_contract(spec)
+    if "anyOf" in spec:
+        branch_errors = [validate_contract_value(value, branch, path) for branch in spec["anyOf"]]
+        if any(not errors for errors in branch_errors):
+            return []
+        return [f"{path}: no union alternative matched", *dict.fromkeys(error for errors in branch_errors for error in errors)]
     expected = normalize_type(spec)
     if expected == "model":
         model_path = _model_path(spec) or ""
@@ -139,6 +282,9 @@ def validate_contract_value(value: Any, spec: Any, path: str = "$") -> list[str]
         return []
     errors: list[str] = []
     if expected == "dict" and isinstance(value, dict):
+        if isinstance(spec.get("propertyNames"), dict):
+            for name in value:
+                errors.extend(validate_contract_value(name, spec["propertyNames"], f"{path}.<key>"))
         properties = spec.get("properties", {})
         for name in _required_properties(spec):
             child_path = f"{path}.{name}"
@@ -150,7 +296,10 @@ def validate_contract_value(value: Any, spec: Any, path: str = "$") -> list[str]
             for name in value.keys() & properties.keys() - _required_properties(spec):
                 errors.extend(validate_contract_value(value[name], properties[name], f"{path}.{name}"))
         additional = spec.get("additionalProperties")
-        if additional is not None:
+        if additional is False:
+            for name in value.keys() - properties.keys():
+                errors.append(f"{path}.{name}: additional property is not allowed")
+        elif isinstance(additional, (dict, str)):
             for name in value.keys() - set(properties):
                 errors.extend(validate_contract_value(value[name], additional, f"{path}.{name}"))
     elif expected == "list" and isinstance(value, list) and "items" in spec:
@@ -180,6 +329,12 @@ def validate_contract_data(data: dict, fields: Any, prefix: str = "$") -> list[s
 
 def materialize_contract_value(value: Any, spec: Any) -> Any:
     """Convert validated structured values into their declared runtime types."""
+    spec = canonical_contract(spec)
+    if "anyOf" in spec:
+        for branch in spec["anyOf"]:
+            if not validate_contract_value(value, branch):
+                return materialize_contract_value(value, branch)
+        raise ValueError("Value does not match any union alternative")
     expected = normalize_type(spec)
     if expected == "model":
         model_path = _model_path(spec) or ""
@@ -194,7 +349,8 @@ def materialize_contract_value(value: Any, spec: Any) -> Any:
             return value
         return {
             key: materialize_contract_value(item, properties[key])
-            if key in properties else item
+            if key in properties else materialize_contract_value(item, spec["additionalProperties"])
+            if isinstance(spec.get("additionalProperties"), dict) else item
             for key, item in value.items()
         }
     if expected == "list" and isinstance(value, list) and "items" in spec:
@@ -233,13 +389,13 @@ class ContractField:
                     else "default" not in spec
                 ),
                 description=str(spec.get("description", "")),
-                schema=spec,
+                schema=canonical_contract(spec),
             )
         text = str(spec or "")
         parts = re.split(r"\s*(?:—|–)\s*", text, maxsplit=1)
         return cls(
             name=name, type=normalize_type(text),
-            description=parts[1] if len(parts) > 1 else "", schema=spec,
+            description=parts[1] if len(parts) > 1 else "", schema=canonical_contract(spec),
         )
 
     def as_dict(self) -> dict:
@@ -250,7 +406,7 @@ class ContractField:
         if isinstance(self.schema, dict):
             result.update({
                 key: value for key, value in self.schema.items()
-                if key not in {"name", "type", "required", "description"}
+                if key not in {"name", "type", "description"}
             })
         return result
 

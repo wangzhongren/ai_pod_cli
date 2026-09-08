@@ -12,6 +12,7 @@ from ai_pod_cli.config import (
     save_config,
 )
 from ai_pod_cli.decision import reduce_evidence
+from ai_pod_cli.contracts import canonical_contract
 from ai_pod_cli.pod.state import save_decision_plan as _save_decision_plan
 from ai_pod_cli.repair import (
     apply_code_patches, can_patch_code, classify_failures, patch_prompt,
@@ -195,7 +196,6 @@ def generate_components(
                         f"生成组件: {name}{feedback}",
                         Path(get_module_path(category, name)[0], f"{name.lower()}.py").as_posix(),
                         temperature=0.1,
-                        max_tokens=8192,
                         progress_callback=progress_callback,
                         progress_label=f"Generating component {i}/{len(components)}: {name}",
                     )
@@ -233,6 +233,7 @@ def generate_components(
                     }
                     for method_name, contract in (methods or {}).items():
                         output_spec = contract.get("outputs", "any") if isinstance(contract, dict) else "any"
+                        output_spec = canonical_contract(output_spec)
                         output_text = str(output_spec).lower()
                         for model_id, model_bean in model_beans.items():
                             if model_id.lower() in output_text and not (
@@ -287,7 +288,7 @@ def generate_components(
                                 patch_result = call_llm(
                                     "你是严格的 Python 最小补丁生成器，只能按要求返回 JSON patches。",
                                     patch_prompt(code, violations, failure_kind),
-                                    json_mode=True, temperature=0.0, max_tokens=8192,
+                                    json_mode=True, temperature=0.0,
                                     progress_callback=progress_callback,
                                     progress_label=f"Patching component {name} ({failure_kind})",
                                 )

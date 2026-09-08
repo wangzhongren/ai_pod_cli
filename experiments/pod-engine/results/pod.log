@@ -1,0 +1,334 @@
+🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe
+🧩 [Pod Agent] 需求来源: requirements.md
+
+🧠 [Pod Agent · Step 1] generate_models (models)
+   决策摘要: The models stage is the earliest incomplete stage.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+
+📋 [阶段规划 1/5 · models] GameEngineCoreModels
+   组件: 2 个  |  Pipeline: 0 条  |  Interface: 0 个
+
+   📦 组件:
+      1. Vec2 (model)
+         Runtime 2D vector value object representing x/y coordinates, velocities, size ve
+      2. GameEntity (model)
+         Runtime value model describing a simulated game entity. Used by later physics, r
+
+📋 [方案已保存] docs/aipod/GameEngineCoreModels_plan.md
+
+🤖 [1/2] 生成 Vec2 (model)...
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ model 'Vec2' 不得覆盖 __init__；字段构造和嵌套 Model 转换必须由 Pydantic/SQLModel 管理
+   Studio 将校验问题反馈给 AI 并自动重试。
+   🩹 已应用 static 最小补丁；保留其余候选内容并重新验证。
+   ✅ Vec2 → modules/models/vec2.py
+🤖 [2/2] 生成 GameEntity (model)...
+   ✅ GameEntity → modules/models/gameentity.py
+
+==================================================
+🧩 [Pod 阶段组件完成] GameEngineCoreModels
+   ✅ 组件成功: 2 个 — Vec2, GameEntity
+
+✅ [models 阶段已冻结] 控制权返回 Pod Agent。
+
+🧠 [Pod Agent · Step 2] generate_providers (providers)
+   决策摘要: The providers stage is the earliest incomplete stage.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+
+📋 [阶段规划 2/5 · providers] 2d_game_engine_providers
+   组件: 0 个  |  Pipeline: 0 条  |  Interface: 0 个
+
+   📦 组件:
+
+📋 [方案已保存] docs/aipod/2d_game_engine_providers_plan.md
+
+
+==================================================
+🧩 [Pod 阶段组件完成] 2d_game_engine_providers
+   ✅ 组件成功: 0 个 — (无)
+
+✅ [providers 阶段已冻结] 控制权返回 Pod Agent。
+
+🧠 [Pod Agent · Step 3] generate_services (services)
+   决策摘要: The services stage is the earliest incomplete stage.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+
+📋 [阶段规划 3/5 · services] breakout_engine_services
+   组件: 3 个  |  Pipeline: 0 条  |  Interface: 0 个
+
+   📦 组件:
+      ♻️  ConfigStore (reuse)
+      ♻️  Vec2 (reuse)
+      ♻️  GameEntity (reuse)
+      1. BreakoutSimulationService (service) ← depends: ConfigStore
+         Core fixed-timestep game simulation service for the Breakout demo. It does not o
+      2. PngSnapshotService (service) ← depends: ConfigStore
+         Renders the current Breakout world to a PNG file using pygame-ce without requiri
+      3. RunSummaryService (service) ← depends: ConfigStore
+         Writes a machine-readable JSON summary of a completed/headless Breakout run. Con
+
+⚙️  建议新增配置项:
+   [game] screen_width = 800  # Playable screen width in pixels; default demo resolution.
+   [game] screen_height = 600  # Playable screen height in pixels; default demo resolution.
+   [game] fixed_timestep = 0.016666666666666666  # Fixed simulation timestep in seconds; 1/60.
+   [game] paddle_width = 120  # Paddle rectangle width in pixels.
+   [game] paddle_height = 16  # Paddle rectangle height in pixels.
+   [game] paddle_bottom_margin = 24  # Paddle bottom offset from screen bottom in pixels.
+   [game] paddle_speed = 420  # Paddle horizontal speed in pixels per second.
+   [game] ball_diameter = 14  # Ball diameter in pixels.
+   [game] ball_speed = 330  # Ball fixed speed magnitude in pixels per second.
+   [game] ball_start_angle_deg = 60  # Initial launch angle from vertical in degrees.
+   [game] base_lives = 3  # Starting life count.
+   [game] points_per_brick = 10  # Score awarded for each brick destroyed.
+   [game] brick_rows = 6  # Number of brick rows.
+   [game] brick_cols = 10  # Number of brick columns.
+   [game] brick_top_offset = 64  # Vertical offset where the brick grid starts.
+   [game] brick_height = 20  # Individual brick height in pixels.
+   [game] brick_horizontal_margin = 12  # Screen side margin for brick grid in pixels.
+   [game] brick_gap = 4  # Gap between bricks in pixels.
+   [run] screenshot_path = out/breakout_final.png  # Path where PngSnapshotService writes the final frame PNG.
+   [run] summary_path = out/run_summary.json  # Path where RunSummaryService writes the parseable JSON run summary.
+
+📋 [方案已保存] docs/aipod/breakout_engine_services_plan.md
+
+⚙️  [配置追加] 20 个新配置项写入 config.toml
+
+🤖 [1/3] 生成 BreakoutSimulationService (service)...
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 源码使用了无法静态确认的数据字段：dynamic get, dynamic set
+   Studio 将校验问题反馈给 AI 并自动重试。
+   🩹 已应用 static 最小补丁；保留其余候选内容并重新验证。
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 沙箱实际运行失败：
+Traceback (most recent call last):
+  File "<string>", line 79, in <module>
+    S(cls).execute_all(ctx)
+    ~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 262, in execute_all
+    result, normalized, metadata = self._execute_with_policy(ctx)
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 165, in _execute_with_policy
+    raw_result = self.execute(ctx)
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 97, in execute
+    return self._instance.execute(ctx)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<tmp>/aipod_component_p4mms33b/project/modules/services/breakoutsimulationservice.py", line 390, in execute
+    created_scene = self._create_scene()
+  File "<tmp>/aipod_component_p4mms33b/project/modules/services/breakoutsimulationservice.py", line 134, in _create_scene
+    position=Vec2(
+             ~~~~^
+        (screen_width - paddle_width) / 2.0,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        screen_height - paddle_bottom_margin - paddle_height,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ),
+    ^
+TypeError: SQLModel.__init__() takes 1 positional argument but 3 were given
+   Studio 将校验问题反馈给 AI 并自动重试。
+   🩹 已应用 runtime 最小补丁；保留其余候选内容并重新验证。
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 沙箱实际运行失败：
+Traceback (most recent call last):
+  File "<string>", line 79, in <module>
+    S(cls).execute_all(ctx)
+    ~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 262, in execute_all
+    result, normalized, metadata = self._execute_with_policy(ctx)
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 178, in _execute_with_policy
+    raise ValueError("outputs schema validation failed: " + "; ".join(output_errors))
+ValueError: outputs schema validation failed: BreakoutSimulationService.last_frame_events: required field is missing
+   Studio 将校验问题反馈给 AI 并自动重试。
+   [retry] 第 1 次: 输出达到上限 (32768 tokens, 0 chars)
+   [retry] 下一次提高输出上限到 65536 tokens
+   [retry] 第 2/3 次重试...
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 沙箱实际运行失败：
+Traceback (most recent call last):
+  File "<string>", line 79, in <module>
+    S(cls).execute_all(ctx)
+    ~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 262, in execute_all
+    result, normalized, metadata = self._execute_with_policy(ctx)
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 165, in _execute_with_policy
+    raw_result = self.execute(ctx)
+  File "<aipod-checkout>/ai_pod_cli/container.py", line 97, in execute
+    return self._instance.execute(ctx)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "<tmp>/aipod_component_tjfog9c3/project/modules/services/breakoutsimulationservice.py", line 63, in execute
+    world = self._create_world()
+  File "<tmp>/aipod_component_tjfog9c3/project/modules/services/breakoutsimulationservice.py", line 291, in _create_world
+    position=Vec2(paddle_x, paddle_y),
+             ~~~~^^^^^^^^^^^^^^^^^^^^
+TypeError: SQLModel.__init__() takes 1 positional argument but 3 were given
+   Studio 将校验问题反馈给 AI 并自动重试。
+   🩹 已应用 runtime 最小补丁；保留其余候选内容并重新验证。
+   ✅ BreakoutSimulationService → modules/services/breakoutsimulationservice.py
+🤖 [2/3] 生成 PngSnapshotService (service)...
+   📦 额外依赖: pygame-ce
+   ✅ PngSnapshotService → modules/services/pngsnapshotservice.py
+🤖 [3/3] 生成 RunSummaryService (service)...
+   ✅ RunSummaryService → modules/services/runsummaryservice.py
+
+==================================================
+🧩 [Pod 阶段组件完成] breakout_engine_services
+   ✅ 组件成功: 3 个 — BreakoutSimulationService, PngSnapshotService, RunSummaryService
+
+✅ [services 阶段已冻结] 控制权返回 Pod Agent。
+
+🧠 [Pod Agent · Step 4] compose_pipelines (pipelines)
+   决策摘要: The pipelines stage is the earliest incomplete stage.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+
+📋 [阶段规划 4/5 · pipelines] breakout_headless_pipeline
+   组件: 0 个  |  Pipeline: 2 条  |  Interface: 0 个
+
+   📦 组件:
+      ♻️  BreakoutSimulationService (reuse)
+      ♻️  PngSnapshotService (reuse)
+      ♻️  RunSummaryService (reuse)
+
+   🔗 Pipeline:
+      1. step_breakout_simulation
+         → 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+      2. run_headless_breakout
+         → 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+
+⚙️  建议新增配置项:
+   [run] max_frames = 120  # 无头运行最大帧数；超过此帧数即使游戏未结束也强制停止
+   [run] random_seed = 42  # 固定随机种子，保证可复现；设为 null 则使用系统随机
+
+📋 [方案已保存] docs/aipod/breakout_headless_pipeline_plan.md
+
+⚙️  [配置追加] 2 个新配置项写入 config.toml
+
+
+==================================================
+🧩 [Pod 阶段组件完成] breakout_headless_pipeline
+   ✅ 组件成功: 0 个 — (无)
+
+🔗 [生成 Pipeline] 2 条
+
+   [1/2] step_breakout_simulation: 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+🎬 [compose] 人类宏观指令: '推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。'
+   [retry] 第 1 次: JSON 解析失败 (finish_reason=stop, 0 chars)
+   [retry] 第 2/3 次重试...
+🔗 [AI 编排] 执行链: BreakoutSimulationService
+🛡️  [生成预检通过] 语法、Contract 与隔离 Pipeline 运行均已通过
+💾 [Pipeline 已保存] pipelines/step_breakout_simulation.py
+📋 [路由已注册] step_breakout_simulation → pipelines/step_breakout_simulation.py
+
+🎉 [compose 完成] Pipeline 已生成并注册。
+   运行方式: 通过你的入口文件调用 PipelineRunner().run("step_breakout_simulation", params)
+
+   [2/2] run_headless_breakout: 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+🎬 [compose] 人类宏观指令: '运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。'
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 字段类型不兼容：PngSnapshotService.entities 需要 list[modules.models.gameentity.gameentity]，上游提供 list
+   Studio 将校验问题反馈给 AI 并自动重试。
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 字段类型不兼容：PngSnapshotService.entities 需要 list[modules.models.gameentity.gameentity]，上游提供 list
+   Studio 将校验问题反馈给 AI 并自动重试。
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 字段类型不兼容：PngSnapshotService.entities 需要 list[modules.models.gameentity.gameentity]，上游提供 list
+   已达到 3 次生成上限，未修改项目文件。
+   ❌ Pipeline 工具未返回成功回执或未注册路由；本条不会被标记为完成。
+
+   🔗 Pipeline 成功: 1 条 — step_breakout_simulation
+   ❌ Pipeline 失败: 1 条 — run_headless_breakout
+   ⛔ Pipeline 阶段未完全通过，不规划 Interface。
+🔁 [Pod Agent] 已观察到失败；下一步只允许重试当前 Build Tool。
+
+🧠 [Pod Agent · Step 5] compose_pipelines (pipelines)
+   决策摘要: Retry the current pipelines stage after its governed tool failed.
+📝 [需求] 创建一个可实际运行的 Python 2D 小型游戏引擎，并提供可玩的演示游戏，用来验证 AIPod 是否能开发非业务系统。
+
+范围是一个可扩展的单机 2D 小引擎，不要求 3D、联网、编辑器或商业引擎完整能力。使用 pygame-ce 完成图形和键盘输入，运行期间不调用任何模型服务。
+
+需要具备：
+- 实体的位置、速度、尺寸和启用状态。
+- 固定时间步的更新循环，与图形显示/输入处理正确配合。
+-...
+📌 [复用冻结规划] pipelines 阶段不再调用规划器。
+
+📋 [阶段规划 4/5 · pipelines] breakout_headless_pipeline
+   组件: 0 个  |  Pipeline: 2 条  |  Interface: 0 个
+
+   📦 组件:
+      ♻️  BreakoutSimulationService (reuse)
+      ♻️  PngSnapshotService (reuse)
+      ♻️  RunSummaryService (reuse)
+
+   🔗 Pipeline:
+      1. step_breakout_simulation
+         → 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+      2. run_headless_breakout
+         → 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+
+⚙️  建议新增配置项:
+   [run] max_frames = 120  # 无头运行最大帧数；超过此帧数即使游戏未结束也强制停止
+   [run] random_seed = 42  # 固定随机种子，保证可复现；设为 null 则使用系统随机
+
+📋 [方案已保存] docs/aipod/breakout_headless_pipeline_plan.md
+
+⚙️  [配置追加] 2 个新配置项写入 config.toml
+
+
+==================================================
+🧩 [Pod 阶段组件完成] breakout_headless_pipeline
+   ✅ 组件成功: 0 个 — (无)
+
+🔗 [生成 Pipeline] 2 条
+
+   [1/2] step_breakout_simulation: 推进一次固定时间步的 Breakout 物理模拟。从 params 或 Context 读取 commands（字典，键为 left/right/fire/pause/reset，值为 boolean）。调用 BreakoutSimulationService.execute(commands)，将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并作为本 Pipeline 摘要返回。此 Pipeline 不循环，适合交互式逐帧或测试步进。
+   ♻️  [Pipeline 复用] step_breakout_simulation
+
+   [2/2] run_headless_breakout: 运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。
+🎬 [compose] 人类宏观指令: '运行一场完整的无头 Breakout 游戏。使用 Runtime repeat 节点反复调用 BreakoutSimulationService.execute(commands) 推进固定时间步，直到 game_state 为 'won' 或 'lost'，或迭代次数达到 max_frames（取自 params.max_frames 或配置 run.max_frames，默认 120）。每次迭代将返回的 entities、game_state、score、lives、ball_attached 写入 Context，并维护递增的 Context 字段 frame_count。commands 若未由 params/Context 提供，则默认初始一帧发送 fire=true 让球离开挡板，之后按键均为 false。循环结束后，先调用 PngSnapshotService.execute(entities=context.entities, game_state=context.game_state, score=context.score, lives=context.lives, frame_count=context.frame_count, screenshot_path=params.screenshot_path 或配置 run.screenshot_path)，将写入的 screenshot_path 保存到 Context；再调用 RunSummaryService.execute(screenshot_path=context.screenshot_path, game_state=context.game_state, summary_path=params.summary_path 或配置 run.summary_path, outcome=('cleared' if game_state=='won' else 'lost' if game_state=='lost' else 'incomplete'), final_state=('terminal' if game_state in ('won','lost') else 'timeout'))。最终返回包含 frame_count、entities、game_state、score、lives、ball_attached、screenshot_path、summary_path 的摘要 dict。'
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 字段类型不兼容：PngSnapshotService.entities 需要 list[modules.models.gameentity.gameentity]，上游提供 list
+   Studio 将校验问题反馈给 AI 并自动重试。
+🔗 [AI 编排] 执行链: BreakoutSimulationService → PngSnapshotService → RunSummaryService
+🛡️  [生成预检失败] 发现 1 处问题:
+   ❌ 字段类型不兼容：PngSnapshotService.entities 需要 list[modules.models.gameentity.gameentity]，上游提供 list
+   Studio 将校验问题反馈给 AI 并自动重试。
+❌ AI 编排失败: Metadata response must not contain source code
+   ❌ Pipeline 工具未返回成功回执或未注册路由；本条不会被标记为完成。
+
+   🔗 Pipeline 成功: 0 条 — (无)
+   ❌ Pipeline 失败: 1 条 — run_headless_breakout
+   ⛔ Pipeline 阶段未完全通过，不规划 Interface。
+⛔ [Pod Agent] 当前 Build Tool 连续失败，已保留冻结上游与 Agent 状态。

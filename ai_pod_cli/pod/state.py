@@ -10,6 +10,7 @@ from typing import Any, Literal, TypedDict, cast
 
 
 PLAN_VERSION = 6
+APPLICATION_PROOF_VERSION = "aipod.behavior-tests.v1"
 DECISION_PLAN_FILE = Path("aipod_plan.json")
 STAGE_NAMES = ("models", "providers", "services", "pipelines", "interfaces")
 STAGE_BUILD_TOOLS = (
@@ -24,10 +25,13 @@ class VerificationState(TypedDict, total=False):
     status: str
     attempts: int
     repairs: int
+    repair_attempts: int
     command: list[str]
     commands: list[list[str]]
     timeout: int
     fingerprint: str
+    proof_version: str
+    required_action: str
     repaired_file: str
     last_result: dict[str, Any]
 
@@ -53,6 +57,7 @@ class InterfaceVerification(TypedDict, total=False):
     required: bool
     command: list[str]
     timeout: int
+    cases: list[dict[str, str]]
 
 
 class InterfaceManifest(TypedDict, total=False):
@@ -100,10 +105,10 @@ def stage_index(stage: str | int) -> int:
 
 
 def default_interface_verification(interface: dict[str, Any]) -> dict[str, Any]:
-    """Return a portable runtime proof for one Interface delivery unit."""
+    """Return a portable smoke check, never a substitute for behavior acceptance."""
     if isinstance(interface.get("adapter"), dict):
         return {
-            "name": "adapter_smoke", "kind": "runtime", "required": True,
+            "name": "adapter_smoke", "kind": "smoke", "required": True,
             "command": [
                 "{python}", "-m", "ai_pod_cli", "interface",
                 "--project-root", "{project_root}", "smoke",
@@ -123,7 +128,7 @@ def default_interface_verification(interface: dict[str, Any]) -> dict[str, Any]:
         name = str(interface.get("name", "application.py")).strip() or "application.py"
         runtime = name if name.endswith(".py") else name + ".py"
     return {
-        "name": "runtime_smoke", "kind": "runtime", "required": True,
+        "name": "runtime_smoke", "kind": "smoke", "required": True,
         "command": ["python", runtime, "--smoke"], "timeout": 30,
     }
 
@@ -276,6 +281,12 @@ def load_and_upgrade_plan(
     verification.setdefault("status", "pending")
     verification.setdefault("attempts", 0)
     verification.setdefault("repairs", 0)
+    if (
+        verification.get("status") == "passed"
+        and verification.get("proof_version") != APPLICATION_PROOF_VERSION
+    ):
+        verification["status"] = "pending"
+        verification["required_action"] = "verify_behavior"
     state["version"] = PLAN_VERSION
     return state
 

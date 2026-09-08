@@ -1,0 +1,156 @@
+{
+  "project": "msiemens/tinydb",
+  "revision": "4aa53111d72c9cbaafcdc039211caf49f4face6f",
+  "output": "<tmp>/aipod-tinydb-large-hnwjm_hl",
+  "allowed_files": [
+    "tinydb/table.py",
+    "tinydb/database.py"
+  ],
+  "acceptance_hash": "4d69e732726d87438551475bf7b51d5fc38df0fee6f31b64ddebf358131de15b",
+  "calls": [
+    {
+      "channel": "json",
+      "requests": [
+        {
+          "max_tokens": 32768,
+          "timeout": 600.0,
+          "stream": true,
+          "response_characters": 674,
+          "reasoning_characters": 4745,
+          "usage": {
+            "prompt_tokens": 8957,
+            "completion_tokens": 1126,
+            "total_tokens": 10083
+          },
+          "reasoning_tokens": 990,
+          "finish_reason": "stop",
+          "seconds": 9.936
+        }
+      ],
+      "seconds": 10.133
+    },
+    {
+      "channel": "xml",
+      "requests": [
+        {
+          "max_tokens": 65536,
+          "timeout": 600.0,
+          "stream": true,
+          "response_characters": 10660,
+          "reasoning_characters": 91563,
+          "seconds": 176.157,
+          "usage": {
+            "prompt_tokens": 9185,
+            "completion_tokens": 22978,
+            "total_tokens": 32163
+          },
+          "reasoning_tokens": 20636,
+          "finish_reason": "stop"
+        }
+      ],
+      "seconds": 176.159
+    }
+  ],
+  "stages": [
+    {
+      "file": "tinydb/table.py",
+      "attempts": [
+        {
+          "scope_errors": [],
+          "original_tests": {
+            "exit_code": 0,
+            "summary": "222 passed in 0.14s",
+            "seconds": 0.242,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/table-0-original.log"
+          },
+          "types": {
+            "exit_code": 0,
+            "summary": "Success: no issues found in 19 source files",
+            "seconds": 0.122,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/table-0-types.log"
+          },
+          "acceptance": {
+            "exit_code": 0,
+            "summary": "1 passed, 33 deselected in 0.00s",
+            "seconds": 0.099,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/table-0-acceptance.log"
+          },
+          "passed": true
+        }
+      ],
+      "reused_from": "<tmp>/aipod-tinydb-large-u_isilk8/project/tinydb/table.py",
+      "status": "complete"
+    },
+    {
+      "file": "tinydb/database.py",
+      "attempts": [
+        {
+          "scope_errors": [],
+          "original_tests": {
+            "exit_code": 0,
+            "summary": "222 passed in 0.14s",
+            "seconds": 0.289,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/database-0-original.log"
+          },
+          "types": {
+            "exit_code": 0,
+            "summary": "Success: no issues found in 19 source files",
+            "seconds": 0.192,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/database-0-types.log"
+          },
+          "acceptance": {
+            "exit_code": 0,
+            "summary": "34 passed in 0.02s",
+            "seconds": 0.117,
+            "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/database-0-acceptance.log"
+          },
+          "passed": true
+        }
+      ],
+      "status": "complete"
+    }
+  ],
+  "source_max_tokens": 65536,
+  "source_timeout_seconds": 600.0,
+  "max_retries": 1,
+  "stream": true,
+  "metadata_max_tokens": 32768,
+  "resume_from": "<tmp>/aipod-tinydb-large-u_isilk8",
+  "size": {
+    "tinydb": 2255,
+    "tests": 2098
+  },
+  "tested_import": "<tmp>/aipod-tinydb-large-hnwjm_hl/project/tinydb/__init__.py",
+  "baseline_tests": {
+    "exit_code": 0,
+    "summary": "222 passed in 0.23s",
+    "seconds": 0.349,
+    "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/baseline-original.log"
+  },
+  "baseline_types": {
+    "exit_code": 0,
+    "summary": "Success: no issues found in 19 source files",
+    "seconds": 1.203,
+    "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/baseline-types.log"
+  },
+  "baseline_acceptance": {
+    "exit_code": 1,
+    "summary": "15 failed, 1 passed, 18 errors in 0.15s",
+    "seconds": 0.252,
+    "log": "<tmp>/aipod-tinydb-large-hnwjm_hl/baseline-acceptance.log"
+  },
+  "model": "deepseek-v4-flash",
+  "success": true,
+  "changed_files": [
+    "tinydb/database.py",
+    "tinydb/table.py"
+  ],
+  "acceptance_unchanged": true,
+  "frozen_files": {
+    "tinydb/table.py": "eae2bb80d1a1104ddbe2973f24cca85504e36b0d96653360b7e2607efadf0da3",
+    "tinydb/database.py": "1cd198ce8e4f35d921fe9ce7b5f889f3c60158e68974c4a90f163da8ecd86a8c"
+  },
+  "combined_test_summary": "256 passed in 0.17s",
+  "upstream_hash_preserved": true,
+  "acceptance_hash_checked": true
+}
