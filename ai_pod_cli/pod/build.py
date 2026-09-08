@@ -25,6 +25,7 @@ from ai_pod_cli.pod.tools.interfaces import (
 from ai_pod_cli.pod.tools.pipelines import generate_pipelines
 from ai_pod_cli.pipeline_validation import validate_pipeline_inputs
 from ai_pod_cli.project_model import build_project_model
+from ai_pod_cli.utility_tools import call_with_utility_tools
 
 
 
@@ -128,6 +129,9 @@ def _execute_pod_build_tool(args):
 
     【拆解规则】：
     1. 每个组件必须有明确的单一职责。
+       Service/Provider 中可复用的数学、解析、格式转换等纯逻辑优先查找项目全局工具类目录。
+       工具类不是新的运行层、不加入 depends_on；所有适合的层都可通过精确 import 使用。
+       场景、业务状态、资源生命周期和编排仍属于原有层，不得整体转移到一个万能工具类。
     2. 分类有三种：model（共享数据结构，类似 Java DTO）、service（业务组件，有 execute 方法）和 provider（基础设施提供者）。
        多个组件共享复杂对象时，先规划 model，Service 契约通过 {{"model":"完整类路径"}} 引用它。
        components 数组必须按 model → provider → service 排序，确保引用目标先生成。
@@ -242,8 +246,8 @@ def _execute_pod_build_tool(args):
         print(f"📌 [复用冻结规划] {stage_name} 阶段不再调用规划器。")
     else:
         try:
-            plan = call_llm(
-                system_prompt,
+            plan = call_with_utility_tools(
+                call_llm, system_prompt,
                 f"需求: {desc}",
                 json_mode=True,
                 temperature=0.2,

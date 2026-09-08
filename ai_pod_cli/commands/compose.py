@@ -16,6 +16,7 @@ from ai_pod_cli.validation import repair_feedback, request_repair, validate_pipe
 from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.sandbox import verify_pipeline_candidate
 from ai_pod_cli.pipeline_validation import save_pipeline_inputs, validate_pipeline_inputs
+from ai_pod_cli.utility_tools import call_with_utility_tools
 
 
 def _slugify(text: str) -> str:
@@ -263,6 +264,7 @@ def handle_compose(args):
     max_attempts = 3
     feedback = ""
     frozen_metadata = None
+    utility_observations = []
     planned_inputs = getattr(args, "pipeline_inputs", None)
     planned_cases = getattr(args, "verification_cases", None)
     if planned_inputs is not None or planned_cases is not None:
@@ -276,9 +278,10 @@ def handle_compose(args):
     for attempt in range(1, max_attempts + 1):
         try:
             if frozen_metadata is None:
-                metadata = call_llm(
-                    system_prompt + "\n本轮只返回元数据，不返回 code/content。",
+                metadata = call_with_utility_tools(
+                    call_llm, system_prompt + "\n本轮只返回元数据，不返回 code/content。",
                     f"指令: {args.cmd}{feedback}", json_mode=True, temperature=0.1,
+                    on_tool_result=utility_observations.append,
                     progress_callback=getattr(args, "progress_callback", None),
                     progress_label=f"Planning pipeline inputs: {args.name or args.cmd[:40]}",
                 )
@@ -303,6 +306,7 @@ def handle_compose(args):
                 progress_callback=getattr(args, "progress_callback", None),
                 progress_label=f"Composing pipeline: {args.name or args.cmd[:40]}",
                 frozen_metadata=frozen_metadata,
+                utility_observations=utility_observations,
             )
 
             pipeline_ids = result.get("pipeline_ids", [])

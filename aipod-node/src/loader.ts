@@ -11,6 +11,7 @@ import { PipelineRunner } from "./runner.js";
 import { ModelRepository } from "./repository.js";
 import { writeRunTrace } from "./traces.js";
 import { formatSemanticDiagnostic, typeCheckProject } from "./semantic-check.js";
+import { validateUtilityImports } from "./utilities.js";
 
 async function walk(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -74,6 +75,8 @@ export async function loadContainer(
   project?: ProjectManifest,
 ): Promise<Container> {
   const manifest = project ?? await loadProject(projectRoot);
+  const utilityErrors = await validateUtilityImports(projectRoot);
+  if (utilityErrors.length) throw new Error(`Utility validation failed: ${utilityErrors.join("; ")}`);
   const compileErrors = await compileProjectSources(projectRoot);
   if (compileErrors.length) throw new Error(`TypeScript compilation failed: ${compileErrors.join("; ")}`);
   const configStore = await new ConfigStore(projectRoot).load();

@@ -17,6 +17,7 @@ modules/services/*.py
 !modules/services/__init__.py
 pipelines/*.py
 .aipod/
+.utility_registry.lock
 
 # IDE
 .vscode/

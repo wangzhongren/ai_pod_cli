@@ -17,6 +17,7 @@ import { addBean, composeRoutes, createComponents } from "./operations.js";
 import type { Contract } from "./contracts.js";
 import { startStudio } from "./studio.js";
 import { runVerificationCommand } from "./verification.js";
+import { listUtilities, readUtility, writeUtility, type UtilityCase } from "./utilities.js";
 import {
   DistributedStreamPublisher, DistributedWorker, HttpStreamTransport,
   startStreamBroker,
@@ -127,6 +128,29 @@ async function create(): Promise<void> {
   console.log(JSON.stringify({
     artifacts: await createComponents(root, configuredClient(), category, description),
   }, null, 2));
+}
+
+async function utility(): Promise<void> {
+  const root = resolve(option("--project-root") ?? ".");
+  const action = args[0] ?? "list";
+  if (action === "list") console.log(JSON.stringify(await listUtilities(root, option("--query") ?? ""), null, 2));
+  else if (action === "read") {
+    const id = option("--id") ?? args[1];
+    if (!id) throw new Error("utility read requires an ID");
+    console.log(JSON.stringify(await readUtility(root, id), null, 2));
+  } else if (action === "write") {
+    const id = option("--id");
+    const file = option("--file");
+    const cases = option("--cases");
+    const description = option("--description");
+    if (!id || !file || !cases || !description) throw new Error("utility write requires --id, --file, --description and --cases");
+    const separator = args.indexOf("--");
+    const expectedSha256 = option("--expected-sha256");
+    console.log(JSON.stringify(await writeUtility(root, {
+      id, description, source: await readFile(resolve(file), "utf8"),
+      cases: JSON.parse(await readFile(resolve(cases), "utf8")) as UtilityCase[],
+    }, { ...(expectedSha256 ? { expectedSha256 } : {}), ...(separator >= 0 ? { verificationCommand: args.slice(separator + 1) } : {}) }), null, 2));
+  } else throw new Error(`Unknown utility action '${action}'`);
 }
 
 async function compose(): Promise<void> {
@@ -398,6 +422,9 @@ Usage:
   aipod-node pod "change request" --stage auto|models|providers|services|pipelines|interfaces
   aipod-node pod --file requirement.md [--project-root directory]
   aipod-node create --category model|provider|service --description "..."
+  aipod-node utility list [--query words] [--project-root directory]
+  aipod-node utility read ID [--project-root directory]
+  aipod-node utility write --id ClassName --description "..." --file helper.ts --cases cases.json [--expected-sha256 HASH] [-- command args...]
   aipod-node add --id ID --category TYPE --file src/path.ts [--dependencies JSON]
   aipod-node compose "pipeline instruction" [--project-root directory]
   aipod-node run <route> [--params JSON] [--project-root directory]
@@ -424,6 +451,7 @@ try {
   if (command === "init") await init(args[0]);
   else if (command === "inspect") await inspect(args[0]);
   else if (command === "pod") await pod();
+  else if (command === "utility") await utility();
   else if (command === "create") await create();
   else if (command === "add") await add();
   else if (command === "compose") await compose();

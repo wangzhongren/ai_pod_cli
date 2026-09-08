@@ -46,6 +46,10 @@ def handle_create(args):
     如果组件需要的配置项还不存在，请在返回的 JSON 中通过 config_additions 字段建议新增（格式如 {{"section": {{"key": "说明"}}}}），系统会自动追加到 config.toml。
 
     【通用规范】：
+    - 所有适合的组件均可复用项目全局工具类：先查找/读取其真实方法，再通过目录里的精确路径 import。
+      工具类是普通静态方法，不加入 dependencies、不走 DI；不要重复实现已有通用算法或格式转换。
+    - 纯工具类不访问 Context、Service、资源连接或业务流程；I/O 留在 Provider，领域规则留在 Service。
+      PipelineContext.get、契约校验和 Model 物化使用框架已有能力，不再手写兼容层。
     - 必须从 `injector` 引入 `inject`，构造函数加 `@inject` 装饰器。
     - 构造函数参数**只能声明组件类型依赖**（Bean Pool 中的类），禁止 str/int/bool 等原始类型。
     - **依赖的方法必须来自上方组件池中列出的方法签名！禁止调用不存在的方法！**

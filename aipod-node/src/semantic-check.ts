@@ -1,6 +1,7 @@
 import { access, readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import ts from "typescript";
 
 async function walk(directory: string): Promise<string[]> {
@@ -53,6 +54,12 @@ export async function typeCheckProject(
       "aipod-node/*": [resolve(dirname(runtimeTypes), "*")],
     },
   };
+  // Resolve Node's standard-library types from the installed framework when a
+  // generated project has not installed its own @types/node yet.
+  try {
+    const nodeTypes = dirname(createRequire(import.meta.url).resolve("@types/node/package.json"));
+    options.typeRoots = [resolve(projectRoot, "node_modules/@types"), dirname(nodeTypes)];
+  } catch { /* A project's own type configuration still participates normally. */ }
   const program = ts.createProgram({ rootNames, options });
   return ts.getPreEmitDiagnostics(program).map((diagnostic) => {
     const position = diagnostic.file && diagnostic.start !== undefined

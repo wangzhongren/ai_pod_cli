@@ -11,6 +11,7 @@ import sys
 
 from ai_pod_cli.security import validate_code
 from ai_pod_cli.contracts import normalize_type, semantic_field_similarity
+from ai_pod_cli.utility_imports import validate_utility_imports
 
 
 _CONTROL_OUTPUT_KEYS = {"status", "error", "message", "reason", "ok"}
@@ -176,6 +177,7 @@ def validate_component_contract(
     if component is None:
         return [f"未找到名称为 '{class_name}' 的组件类"]
 
+    violations.extend(validate_utility_imports(code))
     if category == "model":
         bases = {
             base.id for base in component.bases if isinstance(base, ast.Name)
@@ -298,7 +300,7 @@ def validate_pipeline_contract(code: str) -> list[str]:
     tree = ast.parse(code)
     if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "run" for node in tree.body):
         return ["Pipeline 必须定义 run(ctx) 函数"]
-    violations = []
+    violations = validate_utility_imports(code)
     component_refs = {
         target.id
         for node in ast.walk(tree)
@@ -398,10 +400,10 @@ def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> li
         allowed.add(normalized)
         allowed.add(_DISTRIBUTION_IMPORT_ALIASES.get(normalized, normalized))
 
-    violations = []
+    violations = validate_utility_imports(code)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
+            names = [alias.name for alias in node.names if not (alias.name == "modules.utils" or alias.name.startswith("modules.utils."))]
         elif isinstance(node, ast.ImportFrom):
             names = [node.module or ""] if node.level == 0 else []
             module = node.module or ""
@@ -428,6 +430,10 @@ def validate_entry_imports(code: str, extra_deps: list[str] | None = None) -> li
                             f"'{alias.name}' 的导入路径错误；"
                             f"请使用 from {canonical} import {alias.name}"
                         )
+            elif module == "modules.utils" or module.startswith("modules.utils."):
+                # The dedicated registry check above handles exact module/symbol
+                # visibility without exposing private Model/Provider/Service code.
+                names = []
             elif module == "modules" or module.startswith("modules."):
                 violations.append(
                     "Interface 不得直接导入 modules 下的 Model、Provider 或 Service；"

@@ -399,3 +399,73 @@ The checker resolves relative `.js` imports back to TypeScript sources and maps
 assignment incompatibilities, Runtime API misuse, exact file/line/column, and diagnostic
 codes. Agent verification, `inspect`, `verify`, and real Route loading all use the same
 semantic check.
+
+## Shared utility classes
+
+The existing generation Agent can discover, read and create shared utility classes.
+These are ordinary TypeScript imports, available across suitable Models, Providers,
+Services, Pipelines and Interfaces. They are not Beans or another application layer.
+Extract reusable pure calculations and transformations into these classes to keep
+components focused; orchestration and IO remain in their existing layers.
+
+`utility_registry.json` contains `schema_version: 1` and a `utilities` array. Each
+entry records `id`, `language: "typescript"`, `path: "src/utils/ClassName.ts"`,
+`symbol`, `description`, public static `methods` extracted from the TypeScript AST,
+the source `sha256`, and explicit behavior `cases`. `listUtilities` searches names,
+descriptions and method signatures. `readUtility` returns the verified source and
+its static import callers. Both operations are read-only and reject source hash drift.
+
+Planning uses the same model and final metadata format as before. It can first return
+an exact tool request:
+
+```json
+{"tool":"read_utility","arguments":{"id":"NumberUtils"}}
+```
+
+Available tools are `list_utilities` (`query` optional), `read_utility` (`id`) and
+`write_utility` (`id`, `description`, `instruction`, `cases`). A write request contains
+no source: the tool obtains one XML source artifact through `completeText`. Tool
+errors are returned as error evidence, and the loop allows eight actions before
+requiring final metadata. An ordinary response without a tool still uses one model
+call. Model tools can create or reuse utilities, and cannot overwrite existing IDs.
+
+Utilities export a static class with explicit method parameter/return types. They
+cannot contain constructors, fields, top-level execution, DI, Context, IO, model
+calls or dynamic evaluation. Pure standard functions and registered utility imports
+are allowed. Every public method needs at least one real case, for example:
+
+```json
+[
+  {"method":"clamp","args":[8,0,5],"expected":5},
+  {"method":"clamp","args":[1,5,0],"raises":"RangeError"}
+]
+```
+
+Cases execute the candidate code in a bounded verification process and also check
+that it does not mutate its arguments. Node cases use positional JSON arguments;
+nonempty Python-style `kwargs` are rejected. The full candidate project is type
+checked, including existing callers, before publishing. Runtime loading verifies
+utility hashes and rejects unregistered imports. These checks validate the supplied
+cases and structural restrictions; they do not prove every possible behavior.
+
+```bash
+aipod-node utility list --query bounds
+aipod-node utility read NumberUtils
+aipod-node utility write --id NumberUtils --description "Clamp numbers" --file number-utils.ts --cases cases.json
+```
+
+Existing utility updates require an explicit expected hash and a verification command:
+
+```bash
+aipod-node utility write --id NumberUtils --description "Clamp numbers" --file number-utils.ts --cases cases.json --expected-sha256 HASH -- npm test
+```
+
+The command runs in an isolated candidate project containing both the updated source
+and registry. Existing utility cases are rerun as well. Failure leaves the original
+source and registry unchanged; publication occurs only after validation and a final
+hash check. Existing public signatures and cases are preserved; API changes require
+a new utility ID. Verification cannot rewrite candidate source, test code or registry.
+An identical source/metadata write is idempotent. Use verification commands with project-relative paths. The candidate
+uses the project's installed dependencies, so verification should test behavior,
+not install or change dependencies. `--project-root` selects the project for every
+utility command.

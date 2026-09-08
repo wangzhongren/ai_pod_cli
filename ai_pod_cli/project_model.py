@@ -11,6 +11,7 @@ from ai_pod_cli.config import CONFIG_FILE, ROUTES_TOML
 from ai_pod_cli.contracts import analyze_pipeline_contracts
 from ai_pod_cli.run_store import get_run_trace, list_run_traces
 from ai_pod_cli.pod.state import load_current_plan
+from ai_pod_cli.utility_imports import utility_catalog
 from ai_pod_cli.pipeline_validation import load_pipeline_inputs
 
 
@@ -156,6 +157,11 @@ def build_project_model() -> dict:
     component_ids = {component.get("id") for component in components}
     issues = []
     warnings = []
+    try:
+        utilities = utility_catalog()
+    except (OSError, ValueError, TypeError) as error:
+        utilities = []
+        issues.append({"code": "invalid_utility_registry", "message": str(error)})
     for component in components:
         for dependency in component.get("dependencies", []):
             if dependency not in component_ids:
@@ -205,6 +211,7 @@ def build_project_model() -> dict:
         "pod_agent": load_pod_agent_state(),
         "components": components,
         "pipelines": pipelines,
+        "utilities": utilities,
         "validation": {"valid": not issues, "issues": issues, "warnings": warnings},
     }
 
@@ -219,6 +226,14 @@ def inspect_project(target: str = "project", name: str = "", summary_only: bool 
         return model
     if target == "components":
         return {**base, "components": model["components"]}
+    if target == "utilities":
+        return {**base, "utilities": model["utilities"]}
+    if target == "utility":
+        from ai_pod_cli.utilities import read_utility
+        try:
+            return {**base, "utility": read_utility(name)}
+        except (OSError, ValueError, TypeError) as error:
+            raise ProjectModelError(str(error)) from error
     if target == "pipelines":
         return {**base, "pipelines": model["pipelines"]}
     if target == "component":

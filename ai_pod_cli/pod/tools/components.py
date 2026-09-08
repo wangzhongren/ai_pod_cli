@@ -111,6 +111,12 @@ def generate_components(
         请生成: {name} ({category}) — {description}
 
         【通用规范】：
+        - Model、Provider、Service 都可复用项目全局注册的纯工具类，按目录中的完整路径普通 import，
+          不加入 dependencies，不通过 DI 获取。写当前组件前先查找可复用方法，缺失时可调用工具创建并注册。
+        - 工具类承担无上下文、无资源生命周期的通用计算/解析/格式化；Provider 保留实际 I/O，
+          Service 保留领域规则，Model 保留数据定义。不能把整个业务流程塞进工具类来规避职责限制。
+        - 已有 PipelineContext.get、契约校验及 Model 物化直接复用框架；不要再生成一套兼容各种
+          ctx/dict/object 的 _safe_get、_coerce_*。若字段需要进入组件，应先在 inputs 中准确声明。
         - 必须 from injector import inject，构造函数加 @inject
         - 类名必须与 {name} 完全一致
         - 构造函数只放组件类型依赖，不放 str/int/bool
@@ -126,7 +132,7 @@ def generate_components(
         - 必须逐字复制上方组件池中的 class_path 来 import，禁止根据类别猜测路径。
         - Model 固定从 modules.models.<文件名> 导入；禁止从 modules.services 或 modules.providers 导入 Model。
         - Provider 从 modules.providers.<文件名> 导入。
-        - Service 代码禁止 import modules.services；它只能看到自身 Contract、Model 和 Provider。
+        - Service 代码禁止 import modules.services；它可使用自身 Contract、Model、Provider 和已注册纯工具类。
           多个 Service 的执行顺序、循环、并行和失败策略只能由 Pipeline 声明。
         - 如果 Provider 暴露“冻结资源”，SQL/消息主题/外部资源名称必须逐字使用其中的表名和字段，禁止猜测复数形式或不存在的列。
         """
