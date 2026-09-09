@@ -87,5 +87,6 @@ export function applyComponents(
 export async function ensureProjectDirectories(projectRoot: string): Promise<void> {
   await Promise.all([
     "models", "providers", "services", "pipelines", "interfaces",
+    ...["providers", "services"].flatMap((layer) => ["contracts", "impl", "public"].map((area) => `${layer}/${area}`)),
   ].map((directory) => mkdir(resolve(projectRoot, "src", directory), { recursive: true })));
 }

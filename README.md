@@ -64,6 +64,34 @@ Service 使用 Model 和 Provider，Service 之间的组合放在 Pipeline 中�
 
 这套结构可以用于业务工具，也可以组织模拟程序、游戏原型等项目。具体实现能力仍取决于模型、需求和使用的基础库。
 
+### Provider 和 Service 的内部组织
+
+两层都使用 `contracts/`、`impl/`、`public/` 三个顶层目录。框架只固定这三个区域，AI 自行规划其中的目录和文件，按领域、能力或算法拆分，没有固定嵌套深度，也不要求三个目录一一对应。
+
+```text
+modules/                      # Node 对应 src/，源码后缀为 .ts
+├── providers/
+│   ├── contracts/storage.py
+│   ├── impl/storage/memory.py
+│   └── public/storage.py
+└── services/
+    ├── contracts/physics.py
+    ├── impl/physics/
+    │   ├── collision/
+    │   └── dynamics/
+    └── public/physics.py
+```
+
+- `contracts/`：稳定的接口、类型及行为约定，复用 Model，不依赖实现或公开入口。
+- `impl/`：具体组件和内部辅助代码，复杂起来后由所属 Agent 自行拆分。
+- `public/`：薄的公开导出，注册表指向这里；不放业务逻辑或重复包装类。一个入口可导出多个组件。
+
+Python 公开入口使用显式导入，例如 `from ..impl.storage.memory import MemoryStore as Store`，注册路径为 `modules.providers.public.storage.Store`。也支持 `public/__init__.py` 和逐层命名导出。Node 使用 `export {MemoryStore as Store} from '../impl/storage/memory.js'`，注册 `src/providers/public/storage.ts` 与 ID `Store`。静态校验会沿导出找到真实实现，不会执行源码来解析入口；不支持用通配导出或动态赋值注册组件。
+
+内部可以复用本层的辅助代码和契约，跨层导入只能使用 `public/` 或 `contracts/`，不能直接引用另一层的 `impl/`。Service 之间仍通过 Pipeline 组合。内部辅助文件不需要注册，也不需要额外 Agent。
+
+新生成的 Provider/Service 必须注册公开入口；已有平铺组件可以继续维护，不会自动搬迁。内部重组保留公开路径，跨 Owner 的修改仍由 Pod 批准并交给所属 Agent 执行。删除共享入口中的一个组件时，只移除它的命名导出及注册信息，保留其他组件。
+
 ## 快速开始：Python
 
 需要 **Python 3.10+**。以下示例适用于 macOS；Linux 的 Agent shell 还需要 `bubblewrap`。

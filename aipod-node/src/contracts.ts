@@ -60,9 +60,9 @@ export function validateContract(
   return errors;
 }
 
-export function validateServiceSource(source: string): string[] {
+export function validateServiceSource(source: string, options: { allowInternalImports?: boolean } = {}): string[] {
   const errors: string[] = [];
-  if (/from\s+["'][^"']*services[^"']*["']|require\(["'][^"']*services/.test(source)) {
+  if (!options.allowInternalImports && /from\s+["'][^"']*services[^"']*["']|require\(["'][^"']*services/.test(source)) {
     errors.push("Service cannot import another Service; compose them in a Pipeline");
   }
   if (/PipelineRunner|runRoute\s*\(/.test(source)) {

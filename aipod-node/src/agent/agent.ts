@@ -1,12 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import ts from "typescript";
 import { STAGES, type StageName, type AgentState, type AgentEvent, type ModelClient, type StagePlan } from "./types.js";
 import { loadProject, saveProject, ensureProjectDirectories, type ProjectManifest, type ProjectBean } from "./project.js";
 import { loadCurrentState, loadState, newState, saveState } from "./state.js";
 import { validateArtifactContent } from "./artifacts.js";
-import { validateServiceSource } from "../contracts.js";
+import { SourceGraph, validateLayout, area } from "./component-layout.js";
 import { typeCheckProject, formatSemanticDiagnostic } from "../semantic-check.js";
 import { WorkspaceAgent, WorkspaceTools, pathOwner, type Owner, type Action, type ShellCheck } from "./workspace.js";
 import { revisionScope, stageEntries } from "./revision.js";
@@ -23,7 +22,7 @@ type WorkspaceState = AgentState & { mode?: "workspace"; changeRequests?: Change
 
 /** Ordinary project checks; component-test generation is not a prerequisite. */
 export async function verifyProject(root: string, project: ProjectManifest): Promise<string[]> {
-  const errors: string[] = [];
+  const errors: string[] = validateLayout(root, project.beans);
   for (const bean of project.beans) {
     for (const dependency of bean.dependencies) {
       const found = project.beans.find((item) => item.id === dependency);
@@ -34,7 +33,6 @@ export async function verifyProject(root: string, project: ProjectManifest): Pro
       try {
         const source = await readFile(resolve(root, bean.file), "utf8");
         errors.push(...validateArtifactContent(bean.file, source).map((error) => `${bean.file}: ${error}`));
-        if (bean.category === "service") errors.push(...validateServiceSource(source).map((error) => `${bean.file}: ${error}`));
       } catch (error) { errors.push(`${bean.file}: ${String(error)}`); }
     }
   }
@@ -64,16 +62,17 @@ export class ConstructionAgent {
     if (allowedIds && [...components.map((item)=>item.id), ...routes.map((item)=>item.name), ...interfaces.map((item)=>item.name), ...remove].some((id)=>!allowedIds.includes(id))) throw new Error("Bounded revision must preserve its target IDs");
     if ((components.length && !["models", "providers", "services"].includes(stage)) || (routes.length && stage !== "pipelines") || (interfaces.length && stage !== "interfaces") || (remove.length && stage === "pod")) throw new Error("finish can only update the acting layer");
     const next = structuredClone(this.project), files: string[] = [];
+    const graph = new SourceGraph(this.projectRoot);
     for (const component of components) {
       if (typeof component.id !== "string" || !/^[A-Za-z_]\w*$/.test(component.id) || pathOwner(component.file) !== stage) throw new Error("Component id/file must belong to this layer");
       const previous = next.beans.find((bean) => bean.id === component.id);
       if (previous && (previous.file.startsWith("aipod:") || `${previous.category}s` !== stage)) throw new Error("Cannot replace another owner or built-in ID");
-      const source = await readFile(await tools.path(component.file, true), "utf8");
-      const errors = validateArtifactContent(component.file, source);
-      const declarations = ts.createSourceFile(component.file, source, ts.ScriptTarget.Latest, true).statements;
-      if (!declarations.some((node) => (ts.isClassDeclaration(node) || stage === "models" && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)))
-          && node.name?.text === component.id && node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))) errors.push(`Source must export ${component.id}`);
-      if (stage === "services") errors.push(...validateServiceSource(source));
+      if (["providers", "services"].includes(stage) && !previous && area(component.file)[1] !== "public") throw new Error("New Provider/Service registrations must use public/ entries");
+      const definition = graph.component({ ...component, category: stage.slice(0, -1) as ProjectBean["category"] });
+      const owned = [...graph.closure(definition.file), component.file];
+      const writable = await Promise.all(owned.map(async (file) => { try { await tools.path(file, true); return true; } catch { return false; } }));
+      if (!writable.some(Boolean)) throw new Error("Component is outside the approved write scope");
+      const errors = validateArtifactContent(definition.file, graph.source(definition.file).text);
       if (errors.length) throw new Error(errors.join("; "));
       if (!Array.isArray(component.dependencies) || !component.dependencies.every((id) => typeof id === "string") || !component.inputs || !component.outputs) throw new Error("Component metadata requires dependencies, inputs and outputs");
       const bean: ProjectBean = { ...component, category: stage.slice(0, -1) as ProjectBean["category"] };
@@ -107,13 +106,20 @@ export class ConstructionAgent {
       const entry = stage === "pipelines" ? next.routes.find((item) => item.name === id) : stage === "interfaces" ? next.interfaces.find((item) => item.name === id) : next.beans.find((item) => item.id === id);
       if (!entry || pathOwner(entry.file) !== stage) throw new Error("Can unregister only your own artifacts");
       const target = await tools.path(entry.file, true);
-      try { await readFile(target); throw new Error("Delete the artifact before unregistering it"); }
+      try {
+        await readFile(target);
+        if (!["providers", "services", "models"].includes(stage) || graph.hasExport(entry.file, id)) throw new Error("Remove the component export (or delete its file) before unregistering it");
+      }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       if (stage === "pipelines") next.routes = next.routes.filter((item) => item.name !== id);
       else if (stage === "interfaces") next.interfaces = next.interfaces.filter((item) => item.name !== id);
       else next.beans = next.beans.filter((item) => item.id !== id);
     }
-    if ((files.length || tools.changed.size || tools.revision || finalReview) && !tools.checks.some((check) => check.exitCode === 0 && !check.timedOut && check.revision === tools.revision)) throw new Error("Run a real successful shell check after the latest edit/upstream change before finishing");
+    if (files.length || remove.length || tools.changed.size || tools.revision || finalReview) {
+      const errors = validateLayout(this.projectRoot, next.beans, finalReview ? undefined : stage);
+      if (errors.length) throw new Error(errors.join("; "));
+      if (!tools.checks.some((check) => check.exitCode === 0 && !check.timedOut && check.revision === tools.revision)) throw new Error("Run a real successful shell check after the latest edit/upstream change before finishing");
+    }
     this.project = next; await saveProject(this.projectRoot, next);
     const result = { summary: String(action.summary ?? ""), artifacts: [...new Set([...files, ...tools.changed])], checks: tools.checks, status: "complete" };
     if (stage !== "pod") {

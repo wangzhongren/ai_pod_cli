@@ -135,10 +135,29 @@ def repair_feedback(violations: list[str]) -> str:
     )
 
 
+def validate_service_helpers(code: str) -> list[str]:
+    """Internal extraction must preserve Service runtime and storage boundaries."""
+    errors = validate_code(code)
+    if errors:
+        return errors
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module in {"ai_pod_cli.runner", "ai_pod_cli.container", "ai_pod_cli.interface"}
+                or any(alias.name in {"PipelineRunner", "build_container", "Pod"} for alias in node.names)):
+            errors.append("Service helpers cannot access Pipeline/Interface Runtime")
+        if isinstance(node, ast.Import) and any(alias.name in {"ai_pod_cli.runner", "ai_pod_cli.container", "ai_pod_cli.interface"} for alias in node.names):
+            errors.append("Service helpers cannot access Pipeline/Interface Runtime")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and re.search(
+                r"^\s*(?:CREATE\s+(?:TABLE|INDEX)|INSERT\s+INTO|SELECT\s+.+\s+FROM|UPDATE\s+\w+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+(?:TABLE|INDEX))\b", node.value, re.I | re.S):
+            errors.append("Service helpers cannot use raw SQL; use ModelRepository")
+    return list(dict.fromkeys(errors))
+
+
 def validate_component_contract(
     code: str, class_name: str, category: str,
     inputs: dict | None = None, outputs: dict | None = None,
     methods: dict | None = None,
+    *, allow_internal_imports: bool = False,
 ) -> list[str]:
     """Return violations when generated component code misses its AIPod contract."""
     violations = validate_code(code)
@@ -230,7 +249,7 @@ def validate_component_contract(
             for alias in node.names
             if alias.name == "modules.services" or alias.name.startswith("modules.services.")
         }))
-        if service_imports:
+        if service_imports and not allow_internal_imports:
             violations.append(
                 "Service 不得看到或导入其他 Service："
                 + ", ".join(dict.fromkeys(service_imports))

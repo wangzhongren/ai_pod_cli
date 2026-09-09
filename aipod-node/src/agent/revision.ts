@@ -21,6 +21,9 @@ export async function revisionScope(
   root: string, project: ProjectManifest, stage: StageName, targets: unknown,
 ): Promise<RevisionScope | undefined> {
   if (!Array.isArray(targets) || !targets.length || targets.some((id) => typeof id !== "string")) return;
+  // Public entries can share arbitrarily nested implementation/contracts. Let the
+  // owning layer plan the revision rather than granting only an export file.
+  if (project.beans.some((bean) => /^src\/(providers|services)\/public\//.test(bean.file))) return;
   const entries = STAGES.flatMap((name) => stageEntries(project, name).map((item) => ({ ...item, stage: name })));
   const key = (name: StageName, id: string) => `${name}:${id}`;
   const known = new Set(stageEntries(project, stage).filter((entry) =>

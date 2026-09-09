@@ -82,6 +82,10 @@ class WorkspaceTools:
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
 
+        if stage in {"providers", "services"} and f"modules/{stage}" in self.paths:
+            for area in ("contracts", "impl", "public"):
+                self.resolve(f"modules/{stage}/{area}", write=True).mkdir(exist_ok=True)
+
     def directory_grant(self, path: str) -> bool:
         known = {base for layer in LAYERS for base in owned_paths(layer) if base != "app.py"}
         known.update({".venv", "venv", "tests/pod", "docs/pod"})

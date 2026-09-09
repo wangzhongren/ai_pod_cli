@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 
 import { ConstructionAgent } from "./agent/agent.js";
 import { OpenAICompatibleClient } from "./agent/client.js";
-import { loadProject } from "./agent/project.js";
+import { loadProject, ensureProjectDirectories } from "./agent/project.js";
 import type { ProjectBean } from "./agent/project.js";
 import {
   loadInterface, runInterfaceLifecycle, smokeInterface, verifyInterface,
@@ -31,9 +31,7 @@ const [, , command = "help", ...args] = process.argv;
 
 async function init(target = "."): Promise<void> {
   const root = resolve(target);
-  for (const directory of ["models", "providers", "services", "pipelines", "interfaces"]) {
-    await mkdir(resolve(root, "src", directory), { recursive: true });
-  }
+  await ensureProjectDirectories(root);
   const project = {
     schemaVersion: 1,
     beans: [{

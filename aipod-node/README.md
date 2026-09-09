@@ -62,12 +62,37 @@ Model → Provider → Service → Pipeline → Interface
 其他层的文件保持只读，注册表与 Pod 状态由控制器管理。发现上游问题时，Agent 发出申请：
 
 ```json
-{"tool":"request_change","target":"providers","paths":["src/providers/store.ts"],"reason":"已观察到的接口问题","change":"必要的修改及兼容要求"}
+{"tool":"request_change","target":"providers","paths":["src/providers/impl/storage/store.ts"],"reason":"已观察到的接口问题","change":"必要的修改及兼容要求"}
 ```
 
 Pod 批准后交给原 Owner 修改，重新检查受影响的中间层，再让申请者继续。申请者不会获得上游写权限。决定与结果保存在 `.aipod/plan.json`，已批准但中断的工作可以续接。
 
 默认流程不再逐组件生成冻结测试或复制项目。Agent 选择普通编译、测试和运行命令，Pod 使用同一套工具验收最终交付。
+
+### 三个目录，内部由 AI 规划
+
+`src/providers/` 与 `src/services/` 都包含三个固定区域：
+
+```text
+src/services/
+├── contracts/physics.ts
+├── impl/physics/
+│   ├── collision/
+│   └── dynamics/
+└── public/physics.ts
+```
+
+`contracts/` 定义稳定接口、类型和行为规则，复用 Model；`impl/` 放具体实现及内部辅助代码；`public/` 只做显式命名导出，例如：
+
+```ts
+export {CollisionService} from '../impl/physics/collision/service.js';
+```
+
+注册表中的 `file` 指向 `src/services/public/physics.ts`，`id` 为 `CollisionService`。支持别名、逐层命名导出以及一个入口公开多个组件。校验沿导出找到真实类，内部文件不必逐个注册。组件入口不使用 `export *` 或动态赋值。
+
+AI 自行决定三个区域下的目录、名称和深度；无需镜像目录或为每个函数创建接口。跨层只能导入公开入口或契约，不能引用另一层的 `impl/`，契约也不能反向依赖实现。内部辅助代码可以复用，Service 之间的编排继续放在 Pipeline。
+
+新生成组件使用公开入口，既有平铺注册继续兼容。原 Owner 管理整个层的目录，跨层修改仍需 Pod 批准。一个公开文件里删除某个组件时，只移除对应导出和注册信息，保留其他导出。
 
 ## 运行时边界
 

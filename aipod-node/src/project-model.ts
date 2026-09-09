@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { validateServiceSource } from "./contracts.js";
+import { validateLayout } from "./agent/component-layout.js";
 import { analyzePipelineContracts } from "./contracts.js";
 import { loadProject } from "./agent/project.js";
 import { loadState } from "./agent/state.js";
@@ -19,7 +19,7 @@ const exists = async (path: string) => {
 
 export async function inspectProject(projectRoot: string): Promise<Record<string, unknown>> {
   const project = await loadProject(projectRoot);
-  const issues: ProjectIssue[] = [];
+  const issues: ProjectIssue[] = validateLayout(projectRoot, project.beans).map((message) => ({code: "component_layout", message}));
   const categories = new Map(project.beans.map((bean) => [bean.id, bean.category]));
   for (const bean of project.beans) {
     if (!bean.file.startsWith("aipod:") && !await exists(resolve(projectRoot, bean.file))) {
@@ -36,12 +36,6 @@ export async function inspectProject(projectRoot: string): Promise<Record<string
           message: `Service cannot see '${dependency}'`,
         });
       }
-    }
-    if (bean.category === "service" && !bean.file.startsWith("aipod:") && await exists(resolve(projectRoot, bean.file))) {
-      const source = await readFile(resolve(projectRoot, bean.file), "utf8");
-      issues.push(...validateServiceSource(source).map((message) => ({
-        code: "service_source_visibility", target: bean.id, message,
-      })));
     }
   }
   const services = new Set(project.beans.filter((bean) => bean.category === "service").map((bean) => bean.id));

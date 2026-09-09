@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, extname, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { randomUUID } from "node:crypto";
 
 import { loadProject, type ProjectManifest } from "./agent/project.js";
 import { ConfigStore } from "./config-store.js";
@@ -23,6 +24,22 @@ async function walk(directory: string): Promise<string[]> {
 
 const buildRoot = (projectRoot: string) => resolve(process.env.AIPOD_BUILD_DIR ?? resolve(projectRoot, ".aipod", "build"));
 
+function versionImports(version: string): ts.TransformerFactory<ts.SourceFile> {
+  return (context) => {
+    const specifier = (node: ts.Expression | undefined) => node && ts.isStringLiteral(node) && /^\.{1,2}\//.test(node.text)
+      ? context.factory.createStringLiteral(`${node.text}${node.text.includes("?") ? "&" : "?"}aipod=${version}`) : node;
+    const visit: ts.Visitor = (node) => {
+      if (ts.isImportDeclaration(node)) return context.factory.updateImportDeclaration(node, node.modifiers, node.importClause, specifier(node.moduleSpecifier)!, node.attributes);
+      if (ts.isExportDeclaration(node)) return context.factory.updateExportDeclaration(node, node.modifiers, node.isTypeOnly, node.exportClause, specifier(node.moduleSpecifier), node.attributes);
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length) {
+        return context.factory.updateCallExpression(node, node.expression, node.typeArguments, [specifier(node.arguments[0])!, ...node.arguments.slice(1)]);
+      }
+      return ts.visitEachChild(node, visit, context);
+    };
+    return (source) => ts.visitNode(source, visit) as ts.SourceFile;
+  };
+}
+
 export async function compileProjectSources(projectRoot: string): Promise<string[]> {
   const sourceRoot = resolve(projectRoot, "src");
   const outputRoot = buildRoot(projectRoot);
@@ -30,6 +47,8 @@ export async function compileProjectSources(projectRoot: string): Promise<string
   await mkdir(outputRoot, { recursive: true });
   await writeFile(resolve(outputRoot, "package.json"), '{"type":"module"}\n');
   const errors: string[] = (await typeCheckProject(projectRoot)).map(formatSemanticDiagnostic);
+  // Re-exported classes and helpers also need fresh ESM identities after a rebuild.
+  const version = randomUUID();
   for (const source of (await walk(sourceRoot)).filter((path) => extname(path) === ".ts")) {
     const content = await readFile(source, "utf8");
     const output = ts.transpileModule(content, {
@@ -40,6 +59,7 @@ export async function compileProjectSources(projectRoot: string): Promise<string
         sourceMap: true,
       },
       reportDiagnostics: true,
+      transformers: { after: [versionImports(version)] },
     });
     errors.push(...(output.diagnostics ?? []).map((diagnostic) =>
       `${relative(projectRoot, source)}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`

@@ -113,6 +113,13 @@ Model → Provider → Service → Pipeline → Interface
 
 - Models are typed data and never enter dependency injection.
 - Providers expose infrastructure and may be injected into Services.
+- Providers and Services use contracts/, impl/, public/ under their src/<layer>/.
+  Let the owning Agent plan nested directories by responsibility, without fixed depth
+  or mirrored trees. Contracts reuse Models and never depend on impl/public. Public
+  files contain explicit named re-exports; register those stable files and IDs.
+  Reuse internal helpers without registering them. Cross-layer imports use public or
+  contracts, never another layer's impl. Preserve existing flat registrations unless
+  migration is assigned. Cross-owner changes still go through Pod approval.
 - A Service sees only its Contract, Models, Providers, and `PipelineContext`.
 - A Service cannot import, inject, resolve, construct, or execute another Service or
   `PipelineRunner`.

@@ -11,6 +11,7 @@ import tomlkit
 
 from ai_pod_cli.config import extract_model_fields
 from ai_pod_cli.contracts import canonical_contract
+from ai_pod_cli.component_layout import SourceGraph, validate_layout, area
 from ai_pod_cli.validation import validate_component_contract, validate_pipeline_contract
 from ai_pod_cli.workspace import LAYERS, WorkspaceTools, path_owner, owned_paths
 from ai_pod_cli.workspace_agent import WorkspaceAgent
@@ -25,6 +26,14 @@ class PodCoordinator:
 
     def persist(self):
         self.save(self.state)
+
+    @staticmethod
+    def _can_write(tools, file):
+        try:
+            tools.resolve(file, write=True)
+            return True
+        except PermissionError:
+            return False
 
     def context(self):
         registry = json.loads((self.root / "beans_config.json").read_text(encoding="utf-8"))
@@ -55,6 +64,7 @@ class PodCoordinator:
         if (components and stage not in LAYERS[:3]) or (pipelines and stage != "pipelines") or (interfaces and stage != "interfaces"):
             raise PermissionError("finish may register only the acting layer")
         files = []
+        graph = SourceGraph(self.root)
         candidate = dict(previous)
         for bean in components:
             identifier = bean.get("id", "")
@@ -64,19 +74,31 @@ class PodCoordinator:
             module, _, class_name = class_path.rpartition(".")
             if not module or not all(part.isidentifier() for part in module.split(".")):
                 raise ValueError("Component class_path must be a valid Python import path")
-            path = module.replace(".", "/") + ".py"
+            path = graph.module_file(module) or module.replace(".", "/") + ".py"
             if class_name != identifier or path_owner(path) != stage:
                 raise PermissionError("Component class_path must identify a file owned by this layer")
             if identifier in previous and (previous[identifier].get("category") != stage[:-1] or not previous[identifier].get("class_path", "").startswith("modules.")):
                 raise PermissionError("Cannot replace another layer's registered ID")
-            source = tools.resolve(path, write=True).read_text(encoding="utf-8")
+            if stage in {"providers", "services"} and identifier not in previous and area(path)[1] != "public":
+                raise ValueError("New Provider/Service registrations must use public/ entries")
+            if stage in {"providers", "services"}:
+                _, implementation, symbol = graph.component(bean)
+                # A scoped implementation repair can retain its unchanged public entry.
+                owned_files = graph.closure(implementation) | {path}
+                if not any(self._can_write(tools, file) for file in owned_files):
+                    raise PermissionError("Component is outside the approved write scope")
+                source = graph.source(implementation)[0]
+            else:
+                source = tools.resolve(path, write=True).read_text(encoding="utf-8")
+                symbol = identifier
             inputs, outputs, methods = (bean.get(key, {}) for key in ("inputs", "outputs", "methods"))
             if not all(isinstance(value, dict) for value in (inputs, outputs, methods)):
                 raise ValueError("Contracts and methods must be objects")
-            errors = validate_component_contract(source, identifier, stage[:-1], inputs, outputs, methods)
+            errors = validate_component_contract(source, symbol, stage[:-1], inputs, outputs, methods,
+                                                 allow_internal_imports=stage in {"providers", "services"})
             if errors:
                 raise ValueError("; ".join(errors))
-            normalized = {**bean, "category": stage[:-1], "type": "ai_created", "file": Path(path).name,
+            normalized = {**bean, "category": stage[:-1], "type": "ai_created", "file": str(Path(path).relative_to(f"modules/{stage}")),
                           "inputs": inputs, "outputs": outputs, "methods": methods,
                           "dependencies": bean.get("dependencies", [])}
             normalized.pop("component_test", None)
@@ -89,9 +111,10 @@ class PodCoordinator:
                 bean = previous.get(identifier)
                 if not bean or bean.get("category") != stage[:-1]:
                     raise PermissionError("Can only unregister the acting layer's IDs")
-                path = bean["class_path"].rsplit(".", 1)[0].replace(".", "/") + ".py"
-                if tools.resolve(path, write=True).exists():
-                    raise ValueError("Delete the component file before unregistering it")
+                module = bean["class_path"].rsplit(".", 1)[0]
+                path = graph.module_file(module) or module.replace(".", "/") + ".py"
+                if tools.resolve(path, write=True).exists() and graph.has_export(path, identifier):
+                    raise ValueError("Remove the component export (or delete its file) before unregistering it")
                 candidate.pop(identifier)
         for bean in candidate.values():
             for dependency in bean.get("dependencies", []):
@@ -140,7 +163,11 @@ class PodCoordinator:
             files.append(path)
         if stage == "interfaces" and removed:
             raise ValueError("Remove an Interface by deleting its interface.json file through the file tool")
-        has_work = bool(files or tools.changed or tools.revision or final_review)
+        has_work = bool(files or removed or tools.changed or tools.revision or final_review)
+        if has_work:
+            errors = validate_layout(self.root, list(candidate.values()), stage=None if final_review else stage)
+            if errors:
+                raise ValueError("; ".join(errors))
         if has_work and not any(check["exit_code"] == 0 and not check["timed_out"] and check["revision"] == tools.revision for check in tools.checks):
             raise ValueError("Run an actual successful shell check after your latest edit/upstream change before finishing")
         # Registry mutations are performed only by Pod, after owner/path validation.

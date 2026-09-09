@@ -48,6 +48,10 @@ def handle_init(args):
         else:
             skipped.append(f"📄 {init_file} (已存在)")
 
+    for layer in (PROVIDERS_DIR, SERVICES_DIR):
+        for area in ("contracts", "impl", "public"):
+            os.makedirs(os.path.join(layer, area), exist_ok=True)
+
     # 创建根 requirements.txt（空依赖触发 header 写入）
     if not os.path.exists(REQUIREMENTS_FILE):
         append_deps_to_requirements([])

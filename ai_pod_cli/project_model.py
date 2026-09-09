@@ -155,6 +155,12 @@ def build_project_model() -> dict:
     components = [{field: bean[field] for field in component_fields if field in bean} for bean in beans]
     component_ids = {component.get("id") for component in components}
     issues = []
+    # Legacy registries may describe external classes without local source files.
+    # Structured components opt into project-aware import/export validation.
+    if any(".public." in bean.get("class_path", "") for bean in beans):
+        from ai_pod_cli.component_layout import validate_layout
+        issues.extend({"code": "component_layout", "message": message}
+                      for message in validate_layout(Path.cwd(), beans))
     warnings = []
     for component in components:
         for dependency in component.get("dependencies", []):
