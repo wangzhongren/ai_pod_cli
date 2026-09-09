@@ -108,8 +108,8 @@ test("invalid model XML never commits a candidate file or completes its stage", 
     await assert.rejects(new ConstructionAgent(root, {
       complete: async () => ({ summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {}, tests: testPlan }] }),
       completeText: async (system) => { const tests = userTests(system); if (tests) return tests; attempts += 1; return valid + valid; },
-    }).run("Generate User"), /exactly one artifact/);
-    assert.equal(attempts, 3);
+    }).run("Generate User"), /40 steps/);
+    assert.equal(attempts, 40);
     assert.equal((await loadState(root, "Generate User")).stages.models.status, "failed");
     assert.deepEqual(JSON.parse(await readFile(join(root, "aipod.json"), "utf8")), manifest);
     await assert.rejects(readFile(join(root, "src/models/user.ts")), /ENOENT/);

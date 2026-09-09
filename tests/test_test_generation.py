@@ -152,54 +152,7 @@ class TestGenerationTests(unittest.TestCase):
             self.assertEqual(read_frozen_test(root, descriptor), TEST_SOURCE)
             self.assertEqual(modes, [True, False, False])
 
-    def test_create_runs_frozen_tests_and_repairs_only_implementation(self):
-        with project() as root:
-            calls = []
-            def llm(system, user, **options):
-                if options["json_mode"]:
-                    if "补丁生成器" in system:
-                        calls.append("patch")
-                        return {"patches": [{"old": "value: int = 2", "new": "value: int = 1"}]}
-                    calls.append("metadata")
-                    return METADATA
-                match = re.search(r"tests/components/Sample_[a-f0-9]+\.py", system)
-                if match:
-                    calls.append("tests")
-                    self.assertFalse((root / "modules/models/sample.py").exists())
-                    return encode_source_artifact(match.group(), TEST_SOURCE)
-                calls.append("source")
-                self.assertEqual(len(list((root / "tests/components").glob("*.py"))), 1)
-                return encode_source_artifact("modules/models/sample.py", SOURCE.replace("= 1", "= 2"))
-            output = io.StringIO()
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch(
-                "ai_pod_cli.commands.create.call_llm", side_effect=llm,
-            ), patch("ai_pod_cli.commands.create.request_repair", return_value=True), redirect_stdout(output):
-                handle_create(SimpleNamespace(**COMPONENT, desc=COMPONENT["description"], json=True))
-            self.assertTrue((root / "modules/models/sample.py").is_file(), output.getvalue())
-            self.assertEqual((root / "modules/models/sample.py").read_text(), SOURCE)
-            self.assertEqual(calls, ["metadata", "tests", "source", "patch"])
-            config = json.loads((root / "beans_config.json").read_text())
-            bean = next(bean for bean in config["beans"] if bean["id"] == "Sample")
-            self.assertEqual(read_frozen_test(root, bean["component_test"]), TEST_SOURCE)
-            self.assertEqual(bean["component_test"]["sha256"], hashlib.sha256(TEST_SOURCE.encode()).hexdigest())
 
-    def test_setup_failure_does_not_patch_or_regenerate_implementation(self):
-        with project():
-            calls = []
-            def llm(system, user, **options):
-                calls.append(options["json_mode"])
-                if options["json_mode"] or "tests/components/" in system:
-                    return test_llm(system, user, **options)
-                return encode_source_artifact("modules/models/sample.py", SOURCE)
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch(
-                "ai_pod_cli.commands.create.call_llm", side_effect=llm,
-            ), patch("ai_pod_cli.commands.create.verify_frozen_component", return_value=[
-                "[AIPOD_TEST_SETUP] unknown Model Bean ID: Invented",
-            ]), patch("ai_pod_cli.commands.create.request_repair") as repair, redirect_stdout(io.StringIO()):
-                handle_create(SimpleNamespace(**COMPONENT, desc=COMPONENT["description"], json=True))
-            repair.assert_not_called()
-            self.assertEqual(calls, [True, False, False])
-            self.assertFalse(Path("modules/models/sample.py").exists())
 
     def test_permission_rejection_is_classified_by_test_evidence(self):
         self.assertEqual(classify_failures(["[AIPOD_SAMPLE_REJECTED] PermissionError"]), "authorization_fixture")

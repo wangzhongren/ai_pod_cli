@@ -24,7 +24,8 @@ def main():
     """Main CLI entry point for the AI Pod engine."""
     # 从 .env 文件加载环境变量（优先于系统环境变量）
     from dotenv import load_dotenv
-    load_dotenv()
+    if os.environ.get("AIPOD_AGENT_SHELL") != "1":
+        load_dotenv()
 
     # 从全局配置补充（~/.aipod/config.toml）
     _apply_global_env()

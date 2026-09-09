@@ -8,7 +8,8 @@ export class ModelRepository {
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(projectRoot: string, file = ".aipod/data.json") {
-    this.#path = resolve(projectRoot, file);
+    this.#path = process.env.AIPOD_DATA_DIR && file === ".aipod/data.json"
+      ? resolve(process.env.AIPOD_DATA_DIR, "data.json") : resolve(projectRoot, file);
   }
 
   async #read(): Promise<Database> {

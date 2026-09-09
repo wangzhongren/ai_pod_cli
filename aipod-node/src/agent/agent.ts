@@ -1,385 +1,258 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { verifyComponentTests } from "../component-tests.js";
-
-import { validateServiceSource } from "../contracts.js";
-import { smokeInterface, verifyInterface } from "../interface.js";
-import { formatSemanticDiagnostic, typeCheckProject } from "../semantic-check.js";
-import { loadProjectConfiguration } from "../shared-config.js";
-import {
-  commitArtifacts, generateArtifacts, validateArtifacts, verifyCommittedArtifact,
-} from "./artifacts.js";
-import {
-  applyComponents, ensureProjectDirectories, loadProject, saveProject,
-  type ProjectManifest,
-} from "./project.js";
-import { planStage, validateStagePlan } from "./planner.js";
-import { repairArtifact } from "./repair.js";
-import { revisionScope, stageEntries, validateRevisionPlan } from "./revision.js";
+import ts from "typescript";
+import { STAGES, type StageName, type AgentState, type AgentEvent, type ModelClient, type StagePlan } from "./types.js";
+import { loadProject, saveProject, ensureProjectDirectories, type ProjectManifest, type ProjectBean } from "./project.js";
 import { loadCurrentState, loadState, newState, saveState } from "./state.js";
-import {
-  STAGES, type AgentEvent, type AgentState, type ModelClient, type StageName,
-  type StagePlan,
-} from "./types.js";
+import { validateArtifactContent } from "./artifacts.js";
+import { validateServiceSource } from "../contracts.js";
+import { typeCheckProject, formatSemanticDiagnostic } from "../semantic-check.js";
+import { WorkspaceAgent, WorkspaceTools, pathOwner, type Owner, type Action, type ShellCheck } from "./workspace.js";
+import { revisionScope, stageEntries } from "./revision.js";
 
 export type ProgressHandler = (event: AgentEvent) => void;
-
 export class AgentCancelledError extends Error {
   constructor() { super("Pod Agent cancelled"); this.name = "AgentCancelledError"; }
 }
-
-function history(
-  state: AgentState,
-  stage: StageName | "verification",
-  action: string,
-  status: "started" | "passed" | "failed",
-  summary: string,
-): void {
-  state.history.push({ timestamp: new Date().toISOString(), stage, action, status, summary });
-  state.history = state.history.slice(-100);
+export interface ChangeRequest {
+  id: string; requester: Owner; target: Owner; paths: string[]; reason: string; change: string;
+  approved: boolean; summary: string; status: "approved" | "working" | "applied" | "denied" | "failed" | "superseded";
 }
+type WorkspaceState = AgentState & { mode?: "workspace"; changeRequests?: ChangeRequest[] };
 
-function updateProject(project: ProjectManifest, stage: StageName, plan: StagePlan): void {
-  if (stage === "models" || stage === "providers" || stage === "services") {
-    applyComponents(project, stage, plan.components ?? []);
-  } else if (stage === "pipelines") {
-    for (const route of plan.routes ?? []) {
-      const value = { ...route, file: `src/pipelines/${route.name}.ts` };
-      const index = project.routes.findIndex((item) => item.name === route.name);
-      if (index >= 0) project.routes[index] = value;
-      else project.routes.push(value);
-    }
-  } else {
-    for (const item of plan.interfaces ?? []) {
-      const value = { ...item, file: `src/interfaces/${item.file.split(/[\\/]/).at(-1)}` };
-      const index = project.interfaces.findIndex((entry) => entry.name === item.name);
-      if (index >= 0) project.interfaces[index] = value;
-      else project.interfaces.push(value);
-    }
-  }
-}
-
-function repairTarget(
-  project: ProjectManifest,
-  evidence: string[],
-): { file: string; service: boolean } | undefined {
-  for (const item of evidence) {
-    for (const bean of project.beans) {
-      if (
-        (item.startsWith(`${bean.id}:`) || item.includes(bean.file))
-        && !bean.file.startsWith("aipod:")
-      ) {
-        return { file: bean.file, service: bean.category === "service" };
-      }
-    }
-    for (const route of project.routes) {
-      if (item.startsWith(`${route.name}:`)) return { file: route.file, service: false };
-    }
-    for (const adapter of project.interfaces) {
-      if (item.startsWith(`${adapter.name}:`)) {
-        const artifact = (adapter.artifacts ?? []).find((value) => item.includes(value.path));
-        return { file: artifact?.path ?? adapter.file, service: false };
-      }
-    }
-  }
-  return undefined;
-}
-
-export async function verifyProject(
-  projectRoot: string,
-  project: ProjectManifest,
-): Promise<string[]> {
+/** Ordinary project checks; component-test generation is not a prerequisite. */
+export async function verifyProject(root: string, project: ProjectManifest): Promise<string[]> {
   const errors: string[] = [];
-  const categories = new Map(project.beans.map((bean) => [bean.id, bean.category]));
   for (const bean of project.beans) {
     for (const dependency of bean.dependencies) {
-      const category = categories.get(dependency);
-      if (!category) errors.push(`${bean.id}: unknown dependency '${dependency}'`);
-      if (bean.category === "service" && (category === "service" || dependency === "PipelineRunner")) {
-        errors.push(`${bean.id}: Service cannot see '${dependency}'`);
-      }
+      const found = project.beans.find((item) => item.id === dependency);
+      if (!found) errors.push(`${bean.id}: unknown dependency '${dependency}'`);
+      else if (bean.category === "service" && (found.category !== "provider" || dependency === "PipelineRunner")) errors.push(`${bean.id}: cannot inject '${dependency}'`);
     }
     if (!bean.file.startsWith("aipod:")) {
-      errors.push(...(await verifyCommittedArtifact(projectRoot, bean.file)).map((item) => `${bean.id}: ${item}`));
-    }
-    if (bean.category === "service" && !bean.file.startsWith("aipod:")) {
-      const source = await readFile(resolve(projectRoot, bean.file), "utf8");
-      errors.push(...validateServiceSource(source).map((item) => `${bean.id}: ${item}`));
-    }
-  }
-  for (const route of project.routes) {
-    errors.push(...(await verifyCommittedArtifact(projectRoot, route.file)).map((item) => `${route.name}: ${item}`));
-  }
-  for (const item of project.interfaces) {
-    errors.push(...(await verifyCommittedArtifact(projectRoot, item.file)).map((error) => `${item.name}: ${error}`));
-    for (const artifact of item.artifacts ?? []) {
-      errors.push(...(await verifyCommittedArtifact(projectRoot, artifact.path)).map(
-        (error) => `${item.name}: ${artifact.path}: ${error}`,
-      ));
+      try {
+        const source = await readFile(resolve(root, bean.file), "utf8");
+        errors.push(...validateArtifactContent(bean.file, source).map((error) => `${bean.file}: ${error}`));
+        if (bean.category === "service") errors.push(...validateServiceSource(source).map((error) => `${bean.file}: ${error}`));
+      } catch (error) { errors.push(`${bean.file}: ${String(error)}`); }
     }
   }
-  errors.push(...(await typeCheckProject(projectRoot)).map(formatSemanticDiagnostic));
-  errors.push(...await verifyComponentTests(projectRoot, project));
-  return [...new Set(errors)];
+  errors.push(...(await typeCheckProject(root)).map(formatSemanticDiagnostic));
+  return errors;
 }
 
 export class ConstructionAgent {
-  constructor(
-    readonly projectRoot: string,
-    readonly client: ModelClient,
-    readonly onProgress: ProgressHandler = () => undefined,
-    readonly isCancelled: () => boolean = () => false,
-  ) {}
-
-  #checkCancelled(): void {
-    if (this.isCancelled()) throw new AgentCancelledError();
-  }
-
-  async #verifyApplication(project: ProjectManifest): Promise<string[]> {
-    this.#checkCancelled();
-    const evidence = await verifyProject(this.projectRoot, project);
-    if (evidence.length) return evidence;
-    for (const item of project.interfaces) {
-      this.#checkCancelled();
-      try {
-        const smoke = await smokeInterface(this.projectRoot, item.name);
-        if (smoke.status !== "passed") evidence.push(`${item.name}: smoke failed`);
-      } catch (error) {
-        evidence.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      this.#checkCancelled();
-      try {
-        const checks = await verifyInterface(this.projectRoot, item.name);
-        if (checks.status !== "passed") evidence.push(`${item.name}: required verification failed`);
-      } catch (error) {
-        evidence.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
+  private state!: WorkspaceState;
+  private project!: ProjectManifest;
+  private requests = 0;
+  constructor(readonly projectRoot: string, readonly client: ModelClient,
+    readonly onProgress: ProgressHandler = () => undefined, readonly isCancelled: () => boolean = () => false) {}
+  private checkCancelled(): void { if (this.isCancelled()) throw new AgentCancelledError(); }
+  private async persist(): Promise<void> { await saveState(this.projectRoot, this.state); }
+  private context(): unknown { return { project: this.project, currentRequest: (this.state as WorkspaceState & {instruction?:string}).instruction,
+    stages: Object.fromEntries(STAGES.map((name) => [name, {status:this.state.stages[name].status,artifacts:this.state.stages[name].artifacts,
+      checks:((this.state.stages[name] as unknown as {checks?:ShellCheck[]}).checks??[]).slice(-2).map((check)=>({command:check.command,exitCode:check.exitCode,output:check.output.slice(-1500)}))}])),
+    recentChanges: this.state.changeRequests?.slice(-5) ?? [] }; }
+  private async accept(stage: Owner, action: Action, tools: WorkspaceTools, finalReview = false, allowedIds?: readonly string[]): Promise<Record<string, unknown>> {
+    if (stage !== "pod" && STAGES.slice(0, STAGES.indexOf(stage)).some((name) => this.state.stages[name].status !== "complete")) throw new Error("An upstream layer is unfinished; its owner must finish first");
+    if (finalReview && STAGES.some((name) => this.state.stages[name].status !== "complete")) throw new Error("Pod cannot accept unfinished layers");
+    const plan = action as unknown as StagePlan;
+    const components = plan.components ?? [], routes = plan.routes ?? [], interfaces = plan.interfaces ?? [];
+    const remove = (action.remove ?? []) as string[];
+    if (![components, routes, interfaces, remove].every(Array.isArray)) throw new Error("finish registry fields must be arrays");
+    if (allowedIds && [...components.map((item)=>item.id), ...routes.map((item)=>item.name), ...interfaces.map((item)=>item.name), ...remove].some((id)=>!allowedIds.includes(id))) throw new Error("Bounded revision must preserve its target IDs");
+    if ((components.length && !["models", "providers", "services"].includes(stage)) || (routes.length && stage !== "pipelines") || (interfaces.length && stage !== "interfaces") || (remove.length && stage === "pod")) throw new Error("finish can only update the acting layer");
+    const next = structuredClone(this.project), files: string[] = [];
+    for (const component of components) {
+      if (typeof component.id !== "string" || !/^[A-Za-z_]\w*$/.test(component.id) || pathOwner(component.file) !== stage) throw new Error("Component id/file must belong to this layer");
+      const previous = next.beans.find((bean) => bean.id === component.id);
+      if (previous && (previous.file.startsWith("aipod:") || `${previous.category}s` !== stage)) throw new Error("Cannot replace another owner or built-in ID");
+      const source = await readFile(await tools.path(component.file, true), "utf8");
+      const errors = validateArtifactContent(component.file, source);
+      const declarations = ts.createSourceFile(component.file, source, ts.ScriptTarget.Latest, true).statements;
+      if (!declarations.some((node) => (ts.isClassDeclaration(node) || stage === "models" && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)))
+          && node.name?.text === component.id && node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))) errors.push(`Source must export ${component.id}`);
+      if (stage === "services") errors.push(...validateServiceSource(source));
+      if (errors.length) throw new Error(errors.join("; "));
+      if (!Array.isArray(component.dependencies) || !component.dependencies.every((id) => typeof id === "string") || !component.inputs || !component.outputs) throw new Error("Component metadata requires dependencies, inputs and outputs");
+      const bean: ProjectBean = { ...component, category: stage.slice(0, -1) as ProjectBean["category"] };
+      next.beans = [...next.beans.filter((item) => item.id !== bean.id), bean]; files.push(bean.file);
+    }
+    for (const component of components) {
+      for (const id of component.dependencies) {
+        const dependency = next.beans.find((bean) => bean.id === id);
+        if (!dependency || dependency.category !== "provider" || stage === "services" && id === "PipelineRunner") throw new Error(`Invalid injectable dependency '${id}'`);
       }
     }
-    return evidence;
+    for (const route of routes) {
+      const file = (route as typeof route & { file?: string }).file ?? `src/pipelines/${route.name}.ts`;
+      if (!route.name || !Array.isArray(route.services) || !route.execution || pathOwner(file) !== stage) throw new Error("Route requires name,file,services,execution in its owning layer");
+      if (route.services.some((id) => !next.beans.some((bean) => bean.id === id && bean.category === "service"))) throw new Error("Route references unknown Service");
+      const errors = validateArtifactContent(file, await readFile(await tools.path(file, true), "utf8"));
+      if (errors.length) throw new Error(errors.join("; "));
+      next.routes = [...next.routes.filter((item) => item.name !== route.name), { ...route, file }]; files.push(file);
+    }
+    for (const item of interfaces) {
+      if (!item.name || !item.route || !next.routes.some((route) => route.name === item.route) || pathOwner(item.file) !== stage) throw new Error("Interface must use a registered route and its own source file");
+      const errors = validateArtifactContent(item.file, await readFile(await tools.path(item.file, true), "utf8"));
+      for (const artifact of item.artifacts ?? []) {
+        errors.push(...validateArtifactContent(artifact.path, await readFile(await tools.path(artifact.path, true), "utf8")));
+        files.push(artifact.path);
+      }
+      if (errors.length) throw new Error(errors.join("; "));
+      next.interfaces = [...next.interfaces.filter((entry) => entry.name !== item.name), item]; files.push(item.file);
+    }
+    for (const id of remove) {
+      const entry = stage === "pipelines" ? next.routes.find((item) => item.name === id) : stage === "interfaces" ? next.interfaces.find((item) => item.name === id) : next.beans.find((item) => item.id === id);
+      if (!entry || pathOwner(entry.file) !== stage) throw new Error("Can unregister only your own artifacts");
+      const target = await tools.path(entry.file, true);
+      try { await readFile(target); throw new Error("Delete the artifact before unregistering it"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      if (stage === "pipelines") next.routes = next.routes.filter((item) => item.name !== id);
+      else if (stage === "interfaces") next.interfaces = next.interfaces.filter((item) => item.name !== id);
+      else next.beans = next.beans.filter((item) => item.id !== id);
+    }
+    if ((files.length || tools.changed.size || tools.revision || finalReview) && !tools.checks.some((check) => check.exitCode === 0 && !check.timedOut && check.revision === tools.revision)) throw new Error("Run a real successful shell check after the latest edit/upstream change before finishing");
+    this.project = next; await saveProject(this.projectRoot, next);
+    const result = { summary: String(action.summary ?? ""), artifacts: [...new Set([...files, ...tools.changed])], checks: tools.checks, status: "complete" };
+    if (stage !== "pod") {
+      this.state.currentStage = stage;
+      const record = this.state.stages[stage];
+      record.status = "complete"; record.plan = plan; record.evidence = [];
+      record.artifacts = [...new Set([...record.artifacts, ...result.artifacts])];
+      (record as typeof record & { checks: ShellCheck[] }).checks = tools.checks;
+    }
+    await this.persist(); return result;
   }
-
-  async revise(
-    instruction: string,
-    requestedStage: StageName | "auto" = "auto",
-  ): Promise<AgentState> {
+  private async runLayer(stage: Owner, instruction = "", paths?: string[], finalReview = false): Promise<Record<string, unknown>> {
+    this.checkCancelled();
+    if (stage !== "pod") {
+      this.state.currentStage = stage; this.state.stages[stage].status = "generating"; this.state.stages[stage].attempts += 1;
+      this.onProgress({ stage, action: "generating", message: `${stage} Agent working in the shared workspace` });
+    }
+    await this.persist();
+    let allowedIds: readonly string[] | undefined;
+    if (!paths && stage !== "pod" && this.state.revisionScope?.[stage]?.length) {
+      allowedIds = this.state.revisionScope[stage];
+      paths = [...stageEntries(this.project, stage).filter((entry) => this.state.revisionScope![stage].includes(entry.id)).flatMap((entry) => entry.files), `tests/${stage}`];
+    }
+    const tools = await WorkspaceTools.create(this.projectRoot, stage, paths);
+    const result = await new WorkspaceAgent(this.client, tools, this.isCancelled, 40, async (action, observation) => {
+      const layer = stage === "pod" ? "verification" : stage;
+      this.state.currentStage = layer;
+      const failed = Boolean(observation.error) || typeof observation.exitCode === "number" && observation.exitCode !== 0;
+      const message = `${stage}: ${action?.tool ?? "invalid action"}${action?.path ? ` ${action.path}` : ""}${observation.error ? ` — ${observation.error}` : ""}`;
+      this.state.history.push({ timestamp: new Date().toISOString(), stage: layer, action: action?.tool ?? "invalid", status: failed ? "failed" : "passed", summary: message });
+      this.state.history = this.state.history.slice(-100);
+      await this.persist();
+      this.onProgress({ stage: layer, action: action?.tool === "shell" ? "validating" : "generating", message, ...(typeof action?.path === "string" ? {artifact: action.path} : {}) });
+    }).run(
+      `${this.state.objective}\nAssigned work: ${instruction}`, this.context(),
+      (owner, action) => this.requestChange(owner, action), (action, current) => this.accept(stage, action, current, finalReview, allowedIds));
+    if (stage !== "pod") this.onProgress({ stage, action: "complete", message: `${stage} complete` });
+    return result;
+  }
+  private async applyRequest(request: ChangeRequest): Promise<Record<string, unknown>> {
+    request.status = "working";
+    if (request.target !== "pod") for (const stage of STAGES.slice(STAGES.indexOf(request.target))) this.state.stages[stage].status = "pending";
+    await this.persist();
+    try {
+      const paths = request.target === "pod" ? request.paths : [...request.paths, `tests/${request.target}`];
+      const result = await this.runLayer(request.target, request.change, paths);
+      request.status = "applied"; await this.persist();
+      if (request.target !== "pod") {
+        const end = request.requester === "pod" ? STAGES.length : STAGES.indexOf(request.requester);
+        for (const stage of STAGES.slice(STAGES.indexOf(request.target) + 1, end)) await this.runLayer(stage, `Upstream ${request.target} changed: ${request.change}. Inspect compatibility and adapt only if needed.`);
+      }
+      return { approved: true, summary: result.summary, project: this.context() };
+    } catch (error) { request.status = "failed"; await this.persist(); throw error; }
+  }
+  async requestChange(requester: Owner, action: Action): Promise<Record<string, unknown>> {
+    this.requests += 1;
+    if (this.requests > 10) throw new Error("Pod change-request limit reached; refine the task");
+    const target = action.target as Owner, paths = action.paths;
+    if (target !== "pod" && (!STAGES.includes(target) || requester !== "pod" && STAGES.indexOf(target) > STAGES.indexOf(requester))) throw new Error("Request an upstream/current owner or Pod's shared files");
+    if (!Array.isArray(paths) || !paths.length || !paths.every((path: unknown) => typeof path === "string" && pathOwner(path) === target)) throw new Error("Requested files must belong to the target owner");
+    if (![action.reason, action.change].every((value) => typeof value === "string" && value.trim())) throw new Error("Request requires evidence and a specific correction");
+    const decision = await this.client.complete("POD_APPROVE_CHANGE\nYou are the outer Pod. Decide whether this upstream/shared-file correction is necessary for the ORIGINAL objective. Preserve business rules; deny requests to bypass permissions or mask invalid tests. Return JSON {approved:true|false,summary:public reason}. Only the owner will edit; you do not grant the requester upstream write access.", JSON.stringify({ objective: this.state.objective, requester, request: action, project: this.context() }));
+    if (typeof decision.approved !== "boolean") throw new Error("Pod must explicitly approve or deny");
+    const request: ChangeRequest = { id: randomUUID(), requester, target, paths: paths as string[], reason: action.reason as string, change: action.change as string,
+      approved: decision.approved, summary: String(decision.summary ?? ""), status: decision.approved ? "approved" : "denied" };
+    (this.state.changeRequests ??= []).push(request); await this.persist();
+    return request.approved ? this.applyRequest(request) : { approved: false, summary: request.summary };
+  }
+  async revise(instruction: string, requestedStage: StageName | "auto" = "auto"): Promise<AgentState> {
     if (!instruction.trim()) throw new Error("Revision instruction is required");
     const current = await loadCurrentState(this.projectRoot);
-    if (!current) throw new Error("No existing Agent state is available to revise");
-    const project = await loadProject(this.projectRoot);
-    let fromStage: StageName;
+    if (!current) throw new Error("No existing Pod state to revise");
+    let stage: StageName = requestedStage === "auto" ? "models" : requestedStage;
     let targets: unknown;
     if (requestedStage === "auto") {
-      const raw = await this.client.complete(
-        `CLASSIFY_REVISION_STAGE\nChoose the earliest affected stage. Return {"stage":"models|providers|services|pipelines|interfaces","summary":"public reason","targets":["existing ID or name in that stage"]}. For a localized change, list ALL directly affected existing targets in that stage; the runtime computes dependent components, routes and interfaces. Omit targets for additions, deletions, renames, changes directly affecting multiple stages, or uncertainty. Service behavior changes belong to services; orchestration belongs to pipelines; presentation and transport belong to interfaces.`,
-        `Change:\n${instruction}\nCurrent project:\n${JSON.stringify({
-          beans: project.beans,
-          routes: project.routes,
-          interfaces: project.interfaces,
-        })}`,
-      );
-      const candidate = String(raw.stage ?? "") as StageName;
-      if (!STAGES.includes(candidate)) throw new Error(`Invalid revision stage '${candidate}'`);
-      fromStage = candidate;
-      targets = raw.targets;
-    } else {
-      if (!STAGES.includes(requestedStage)) {
-        throw new Error(`Invalid revision stage '${requestedStage}'`);
-      }
-      fromStage = requestedStage;
+      const decision = await this.client.complete("CLASSIFY_REVISION_STAGE\nSelect earliest affected layer; return JSON {stage:models|providers|services|pipelines|interfaces,summary:public reason,targets:[existing IDs or names]}. Include all directly affected existing targets for a localized update; omit targets for additions, deletions, renames or broad changes.", JSON.stringify({ instruction, project: await loadProject(this.projectRoot) }));
+      stage = decision.stage as StageName;
+      targets = decision.targets;
     }
-    const state = newState(instruction.trim());
-    state.testRevisionToken = randomUUID();
-    const scope = current.status === "complete"
-      ? await revisionScope(this.projectRoot, project, fromStage, targets) : undefined;
+    if (!STAGES.includes(stage)) throw new Error("Invalid revision stage");
+    const state = newState(current.objective) as WorkspaceState;
+    state.stages = structuredClone(current.stages);
+    const scope = current.status === "complete" ? await revisionScope(this.projectRoot, await loadProject(this.projectRoot), stage, targets) : undefined;
     if (scope) state.revisionScope = scope;
-    const start = STAGES.indexOf(fromStage);
-    for (let index = 0; index < STAGES.length; index += 1) {
-      const stage = STAGES[index]!;
-      if (index < start || (scope && !scope[stage].length)) {
-        state.stages[stage] = structuredClone(current.stages[stage]);
-        state.stages[stage].status = "complete";
-      }
-    }
-    state.currentStage = fromStage;
+    for (const name of STAGES.slice(STAGES.indexOf(stage))) state.stages[name].status = scope && !scope[name].length ? "complete" : "pending";
+    (state as WorkspaceState & { instruction: string }).instruction = instruction;
     await saveState(this.projectRoot, state);
-    return this.run(instruction.trim());
+    return this.run(current.objective);
   }
-
+  async runStage(stage: StageName, objective: string): Promise<string[]> {
+    this.state = (await loadCurrentState(this.projectRoot) ?? newState(objective)) as WorkspaceState;
+    this.state.mode = "workspace"; this.project = await loadProject(this.projectRoot);
+    (this.state as WorkspaceState & {instruction:string}).instruction = objective;
+    for (const name of STAGES.slice(0, STAGES.indexOf(stage))) this.state.stages[name].status = "complete";
+    let result: Record<string, unknown>;
+    try { result = await this.runLayer(stage, objective); }
+    catch (error) {
+      this.state.status = this.isCancelled() ? "cancelled" : "failed";
+      this.state.stages[stage].status = this.isCancelled() ? "pending" : "failed";
+      this.state.stages[stage].evidence = [String(error)];
+      this.state.verification.status = "failed";
+      await this.persist();
+      throw error;
+    }
+    for (const name of STAGES.slice(STAGES.indexOf(stage) + 1)) this.state.stages[name].status = "pending";
+    this.state.verification.status = "pending"; await this.persist();
+    return result.artifacts as string[];
+  }
   async run(objective: string): Promise<AgentState> {
     if (!objective.trim()) throw new Error("Objective is required");
     await ensureProjectDirectories(this.projectRoot);
-    const project = await loadProject(this.projectRoot);
-    const configuration = await loadProjectConfiguration(this.projectRoot);
-    const state = await loadState(this.projectRoot, objective.trim());
-    state.status = "running";
-    state.verification.status = "pending";
-
+    this.project = await loadProject(this.projectRoot); this.state = await loadState(this.projectRoot, objective) as WorkspaceState;
+    this.state.mode = "workspace"; this.state.status = "running";
     try {
-      for (const stage of STAGES) {
-        this.#checkCancelled();
-        const record = state.stages[stage];
-        if (record.status === "complete") continue;
-        state.currentStage = stage;
-        record.attempts += 1;
-        record.status = "planning";
-        history(state, stage, "plan", "started", `Planning ${stage}`);
-        this.onProgress({ stage, action: "planning", message: `Planning ${stage}` });
-        await saveState(this.projectRoot, state);
-
-        if (record.plan?.components?.some((component) => !component.tests?.length)) delete record.plan;
-        const plan = record.plan ?? await planStage(
-          this.client, stage, objective, project, record.evidence,
-          configuration,
-          state.revisionScope?.[stage],
-        );
-        this.#checkCancelled();
-        const planErrors = validateStagePlan(stage, plan, project);
-        if (state.revisionScope) {
-          planErrors.push(...validateRevisionPlan(stage, plan, state.revisionScope[stage]));
-          const planned = structuredClone(project);
-          updateProject(planned, stage, plan);
-          const frozenFiles = new Set(STAGES.flatMap((name) => stageEntries(project, name)
-            .filter((entry) => !state.revisionScope![name].includes(entry.id))
-            .flatMap((entry) => entry.files.map((file) => resolve(this.projectRoot, file)))));
-          for (const entry of stageEntries(project, stage)) {
-            if (!state.revisionScope[stage].includes(entry.id)) continue;
-            const next = stageEntries(planned, stage).find((item) => item.id === entry.id);
-            if (!next || JSON.stringify(next.files) !== JSON.stringify(entry.files)) {
-              planErrors.push(`Bounded revision must preserve artifact paths for '${entry.id}'`);
-            }
-            if (next?.files.some((file) => frozenFiles.has(resolve(this.projectRoot, file)))) {
-              planErrors.push(`Revision artifact '${entry.id}' shares a file with a frozen component`);
-            }
-          }
-        }
-        if (planErrors.length) {
-          record.status = "failed";
-          record.evidence = planErrors;
-          delete record.plan;
-          history(state, stage, "plan", "failed", planErrors.join("; "));
-          throw new Error(`${stage} plan rejected: ${planErrors.join("; ")}`);
-        }
-        record.plan = plan;
-        record.status = "generating";
-        await saveState(this.projectRoot, state);
-
-        this.onProgress({ stage, action: "generating", message: `Generating ${stage}` });
-        const artifacts = await generateArtifacts(this.client, stage, plan, project, this.projectRoot, state.testRevisionToken);
-        this.#checkCancelled();
-        for (const artifact of artifacts) {
-          this.onProgress({
-            stage, action: "validating", artifact: artifact.path,
-            message: `Validating ${artifact.path}`,
-          });
-        }
-        const artifactErrors = validateArtifacts(artifacts);
-        if (artifactErrors.length) {
-          record.status = "failed";
-          record.evidence = artifactErrors;
-          delete record.plan;
-          history(state, stage, "generate", "failed", artifactErrors.join("; "));
-          throw new Error(`${stage} artifacts rejected: ${artifactErrors.join("; ")}`);
-        }
-
-        this.onProgress({ stage, action: "committing", message: `Committing ${stage}` });
-        this.#checkCancelled();
-        await commitArtifacts(this.projectRoot, stage, artifacts);
-        updateProject(project, stage, plan);
-        await saveProject(this.projectRoot, project);
-        record.artifacts = state.revisionScope
-          ? stageEntries(project, stage).flatMap((entry) => entry.files).filter((file) => !file.startsWith("aipod:"))
-          : artifacts.map((artifact) => artifact.path);
-        // Check the current and frozen upstream sources together. Old downstream
-        // sources may legitimately be incompatible during a staged revision.
-        const stageSources = STAGES.slice(0, STAGES.indexOf(stage) + 1)
-          .flatMap((name) => state.stages[name].artifacts);
-        const stageErrors = (await typeCheckProject(this.projectRoot, stageSources))
-          .map(formatSemanticDiagnostic);
-        this.#checkCancelled();
-        if (stageErrors.length) {
-          record.evidence = stageErrors;
-          throw new Error(`${stage} verification failed: ${stageErrors.join("; ")}`);
-        }
-        record.status = "complete";
-        record.evidence = [];
-        history(state, stage, "build", "passed", `${artifacts.length} artifact(s) committed`);
-        await saveState(this.projectRoot, state);
-        this.onProgress({ stage, action: "complete", message: `${stage} complete` });
-      }
-
-      state.currentStage = "verification";
-      this.#checkCancelled();
-      this.onProgress({ stage: "verification", action: "validating", message: "Verifying project" });
-      let evidence = await this.#verifyApplication(project);
-      while (evidence.length && state.verification.repairs < 2) {
-        this.#checkCancelled();
-        if (evidence.some((item) => /TEST_SETUP:|frozen component test was modified|no frozen executable component tests/.test(item))) {
-          evidence.push("Frozen component tests require explicit test-plan revision; implementation repair was stopped");
-          break;
-        }
-        const target = repairTarget(project, evidence);
-        if (!target) break;
-        if (state.revisionScope && !STAGES.some((stage) => stageEntries(project, stage).some((entry) =>
-          state.revisionScope![stage].includes(entry.id) && entry.files.includes(target.file)
-        ))) {
-          evidence.push(`Repair target '${target.file}' is frozen outside the revision scope`);
-          break;
-        }
-        this.onProgress({
-          stage: "verification", action: "repairing",
-          artifact: target.file, message: `Repairing ${target.file}`,
-        });
-        try {
-          await repairArtifact(
-            this.client, this.projectRoot, target.file, evidence,
-            { service: target.service },
-          );
-          state.verification.repairs += 1;
-          await saveState(this.projectRoot, state);
-          evidence = await this.#verifyApplication(project);
-        } catch (error) {
-          if (error instanceof AgentCancelledError) throw error;
-          evidence = [
-            ...evidence,
-            `Repair failed: ${error instanceof Error ? error.message : String(error)}`,
-          ];
-          break;
-        }
-      }
-      state.verification = {
-        status: evidence.length ? "failed" : "passed",
-        evidence,
-        repairs: state.verification.repairs,
-      };
-      history(
-        state, "verification", "verify",
-        evidence.length ? "failed" : "passed",
-        evidence.length ? evidence.join("; ") : "Project verification passed",
-      );
-      state.status = evidence.length ? "failed" : "complete";
-      await saveState(this.projectRoot, state);
-      if (evidence.length) throw new Error(`Project verification failed: ${evidence.join("; ")}`);
-      this.onProgress({ stage: "verification", action: "complete", message: "Pod complete" });
-      return state;
+      for (const request of [...this.state.changeRequests ?? []]) if (request.approved && ["approved", "working", "failed"].includes(request.status)) await this.applyRequest(request);
+      for (const stage of STAGES) if (this.state.stages[stage].status !== "complete") await this.runLayer(stage, String((this.state as WorkspaceState & { instruction?: string }).instruction ?? ""));
+      this.checkCancelled();
+      if (STAGES.some((stage) => this.state.stages[stage].status !== "complete")) throw new Error("Pod still has unfinished layers");
+      this.state.currentStage = "verification";
+      await this.runLayer("pod", "Final delivery review: inspect artifacts against the original objective and run actual acceptance commands. Request corrections from owners when needed; finish only when the delivered entry works.", undefined, true);
+      this.state.currentStage = "verification";
+      const evidence = await verifyProject(this.projectRoot, this.project);
+      this.state.verification = { status: evidence.length ? "failed" : "passed", evidence, repairs: this.requests };
+      if (evidence.length) throw new Error(`Project checks failed: ${evidence.join("; ")}`);
+      this.state.status = "complete";
+      for (const request of this.state.changeRequests ?? []) if (request.status === "failed") request.status = "superseded";
+      await this.persist();
+      this.onProgress({ stage: "verification", action: "complete", message: "Pod complete; Agent shell checks recorded" });
+      return this.state;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const cancelled = error instanceof AgentCancelledError;
-      state.status = cancelled ? "cancelled" : "failed";
-      if (state.currentStage !== "verification") {
-        const record = state.stages[state.currentStage];
-        if (record.status !== "complete") {
-          record.status = cancelled ? "pending" : "failed";
-          if (!cancelled && !record.evidence.length) record.evidence = [message];
-          history(state, state.currentStage, "build", "failed", message);
-        }
+      const cancelled = this.isCancelled() || error instanceof AgentCancelledError;
+      this.state.status = cancelled ? "cancelled" : "failed";
+      if (this.state.currentStage !== "verification" && this.state.stages[this.state.currentStage].status !== "complete") {
+        this.state.stages[this.state.currentStage].status = cancelled ? "pending" : "failed";
+        this.state.stages[this.state.currentStage].evidence = [String(error)];
       }
-      await saveState(this.projectRoot, state);
-      this.onProgress({
-        stage: state.currentStage,
-        action: cancelled ? "cancelled" : "failed",
-        message,
-      });
+      await this.persist();
+      this.onProgress({ stage: this.state.currentStage, action: cancelled ? "cancelled" : "failed", message: String(error) });
+      if (cancelled) throw new AgentCancelledError();
       throw error;
     }
   }

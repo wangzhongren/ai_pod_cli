@@ -160,11 +160,13 @@ When verification fails, keep repair local:
 3. Preserve public exports and Service visibility.
 4. Apply bounded exact replacements or a focused edit.
 5. Repeat the identical verification command.
-6. Stop when repair requires changing a frozen architectural decision or an external
-   blocker repeats.
+6. When another owner must change files, use the Pod change-request workflow. Pod
+   evaluates the goal and dispatches the owning Agent; never edit upstream directly.
+   Stop if a required external prerequisite cannot be satisfied.
 
-Do not commit, push, publish, install lifecycle files, or broaden repair scope unless the
-user explicitly requests it.
+Do not commit, push, publish, or install lifecycle files unless the user requests it.
+Keep work within the user’s objective; necessary upstream changes inside a Pod are
+authorized by Pod and executed by the owning Agent.
 
 ## Studio
 

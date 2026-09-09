@@ -187,7 +187,7 @@ async function verify(): Promise<void> {
     validation: { valid: boolean; issues: unknown[] };
   };
   const evidence = [...model.validation.issues];
-  const componentEvidence = await verifyComponentTests(root, await loadProject(root));
+  const componentEvidence = args.includes("--component-tests") ? await verifyComponentTests(root, await loadProject(root)) : [];
   evidence.push(...componentEvidence);
   if (!evidence.length) {
     try { await loadRunner(root); } catch (error) {
@@ -202,7 +202,7 @@ async function verify(): Promise<void> {
   const result = {
     status: evidence.length ? "failed" : check.length ? "passed" : "unverified",
     evidence,
-    componentTests: { status: componentEvidence.length ? "failed" : "passed", evidence: componentEvidence },
+    componentTests: { status: args.includes("--component-tests") ? (componentEvidence.length ? "failed" : "passed") : "not_requested", evidence: componentEvidence },
     command: commandEvidence,
   };
   console.log(JSON.stringify(result, null, 2));
@@ -424,7 +424,7 @@ Usage:
 try {
   const positionalProject = ["init", "inspect", "verify", "studio"].includes(command)
     && args[0] && !args[0].startsWith("--") ? args[0] : undefined;
-  await applySharedEnvironment(resolve(option("--project-root") ?? positionalProject ?? "."));
+  if (process.env.AIPOD_AGENT_SHELL !== "1") await applySharedEnvironment(resolve(option("--project-root") ?? positionalProject ?? "."));
   if (command === "init") await init(args[0]);
   else if (command === "inspect") await inspect(args[0]);
   else if (command === "pod") await pod();

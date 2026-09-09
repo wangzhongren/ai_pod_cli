@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import pkgutil
+import os
 from typing import TypeVar
 
 from injector import inject
@@ -16,7 +17,7 @@ T = TypeVar("T", bound=SQLModel)
 class ModelRepository:
     @inject
     def __init__(self, config_store: ConfigStore):
-        url = config_store.get("database.url", "sqlite:///database.db")
+        url = os.environ.get("AIPOD_DATABASE_URL") or config_store.get("database.url", "sqlite:///database.db")
         connect_args = {"check_same_thread": False} if str(url).startswith("sqlite") else {}
         self.engine = create_engine(url, connect_args=connect_args)
 

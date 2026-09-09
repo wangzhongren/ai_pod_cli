@@ -21,7 +21,7 @@ async function walk(directory: string): Promise<string[]> {
   return nested.flat();
 }
 
-const buildRoot = (projectRoot: string) => resolve(projectRoot, ".aipod", "build");
+const buildRoot = (projectRoot: string) => resolve(process.env.AIPOD_BUILD_DIR ?? resolve(projectRoot, ".aipod", "build"));
 
 export async function compileProjectSources(projectRoot: string): Promise<string[]> {
   const sourceRoot = resolve(projectRoot, "src");

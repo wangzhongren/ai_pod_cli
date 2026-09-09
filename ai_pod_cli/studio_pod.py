@@ -291,7 +291,11 @@ class StudioPodService:
                 percent = task["percent"]
                 component_match = re.match(r"Generating component (\d+)/(\d+):", label)
                 planning_match = re.match(r"Planning stage (\d+)/5:\s*(\w+)", label)
-                if label == "Classifying earliest affected Pod layer":
+                workspace_match = re.match(r"Working layer: (models|providers|services|pipelines|interfaces|pod)$", label)
+                if workspace_match:
+                    stage = "verification" if workspace_match.group(1) == "pod" else workspace_match.group(1)
+                    percent = _phase_percent(stage, 0.4)
+                elif label == "Classifying earliest affected Pod layer":
                     stage, percent = "impact_analysis", _phase_percent("impact_analysis", 0.55)
                 elif planning_match:
                     stage = planning_match.group(2).lower()

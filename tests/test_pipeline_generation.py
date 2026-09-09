@@ -6,6 +6,8 @@ import copy
 import io
 import json
 import os
+import sys
+import shlex
 import tempfile
 import textwrap
 import unittest
@@ -87,108 +89,50 @@ class PipelineGenerationTests(unittest.TestCase):
         ):
             return handle_compose(self.args(**args))
 
-    def test_missing_cases_are_rejected_before_source_or_registration(self):
-        modes = []
 
-        def llm(*_args, **options):
-            modes.append(options["json_mode"])
-            self.assertTrue(options["json_mode"], "Invalid metadata must not reach source generation")
-            return {"pipeline_ids": ["Consumer"], "inputs": self.inputs}
 
-        self.assertFalse(self.compose(llm))
-        self.assertEqual(modes, [True, True, True])
-        self.assertEqual(PipelineRunner().route_names(), [])
-        self.assertFalse(Path("pipelines/demo.py").exists())
-        self.assertFalse(Path("pipelines/demo.contract.json").exists())
 
-    def test_source_repair_reuses_one_frozen_metadata_request_and_unchanged_cases(self):
-        modes = []
-        metadata = copy.deepcopy(self.metadata)
-        initial = copy.deepcopy(metadata)
-        frozen_prompts = []
 
+
+    def workspace_responses(self, sources):
+        actions = []
+        command = shlex.quote(sys.executable) + " -c " + shlex.quote(
+            "from ai_pod_cli.context import PipelineContext; "
+            "from pipelines.demo import run; "
+            "ctx=PipelineContext({'request':7});run(ctx);assert ctx.get('observed') == 8")
+        for source in sources:
+            actions.extend([encode_source_artifact("pipelines/demo.py", source),
+                            json.dumps({"tool": "shell", "command": command})])
+        actions.append(json.dumps({"tool": "finish", "summary": "pipeline executed with request 7", "pipelines": [
+            {"name": "demo", "file": "pipelines/demo.py", "inputs": self.inputs}]}))
+        remaining = iter(actions)
         def llm(_system, user, **options):
-            modes.append(options["json_mode"])
-            if options["json_mode"]:
-                return metadata
-            frozen = json.loads(user.rsplit("Frozen metadata:\n", 1)[1])
-            frozen_prompts.append(frozen)
-            if len(frozen_prompts) == 1:
-                return encode_source_artifact("pipelines/demo.py", self.bad_source)
-            self.assertIn("internal_count: required field is missing", user)
-            return encode_source_artifact("pipelines/demo.py", self.good_source)
+            self.assertFalse(options["json_mode"])
+            try:
+                return next(remaining)
+            except StopIteration:
+                raise RuntimeError("scripted Agent stopped")
+        return llm
 
-        with patch("ai_pod_cli.commands.compose.verify_pipeline_candidate", wraps=verify_pipeline_candidate) as sandbox:
-            self.assertTrue(self.compose(llm))
-        self.assertEqual(modes, [True, False, False])
-        self.assertEqual(frozen_prompts, [initial, initial])
-        self.assertEqual(metadata, initial)
-        self.assertEqual(sandbox.call_count, 2)
-        self.assertTrue(all(call.kwargs["cases"] == self.cases for call in sandbox.call_args_list))
-        boundary = load_pipeline_inputs("pipelines/demo.contract.json")
-        self.assertEqual(boundary, {"inputs": self.inputs, "verification_cases": self.cases})
+    def test_workspace_agent_repairs_actual_pipeline_and_keeps_public_inputs(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}):
+            self.assertTrue(self.compose(self.workspace_responses([self.bad_source, self.good_source])))
         self.assertEqual(PipelineRunner().route_names(), ["demo"])
-        self.assertIn('ctx.set("internal_count"', Path("pipelines/demo.py").read_text())
-
-    def test_inferred_internal_field_cannot_be_filled_to_make_broken_source_pass(self):
-        modes = []
-
-        def llm(*_args, **options):
-            modes.append(options["json_mode"])
-            if options["json_mode"]:
-                return copy.deepcopy(self.metadata)
-            return encode_source_artifact("pipelines/demo.py", self.bad_source)
-
-        self.assertFalse(self.compose(llm))
-        self.assertEqual(modes, [True, False, False, False])
-        self.assertEqual(PipelineRunner().route_names(), [])
-        self.assertFalse(Path("pipelines/demo.py").exists())
-
-    def test_declared_sidecar_replaces_inferred_public_inputs_in_project_model(self):
-        def llm(*_args, **options):
-            return copy.deepcopy(self.metadata) if options["json_mode"] else encode_source_artifact("pipelines/demo.py", self.good_source)
-
-        self.assertTrue(self.compose(llm))
-        route = PipelineRunner().get_route("demo")
-        self.assertEqual(route["input_contract"], "pipelines/demo.contract.json")
-        model = build_project_model()
-        pipeline = next(item for item in model["pipelines"] if item["name"] == "demo")
-        self.assertEqual(pipeline["services"], ["Consumer"])
+        boundary = load_pipeline_inputs("pipelines/demo.contract.json")
+        self.assertEqual(boundary["inputs"], self.inputs)
+        self.assertEqual(boundary["mode"], "agent")
+        self.assertEqual(boundary["verification_cases"], [])
+        pipeline = next(item for item in build_project_model()["pipelines"] if item["name"] == "demo")
         self.assertEqual(pipeline["contract"]["inputs"], self.inputs)
         self.assertEqual(pipeline["contract"]["input_source"], "declared")
-        self.assertIn("internal_count", pipeline["contract"]["inferred_inputs"])
-        self.assertNotIn("internal_count", pipeline["contract"]["inputs"])
-        self.assertTrue(model["validation"]["valid"], model["validation"])
+        self.assertFalse(Path(".aipod/component-tests.json").exists())
 
-    def test_planner_cases_override_model_suggestions_and_reach_real_sandbox_unchanged(self):
-        planned_cases = [
-            {"name": "first input", "params": {"request": 7}},
-            {"name": "second input", "params": {"request": 11}},
-        ]
-        before = copy.deepcopy(planned_cases)
-        weak_metadata = {
-            "pipeline_ids": ["Consumer"],
-            "inputs": {"internal_count": "int"},
-            "verification_cases": [{"name": "synthetic", "params": {"internal_count": 1}}],
-        }
-        modes = []
-
-        def llm(_system, user, **options):
-            modes.append(options["json_mode"])
-            if options["json_mode"]:
-                return weak_metadata
-            frozen = json.loads(user.rsplit("Frozen metadata:\n", 1)[1])
-            self.assertEqual(frozen["inputs"], self.inputs)
-            self.assertEqual(frozen["verification_cases"], before)
-            return encode_source_artifact("pipelines/demo.py", self.good_source)
-
-        with patch("ai_pod_cli.commands.compose.verify_pipeline_candidate", wraps=verify_pipeline_candidate) as sandbox:
-            self.assertTrue(self.compose(llm, pipeline_inputs=self.inputs, verification_cases=planned_cases))
-        self.assertEqual(modes, [True, False])
-        self.assertEqual(sandbox.call_args.kwargs["cases"], before)
-        self.assertEqual(planned_cases, before)
-        self.assertEqual(weak_metadata["inputs"], {"internal_count": "int"})
-        self.assertEqual(load_pipeline_inputs("pipelines/demo.contract.json")["verification_cases"], before)
+    def test_failed_workspace_check_keeps_partial_file_but_does_not_register_route(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}):
+            self.assertFalse(self.compose(self.workspace_responses([self.bad_source])))
+        self.assertTrue(Path("pipelines/demo.py").is_file())
+        self.assertFalse(Path("pipelines/demo.contract.json").exists())
+        self.assertEqual(PipelineRunner().route_names(), [])
 
     def test_reused_pipeline_is_checked_again_with_explicit_planned_inputs(self):
         Path("pipelines/demo.py").write_text(self.good_source, encoding="utf-8")

@@ -56,6 +56,12 @@ def load_pipeline_inputs(raw_path: str) -> dict:
     if not path.is_relative_to(Path.cwd().resolve()):
         raise ValueError("Pipeline input contract must be inside the project")
     value = json.loads(path.read_text(encoding="utf-8"))
+    if value.get("mode") == "agent":
+        if not isinstance(value.get("inputs"), dict):
+            raise ValueError("Pipeline inputs must be an object")
+        for spec in value["inputs"].values():
+            canonical_contract(spec)
+        return value
     errors = validate_pipeline_inputs(value.get("inputs"), value.get("verification_cases"))
     if errors:
         raise ValueError("; ".join(errors))

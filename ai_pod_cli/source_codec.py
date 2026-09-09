@@ -41,7 +41,7 @@ def encode_source_artifact(path: str, content: str) -> str:
     return f"<create><path>{path}</path><content><![CDATA[{content}]]></content></create>"
 
 
-def decode_source_artifact(text: str, expected_path: str) -> dict[str, str]:
+def decode_source_artifact(text: str, expected_path: str | None = None) -> dict[str, str]:
     if not isinstance(text, str):
         raise ValueError("Source generation must return XML text")
     if len(text) > 2_000_000:
@@ -104,6 +104,6 @@ def decode_source_artifact(text: str, expected_path: str) -> dict[str, str]:
         raise ValueError("Expected exactly one artifact; trailing actions or text are not allowed")
     if set(fields) != {"path", "content"}:
         raise ValueError("Artifact requires path and content")
-    if fields["path"] != expected_path:
+    if expected_path is not None and fields["path"] != expected_path:
         raise ValueError(f"Artifact path must equal planned path '{expected_path}'")
     return fields

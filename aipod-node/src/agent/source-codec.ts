@@ -41,7 +41,7 @@ export function encodeSourceArtifact(artifact: SourceArtifact): string {
   return `<create><path>${path}</path><content><![CDATA[${content}]]></content></create>`;
 }
 
-export function decodeSourceArtifact(text: string, expectedPath: string): SourceArtifact {
+export function decodeSourceArtifact(text: string, expectedPath?: string): SourceArtifact {
   if (text.length > 2_000_000) throw new Error("Source artifact response exceeds 2,000,000 characters");
   validCharacters(text);
   let position = 0;
@@ -90,7 +90,7 @@ export function decodeSourceArtifact(text: string, expectedPath: string): Source
   if (position !== text.length) throw new Error("Expected exactly one artifact; trailing actions or text are not allowed");
   if (!fields.has("path") || !fields.has("content")) throw new Error("Artifact requires path and content");
   const path = fields.get("path")!;
-  if (path !== expectedPath) throw new Error(`Artifact path must equal planned path '${expectedPath}'`);
+  if (expectedPath !== undefined && path !== expectedPath) throw new Error(`Artifact path must equal planned path '${expectedPath}'`);
   return { path, content: fields.get("content")! };
 }
 

@@ -52,7 +52,7 @@ export async function runVerificationCommand(
         stdout,
         stderr,
       }) as unknown as CommandEvidence;
-      const directory = resolve(projectRoot, ".aipod");
+      const directory = resolve(process.env.AIPOD_DATA_DIR ?? resolve(projectRoot, ".aipod"));
       await mkdir(directory, { recursive: true });
       await writeFile(
         resolve(directory, "verification.json"),

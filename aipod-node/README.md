@@ -1,484 +1,184 @@
 # AIPod Node
 
-Node.js/TypeScript implementation of AIPod's governed compositional Runtime.
+AIPod 的 Node.js / TypeScript 实现：**Agent 使用统一文件和 shell 工具开发，Pod 协调跨层修改和最终验收。**
 
-This subproject starts from the architectural boundary established by the Python runtime:
+整体设计见 [项目 README](../README.md)。本文对应 GitHub `main`；本次工作区 Agent 重构尚未重新发布到 npm，下面优先给出源码运行方式。
 
-```text
-Model → Provider → Service → Pipeline → Interface
-```
+## 从源码运行
 
-A Service can see its Contract, Models, and Providers. It cannot import, inject, resolve,
-or execute another Service. Service composition belongs exclusively to Pipelines.
+需要 **Node.js 20+**。Agent shell 在 macOS 使用 `sandbox-exec`，Linux 需要 `bubblewrap`；原生 Windows 暂不支持这一执行方式。
 
-## Status
-
-Initial runtime foundation:
-
-- typed `PipelineContext` with branch snapshots and deterministic merging;
-- structured `Success`, `Failure`, and `Effect` results;
-- runtime input/output Contract validation;
-- singleton dependency container with Service isolation;
-- sequential Service composition;
-- isolated parallel branches;
-- governed `repeat` loops with bounded iteration traces;
-- bounded async streams and batching;
-- named route runner;
-- resumable Model → Provider → Service → Pipeline → Interface construction Agent;
-- OpenAI-compatible model client with JSON planning and XML-like source generation;
-- stage-specific capability visibility;
-- per-artifact generation with up to three validation-guided attempts;
-- bounded exact-text source repair with public-export protection;
-- TypeScript validation, staging, atomic commit, and final project verification;
-- public Agent history and validation evidence in `.aipod/plan.json`;
-- machine-readable Project Model with structural issues;
-- dynamic TypeScript compilation and generated Bean loading;
-- built-in JSON `ConfigStore`;
-- built-in atomic JSON `ModelRepository`;
-- real named Route execution with redacted persisted Trace;
-- optional real verification commands with timeout and bounded output;
-- basic Interface loading, execution, and smoke;
-- multi-file Interface Artifacts with permissions and lifecycle metadata;
-- install, uninstall, and required Interface verification commands;
-- authenticated local Web Studio with Project Model, source, Route, Interface, and Pod APIs;
-- cooperative Pod cancellation before atomic stage commit;
-- static Pipeline Contract flow analysis with type errors and semantic warnings;
-- full-project TypeScript semantic checking through `ts.createProgram`;
-- persistent HTTP Stream Broker with consumer groups;
-- message deduplication keys, leases, heartbeats, retry, and dead letters;
-- concurrent distributed Workers that execute governed Routes;
-- automatic earliest-affected-stage selection for existing project changes;
-- real command verification with timeout, bounded output, and redaction;
-- `init`, `inspect`, `pod`, `create`, `add`, `compose`, `run`, `verify`, `interface`,
-  and `studio` CLI commands;
-- Node built-in test suite.
-
-Visual drag-and-drop Pipeline composition, highly available Broker replication,
-SQL-backed repositories, and the full Python feature set have not been ported yet.
-
-## Development
+在仓库的 `aipod-node/` 目录执行：
 
 ```bash
-cd aipod-node
-npm install
-npm test
-```
-
-Node.js 20 or newer is required.
-
-Run the package CLI during repository development without addressing build internals:
-
-```bash
+npm ci
 npm run build
 npm run cli -- help
+npm run cli -- init ../../demo-node
 ```
 
-## Installation and CLI
+配置一个实际可用的 OpenAI-compatible 模型：
 
-Install AIPod Node as a project-local development tool:
+```bash
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="your-model"
+
+npm run cli -- pod "开发问候服务，接受 name，提供路由和 CLI 入口。" --project-root ../../demo-node
+```
+
+使用已发布的 npm 版本时，可以安装为项目依赖或全局 CLI：
 
 ```bash
 npm install --save-dev aipod-node
 npx aipod-node help
-```
 
-`npx` resolves the local `node_modules/.bin/aipod-node` executable created from the
-package's `bin` declaration. A global installation is optional, not required:
-
-```bash
+# 或者
 npm install --global aipod-node
 aipod-node help
 ```
 
-## AI/Codex skill
+发行包可能落后于 `main`。需要本文的新流程时，请使用源码构建。
 
-[`SKILL.md`](SKILL.md) contains the agent-facing workflow for discovering, building,
-running, repairing, verifying, and operating AIPod Node projects. Install or reference
-the `aipod-node/` subdirectory as the `aipod-node` skill when using this repository from
-Codex or another SKILL.md-compatible coding agent.
-
-## Shared configuration with Python
-
-The Python and Node.js implementations read the same global file:
+## Agent 如何协作
 
 ```text
-~/.aipod/config.toml
+Model → Provider → Service → Pipeline → Interface
+                      ↑
+             Pod 调度、审批与验收
 ```
 
-```toml
-[env]
-OPENAI_API_KEY = "..."
-OPENAI_BASE_URL = "https://api.openai.com/v1"
-OPENAI_MODEL = "your-model"
-OPENAI_TIMEOUT_SECONDS = "600"
+所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。源码创建和更新使用 XML-like / CDATA；其他动作及结束时的注册信息使用 JSON。
+
+| Owner | 可写范围 |
+|---|---|
+| Model | `src/models/`、`tests/models/`、`docs/models/` |
+| Provider | `src/providers/`、`tests/providers/`、`docs/providers/` |
+| Service | `src/services/`、`tests/services/`、`docs/services/` |
+| Pipeline | `src/pipelines/`、`tests/pipelines/`、`docs/pipelines/` |
+| Interface | `src/interfaces/`、`interfaces/`、`tests/interfaces/`、`docs/interfaces/` |
+| Pod | 共享 package/config 文件、`node_modules/`、`tests/pod/`、`docs/pod/` |
+
+其他层的文件保持只读，注册表与 Pod 状态由控制器管理。发现上游问题时，Agent 发出申请：
+
+```json
+{"tool":"request_change","target":"providers","paths":["src/providers/store.ts"],"reason":"已观察到的接口问题","change":"必要的修改及兼容要求"}
 ```
 
-Configuration priority is:
+Pod 批准后交给原 Owner 修改，重新检查受影响的中间层，再让申请者继续。申请者不会获得上游写权限。决定与结果保存在 `.aipod/plan.json`，已批准但中断的工作可以续接。
 
-```text
-process environment → project .env → ~/.aipod/config.toml [env]
-```
+默认流程不再逐组件生成冻结测试或复制项目。Agent 选择普通编译、测试和运行命令，Pod 使用同一套工具验收最终交付。
 
-Node `ConfigStore` also reads the same project `config.toml` as Python and uses the same
-dot notation, such as `config.get("database.url")`. Existing Node-only `config.json` files
-remain supported as a fallback.
+## 运行时边界
 
-Both CLIs can manage the shared global configuration:
+- **Model**：共享数据类型。
+- **Provider**：基础能力，通过依赖容器提供给 Service。
+- **Service**：实现 `execute(context)`，使用自己的契约、Model 和 Provider。
+- **Pipeline**：组合 Service，管理顺序、并行、重复及流式执行。
+- **Interface**：通过注册路由提供用户入口。
 
-```bash
-aipod config set OPENAI_MODEL deepseek-chat
-npx aipod-node config get OPENAI_MODEL
-```
+Service 不直接导入、注入或调用其他 Service。组件、路由和 Interface 记录在 `aipod.json`。
 
-## Example
-
-```ts
-import {
-  Container,
-  PipelineContext,
-  repeat,
-  service,
-} from "aipod-node";
-
-const container = new Container([
-  {
-    id: "ReadInput",
-    category: "service",
-    factory: () => ({
-      execute: () => ({ quitRequested: false }),
-    }),
-  },
-  {
-    id: "RenderFrame",
-    category: "service",
-    factory: () => ({
-      execute: () => ({ rendered: true }),
-    }),
-  },
-]);
-
-const frame = service(container, "ReadInput")
-  .pipe(service(container, "RenderFrame"));
-
-const context = new PipelineContext({ maxFrames: 60 });
-await repeat(frame, {
-  untilField: "quitRequested",
-  maxIterationsField: "maxFrames",
-  outputField: "executedFrames",
-}).execute(context);
-```
-
-## CLI
-
-### Contract-typed Context
-
-Use a checked view when implementing a Service. Literal input/output contracts infer
-field names, nested object/array types, and optional fields without type assertions:
+声明输入输出后，可以使用有类型的 Context：
 
 ```ts
 import { PipelineContext } from "aipod-node";
 
-function execute(context: PipelineContext) {
-  const ctx = context.typed(
-    { price: { type: "number" }, quantity: { type: "integer" } },
-    { total: { type: "number" } },
-  );
-  return ctx.output({ total: ctx.get("price") * ctx.get("quantity") });
+export class PriceTotal {
+  execute(context: PipelineContext) {
+    const ctx = context.typed(
+      { price: { type: "number" }, quantity: { type: "integer" } },
+      { total: { type: "number" } },
+    );
+    return ctx.output({ total: ctx.get("price") * ctx.get("quantity") });
+  }
 }
 ```
 
-`get` accepts input keys; `set` accepts output keys and their inferred values;
-`output` checks the complete returned output. Input values are validated when the view
-is created and on each read, writes are validated before updating Context, and returned
-data is copied to prevent mutation through the view. Optional inputs include `undefined`.
-For reusable schemas, use `as const satisfies Contract` to preserve literal types.
-The dynamic `PipelineContext.get/set` API remains compatible and untyped; existing
-Services must adopt `typed` to gain these checks. Generation prompts now request this API.
+TypeScript 检查会解析项目内相对导入和运行时声明，发现跨文件类型、导出和 API 使用问题。内置 `ModelRepository` 使用 JSON 存储，不等同于 Python 的 SQLModel 实现。
 
-### Bounded revisions
+## 常用命令
 
-For `pod --stage auto`, the classifier may identify existing target IDs in the earliest
-affected stage. The runtime follows declared dependencies, local source imports (including
-type imports and helper modules), route Services, and Interface routes to compute the
-affected components. Unrelated components remain frozen, including within the same stage.
-The scope is saved in `.aipod/plan.json` as `revisionScope` and survives failed runs.
-Plans cannot change IDs or artifact paths, omit targets, or add unrelated components;
-final repair cannot write to a frozen component. Final verification still checks the
-whole application.
-
-Missing/unknown targets, unresolved or dynamic dependencies, unfinished previous builds,
-and broad changes fall back to the existing whole-stage rebuild. Additions, removals,
-renames, or directly requested changes across several stages should use whole-stage
-planning. Explicit `--stage` retains that behavior. Target selection remains model-based;
-the dependency graph does not prove the intended business scope.
-
-### Commands
-
-After installing:
-
-```bash
-npx aipod-node init ./demo
-npx aipod-node inspect ./demo
-```
-
-Configure any OpenAI-compatible endpoint and run the construction Agent:
-
-```bash
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="your-model"
-export OPENAI_BASE_URL="https://api.openai.com/v1" # optional
-
-npx aipod-node pod \
-  "Build a typed greeting service, route, and CLI Interface" \
-  --project-root ./demo
-```
-
-The Agent executes stages deterministically. The model decides the bounded content of the
-current stage, but never chooses the next tool or sees capabilities hidden by that stage.
-Completed stages resume without another model call.
-
-Before a stage is marked complete, its TypeScript sources are checked together with
-frozen upstream sources. A type error leaves the current stage failed and resumable.
-Final verification repeats structural and type checks, Interface smoke checks, and
-declared verification commands after every repair; only required command failures block
-completion.
-
-Modify an existing project while freezing unaffected upstream stages:
-
-```bash
-npx aipod-node pod \
-  "Change the CLI output to JSON" \
-  --stage auto \
-  --project-root ./demo
-```
-
-Inspect, verify, and run generated artifacts:
+以下命令假设已安装包；源码开发时可把 `npx aipod-node` 换成 `npm run cli --`。
 
 ```bash
 npx aipod-node inspect ./demo
+npx aipod-node interface list --project-root ./demo
+
+npx aipod-node pod "调整 CLI 展示，保留领域行为。" --stage auto --project-root ./demo
+npx aipod-node create --category service --description "格式化问候内容" --project-root ./demo
+npx aipod-node compose "先验证输入，再生成问候" --project-root ./demo
+```
+
+使用实际生成的路由与 Interface 名称运行：
+
+```bash
+npx aipod-node run greet --params '{"name":"Ada"}' --project-root ./demo
+npx aipod-node interface run GreetingCli --payload '{"name":"Ada"}' --project-root ./demo
+```
+
+自动修改时，Pod 可识别最早受影响层及既有目标，再计算依赖范围。局部更新保留目标 ID 和授权路径；需要额外修改时走 Pod 申请。新增、删除、重命名或无法确定范围的变化使用整层处理。
+
+## 检查与临时运行
+
+```bash
 npx aipod-node verify ./demo
 npx aipod-node verify ./demo -- node --test
-npx aipod-node run greet \
-  --params '{"name":"Ada"}' \
-  --project-root ./demo
-
-npx aipod-node interface list --project-root ./demo
-npx aipod-node interface smoke GreetingCli --project-root ./demo
-npx aipod-node interface verify GreetingCli --project-root ./demo
-npx aipod-node interface install GreetingCli --project-root ./demo
-npx aipod-node interface run GreetingCli \
-  --payload '{"name":"Ada"}' \
-  --project-root ./demo
 ```
 
-Focused construction commands are also available:
+只做结构检查时结果为 `unverified`；第二条还会运行指定命令。请按项目实际情况选择测试命令。
+
+已有冻结组件测试是可选工具：
 
 ```bash
-npx aipod-node create \
-  --category service \
-  --description "Format a greeting" \
-  --project-root ./demo
-
-npx aipod-node compose \
-  "Validate then format a greeting" \
-  --project-root ./demo
+npx aipod-node verify ./demo --component-tests
 ```
 
-Open the local Studio:
+也可显式使用 `defineComponentTests`、`TestSandbox` 和 `verifyComponentTests`。这些驱动的测试完整性规则继续有效，但普通构建不以它们为前置条件。
+
+Agent shell：
+
+- 在同一项目中工作，由系统强制限制可写范围。
+- 使用 `.aipod/work/<owner>/` 存放临时数据、缓存和编译结果，不继承模型 API 凭据。
+- 通过 `AIPOD_BUILD_DIR`、`AIPOD_DATA_DIR` 指定临时输出；自定义外部系统仍需测试配置。
+- 通过 `AIPOD_NODE_CLI`、`AIPOD_NODE_MODULE` 找到当前运行时。
+- 默认 60 秒，单次最多 120 秒，输出长度受限。
+
+Linux 下新的共享根文件应先由文件工具创建，再交给 shell 修改。缺少权限后端时会报错，不会退回无约束执行。
+
+每次 Agent 调用默认最多 40 个动作，每次 Pod 运行最多 10 次修改申请。部分文件会在失败后保留以便恢复。检查成功不代表需求已被完整覆盖。
+
+## 配置与 Studio
+
+Python 和 Node 共享 `~/.aipod/config.toml` 的 `[env]` 配置，优先级为：
+
+```text
+进程环境变量 → 项目 .env → 全局 [env]
+```
+
+`ConfigStore` 支持项目 `config.toml` 的点号键访问，并兼容 Node 的 `config.json`。
 
 ```bash
+npx aipod-node config set OPENAI_MODEL your-model
 npx aipod-node studio ./demo
 ```
 
-Studio binds to `127.0.0.1` on a random port and uses a per-process access token. It can
-inspect validation issues and Agent state, read project-local source, execute Routes,
-run/smoke Interfaces, and start the background Pod Agent.
+Studio 监听本机地址并使用进程级令牌，提供项目、源码、路由、运行记录和 Pod 状态查看。
 
-## Distributed Stream and Worker
+## 更多能力
 
-Start one persistent Broker on a reachable host:
+运行时还提供结构化 Success/Failure、顺序与并行组合、受限重复、异步流及 Broker/Worker。分布式消息交付为 **at least once**，业务侧仍需幂等处理；当前 Broker 不提供高可用复制。
 
-```bash
-export AIPOD_BROKER_TOKEN="replace-with-a-secret"
+参见 [distributed-orders 示例](examples/distributed-orders/README.md) 和 [Agent 使用说明](SKILL.md)。
 
-npx aipod-node broker \
-  --host 0.0.0.0 \
-  --port 8787 \
-  --project-root ./demo
-```
-
-Publish idempotently from any machine:
+## 开发
 
 ```bash
-npx aipod-node publish \
-  --broker http://broker-host:8787 \
-  --token "$AIPOD_BROKER_TOKEN" \
-  --stream orders \
-  --key order-1001 \
-  --payload '{"orderId":"order-1001"}'
+npm ci
+npm run check
+npm test
 ```
 
-Run one or more Workers on other machines:
+需要本机端口或系统权限的测试应在允许这些操作的环境运行。
 
-```bash
-npx aipod-node worker \
-  --broker http://broker-host:8787 \
-  --token "$AIPOD_BROKER_TOKEN" \
-  --stream orders \
-  --group order-processors \
-  --consumer worker-a \
-  --route processOrder \
-  --concurrency 8 \
-  --project-root ./demo
-```
-
-Inspect Broker and dead-letter state, then replay a repaired message:
-
-```bash
-npx aipod-node broker-stats --broker http://broker-host:8787 \
-  --token "$AIPOD_BROKER_TOKEN"
-
-npx aipod-node dead-letters --broker http://broker-host:8787 \
-  --token "$AIPOD_BROKER_TOKEN" --stream orders --group order-processors
-
-npx aipod-node requeue --broker http://broker-host:8787 \
-  --token "$AIPOD_BROKER_TOKEN" --message-id MESSAGE_ID \
-  --stream orders --group order-processors
-```
-
-Delivery is **at least once**. The Broker persists messages and group delivery state,
-recovers expired leases, and moves exhausted messages to its dead-letter state. Services
-that perform external side effects must use the message ID or publisher key as an
-idempotency key. The current Broker is a single durable coordinator, not an HA replicated
-cluster.
-
-## Source generation protocol
-
-Model, Provider, Service, and Interface delivery-file generation use text responses
-containing one ActUnit-compatible XML-like candidate artifact:
-
-```xml
-<create>
-  <path>src/services/price-order.ts</path>
-  <content><![CDATA[
-export class PriceOrder {
-  execute() { return { totalCents: 9000 }; }
-}
-]]></content>
-</create>
-```
-
-The text request does not enable JSON response mode. Planning and bounded exact-patch
-repair still use JSON. Pipeline and Interface entry source remain locally generated.
-`OpenAICompatibleClient.completeJson()` and `completeText()` expose the separate modes;
-`complete()` remains the JSON-compatible alias. JSON requests default to 32,768
-tokens, text/source requests to 65,536 tokens, and the request deadline to 600 seconds.
-Client options `jsonMaxTokens`, `sourceMaxTokens`, and `timeoutMs` override these defaults. Custom `ModelClient` implementations
-must supply `completeText()` to generate files; no silent JSON fallback is performed.
-
-The local codec supports only `create` with exactly one `path` and one `content`.
-It accepts CDATA, escaped XML text and DSML tag prefixes, preserving source text.
-To represent `]]>` inside CDATA, split it as `]]]]><![CDATA[>`; the encoder handles this.
-It rejects attributes, nested operands, declarations, unknown operands and path
-mismatches. Unlike ActUnit's general decoder, it also rejects surrounding prose and
-multiple actions instead of extracting only the first supported element.
-It does not perform ActUnit's heuristic repair of unescaped XML characters: source
-containing markup must use CDATA or XML escaping. This is a compatible artifact subset,
-not a full port of ActUnit or its runtime.
-
-Decoding does not execute actions or grant filesystem/Shell permissions. The planned
-path remains authoritative; candidates pass the existing source validation, staging,
-type checking and application verification flow. Parse/path errors feed the existing
-three-attempt artifact loop. Truncated model responses fail explicitly.
-
-## Semantic Type Checking
-
-Generated projects are checked as one TypeScript Program rather than as isolated files.
-The checker resolves relative `.js` imports back to TypeScript sources and maps
-`aipod-node` to the installed Runtime declarations. It reports cross-file missing exports,
-assignment incompatibilities, Runtime API misuse, exact file/line/column, and diagnostic
-codes. Agent verification, `inspect`, `verify`, and real Route loading all use the same
-semantic check.
-
-## Component tests before implementation
-
-Model, Provider and Service plans must now include explicit scenarios:
-
-```json
-"tests": [
-  {"name":"test_authorized_request","requirement":"An explicitly seeded authorized user succeeds"},
-  {"name":"test_denied_request","requirement":"An explicitly seeded unauthorized user is denied and no rows are written"}
-]
-```
-
-The same generation Agent first writes executable TypeScript tests through the XML
-source protocol, using the frozen specification and the public SDK signatures. It
-does not receive a candidate implementation at this step. The framework validates
-the test source and SDK usage, then stores it at
-`tests/components/<Id>_<spec-hash>.test.ts` with its SHA-256 in
-`.aipod/component-tests.json`. Only then is implementation source generated.
-
-Every candidate runs those same fixed tests in a separate process. Failed behavior
-feeds implementation repair; tests and scenario requirements are not rewritten to
-make a candidate pass. Invalid fixtures or SDK usage stop implementation repair and
-require an explicit test-plan revision. Explicit component creation/revision can
-create a new test version; old test files remain. A retry with the same specification
-reuses the frozen version. Legacy plans without scenarios are replanned, and legacy
-components without executable tests are reported as unverified.
-
-Tests use the stable SDK rather than constructing runtime components themselves:
-
-```typescript
-import { defineComponentTests } from "aipod-node";
-
-export default defineComponentTests([{
-  name: "test_denied_request",
-  async run(sandbox, assert) {
-    await sandbox.seed("users", [{ id: "viewer", role: "viewer" }]);
-    const { result } = await sandbox.run("CreateTicket", {
-      actor_id: "viewer", title: "Example",
-    });
-    assert.equal(result.status, "failure");
-    if (result.status === "failure") assert.equal(result.error.code, "forbidden");
-    assert.equal(await sandbox.count("tickets"), 0);
-  },
-}]);
-```
-
-The role and denial rule above belong to that application's requirement. The SDK
-contains no business authorization policy and never creates users or grants roles.
-
-Each scenario receives its own temporary project, working directory, empty
-`ModelRepository`, and explicit configuration (`config: { ... }`, empty by default).
-Production data, configuration and credentials are not copied. Available methods:
-
-- `seed(collection, rows)` saves explicit rows through the real isolated repository;
-  each row needs an `id`.
-- `run(serviceId, params)` executes a real governed Service and returns `{ result, context }`.
-- `callProvider(id, method, args)` calls a real Provider method.
-- `model(id, data)` checks a real TypeScript interface/type with the compiler, or
-  constructs a runtime Model class using its explicit `constructor(data)`.
-- `rows(collection)`, `count(collection)` and `snapshot()` inspect the isolated store.
-- `path(relativePath)` returns a sandbox path; `writeFile(relativePath, content)`
-  creates a text fixture and returns its path. Fixtures cannot overwrite source,
-  tests, runtime registry or configuration.
-
-Cases may supply `providers: { DependencyProvider: { method() { ... } } }` for
-declared external dependency Providers. The tested target, any Service, and the
-built-in `ModelRepository`/`ConfigStore` cannot be replaced. External connections are
-disabled, and the worker's filesystem permissions restrict writes to its temporary
-project. Custom database/transport Providers need explicit fixtures appropriate to
-their own APIs; the SDK does not invent them.
-
-Tracked assertions are `ok`, `equal`, `notEqual`, `deepEqual`, `notDeepEqual`, `match`,
-`throws` and asynchronous `rejects`. Expected failure results and expected exceptions
-can pass. Empty/skipped scenarios, missing real target calls, absent or obvious
-constant assertions, swallowed assertion failures, changed candidate source or
-configuration, timeouts and early process exit cannot count as successful tests.
-The parent process checks a completion receipt for every declared scenario.
-
-Application verification, resumed construction and `aipod-node verify` rerun frozen
-component tests. Results retain test and implementation hashes in
-`.aipod/component-test-results/`. `verify` still distinguishes these component checks
-from an explicit application verification command. Pipeline and Interface construction
-keep their existing verification flow; this change does not add another runtime layer.
+[MIT](LICENSE)

@@ -3,6 +3,8 @@ import unittest
 import io
 import json
 import os
+import sys
+import shlex
 import re
 import tempfile
 from pathlib import Path
@@ -83,29 +85,23 @@ class SourceGenerationTests(unittest.TestCase):
             call_llm("explicit", "", json_mode=True, max_tokens=512, max_retries=1)
         self.assertEqual([r['max_tokens'] for r in requests], [32768, 65536, 65536, 512])
 
-    def test_pipeline_command_requests_xml_and_keeps_planned_filename(self):
+    def test_pipeline_command_uses_workspace_tools_and_keeps_filename(self):
+        source = "def run(ctx):\n    return ctx.summary()\n"
+        actions = iter([encode_source_artifact("pipelines/demo.py", source),
+            json.dumps({"tool": "shell", "command": shlex.quote(sys.executable) + " -c " + shlex.quote("import ast; ast.parse(open('pipelines/demo.py').read())")}),
+            json.dumps({"tool": "finish", "summary": "pipeline checked", "pipelines": [{"name": "demo", "file": "pipelines/demo.py", "inputs": {}}]})])
         modes = []
-        def llm(*args, **options):
+        def llm(*_args, **options):
             modes.append(options["json_mode"])
-            if options["json_mode"]:
-                return {"pipeline_ids": ["Base"], "inputs": {},
-                        "verification_cases": [{"name": "default", "params": {}}]}
-            return encode_source_artifact("pipelines/demo.py", "def run(ctx):\n    return ctx.summary()\n")
+            return next(actions)
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 os.chdir(tmp)
-                with redirect_stdout(io.StringIO()):
-                    init_config_if_not_exists()
-                    config = json.loads(Path("beans_config.json").read_text())
-                    config["beans"].append({"id": "Base", "category": "service", "class_path": "modules.services.base.Base", "inputs": {}, "outputs": {}})
-                    Path("beans_config.json").write_text(json.dumps(config))
-                    with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch(
-                        "ai_pod_cli.commands.compose.call_llm", side_effect=llm,
-                    ), patch("ai_pod_cli.commands.compose.verify_pipeline_candidate", return_value=[]):
-                        self.assertTrue(handle_compose(SimpleNamespace(name="demo", cmd="Run Base", json=True, list=False)))
-                self.assertIn("def run(ctx)", Path("pipelines/demo.py").read_text())
-                self.assertEqual(modes, [True, False])
+                with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch("ai_pod_cli.commands.compose.call_llm", side_effect=llm):
+                    self.assertTrue(handle_compose(SimpleNamespace(name="demo", cmd="Create a pipeline", json=True, list=False)))
+                self.assertEqual(Path("pipelines/demo.py").read_text(), source)
+                self.assertEqual(modes, [False, False, False])
             finally:
                 os.chdir(previous)
 
@@ -133,42 +129,25 @@ class SourceGenerationTests(unittest.TestCase):
                 finally:
                     os.chdir(previous)
 
-    def test_create_command_commits_xml_source_with_json_metadata(self):
+    def test_create_command_uses_xml_source_and_finishes_with_registry_metadata(self):
         source = "from ai_pod_cli import Model\nclass Sample(Model):\n    value: int = 1\n"
-        test_source = (
-            "import unittest\nfrom ai_pod_cli.testing import Sandbox\n"
-            "class ComponentTests(unittest.TestCase):\n"
-            "    def test_default_value(self):\n"
-            "        with Sandbox() as s:\n"
-            "            item = s.model('Sample', {})\n"
-            "            self.assertEqual(item.value, 1)\n"
-        )
+        actions = iter([encode_source_artifact("modules/models/sample.py", source),
+            json.dumps({"tool": "shell", "command": shlex.quote(sys.executable) + " -c " + shlex.quote("from modules.models.sample import Sample; assert Sample().value == 1")}),
+            json.dumps({"tool": "finish", "summary": "model checked", "components": [{"id": "Sample", "class_path": "modules.models.sample.Sample"}]})])
         modes = []
-        def llm(*args, **options):
+        def llm(*_args, **options):
             modes.append(options["json_mode"])
-            if options["json_mode"]:
-                return {"dependencies": [], "inputs": {}, "outputs": {}, "extra_deps": [],
-                        "tests": [{"name": "test_default_value", "requirement": "Default value is 1"}]}
-            test_path = re.search(r"tests/components/Sample_[a-f0-9]+\.py", args[0])
-            if test_path:
-                self.assertFalse(Path("modules/models/sample.py").exists())
-                return encode_source_artifact(test_path.group(), test_source)
-            return encode_source_artifact("modules/models/sample.py", source)
+            return next(actions)
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 os.chdir(tmp)
-                with redirect_stdout(io.StringIO()):
-                    init_config_if_not_exists()
-                    with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch(
-                        "ai_pod_cli.commands.create.call_llm", side_effect=llm,
-                    ):
-                        handle_create(SimpleNamespace(name="Sample", category="model", desc="Sample data", json=True))
+                with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch("ai_pod_cli.commands.create.call_llm", side_effect=llm):
+                    handle_create(SimpleNamespace(name="Sample", category="model", desc="Sample data", json=True))
                 self.assertEqual(Path("modules/models/sample.py").read_text(), source)
-                beans = json.loads(Path("beans_config.json").read_text())["beans"]
-                self.assertTrue(any(bean["id"] == "Sample" for bean in beans))
-                self.assertEqual(modes, [True, False, False])
-                self.assertEqual(len(list(Path("tests/components").glob("Sample_*.py"))), 1)
+                self.assertEqual(modes, [False, False, False])
+                self.assertFalse(Path(".aipod/component-tests.json").exists())
+                self.assertTrue(any(bean["id"] == "Sample" for bean in json.loads(Path("beans_config.json").read_text())["beans"]))
             finally:
                 os.chdir(previous)
 

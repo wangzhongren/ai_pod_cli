@@ -1,25 +1,19 @@
-"""Deterministic Pod Agent scheduler over governed build tools."""
+"""Pod entry point and public progress state for autonomous workspace Agents."""
 
 import os
 
 from ai_pod_cli.config import load_beans
-from ai_pod_cli.pod.build import _execute_pod_build_tool, _load_routes_map
+from ai_pod_cli.pod.routes import load_routes_map as _load_routes_map
 from ai_pod_cli.pod.state import (
-    STAGE_BUILD_TOOLS, STAGE_NAMES,
+    STAGE_NAMES,
     load_current_plan, load_decision_plan as _load_decision_plan,
-    prepare_stage_rebuild, stage_index,
-    resume_stage as _resume_stage,
+    prepare_stage_rebuild,
     save_decision_plan as _save_decision_plan,
-)
-from ai_pod_cli.pod.verification import (
-    _project_verification_fingerprint, _repair_current_artifact, _verify_application,
 )
 from ai_pod_cli.pod.revision import select_revision_stage
 
 
-MAX_APPLICATION_REPAIR_ATTEMPTS = 10
-# A repair and its verification are separate scheduler steps. Leave room for
-# all five build stages, their retries, and the final check after repair ten.
+# Tool actions per layer Agent invocation.
 DEFAULT_AGENT_MAX_STEPS = 40
 
 
@@ -90,247 +84,40 @@ def _read_pod_requirement(args) -> str:
 
 
 def handle_pod(args):
-    """Run the resumable Pod Agent over governed five-stage Build Tools."""
+    """Run autonomous layer Agents in one workspace, with Pod-owned change approval."""
+    from ai_pod_cli.client import call_llm
+    from ai_pod_cli.pod.coordinator import PodCoordinator
+    from ai_pod_cli.config import init_config_if_not_exists
+    from pathlib import Path
+
     desc = _read_pod_requirement(args)
     if not desc:
-        print("❌ 请提供需求描述或 --file 文件路径。")
-        return
+        raise ValueError("Provide a Pod objective or requirement file")
     if not os.environ.get("OPENAI_API_KEY"):
         from ai_pod_cli.commands.env import print_missing_model_config
         print_missing_model_config()
         raise SystemExit(1)
-    requested_stage = str(getattr(args, "stage", "") or "").strip().lower()
-    if requested_stage:
-        if requested_stage == "auto":
-            current = load_current_plan()
-            if current is None:
-                print("❌ 当前项目没有可修改的 Pod 计划。")
-                raise SystemExit(1)
-            if current.get("objective") == desc:
-                # A same-objective invocation is a resume, not a modification.
-                requested_stage = ""
-            else:
-                decision = select_revision_stage(
-                    desc, current, _agent_project_observation(current),
-                    getattr(args, "progress_callback", None),
-                )
-                requested_stage = decision["stage"]
-                print(
-                    f"🧠 [Pod 影响分析] 最早受影响层: {requested_stage}"
-                    + (f" — {decision['summary']}" if decision["summary"] else "")
-                )
-        if not requested_stage:
-            pass
+    init_config_if_not_exists()
+    requested = str(getattr(args, "stage", "") or "").strip().lower()
+    current = load_current_plan()
+    if requested == "auto":
+        if current and current.get("objective") != desc:
+            requested = select_revision_stage(desc, current, _agent_project_observation(current), getattr(args, "progress_callback", None))["stage"]
         else:
-            try:
-                state = prepare_stage_rebuild(requested_stage, desc)
-            except ValueError as error:
-                print(f"❌ {error}")
-                raise SystemExit(1) from error
-            rebuild_from = stage_index(requested_stage)
-            desc = state["objective"]
-            args._pod_stage = rebuild_from
-            args._pod_rebuild_from = rebuild_from
-            print(
-                f"🔧 [Pod 局部重建] 从 {requested_stage} 层开始；"
-                "上游已冻结，下游将重新生成并验证。"
-            )
-    original_file = getattr(args, "file", "")
-    args.file = ""
-    args.desc = desc
-    explicit_stage = int(args._pod_stage) if hasattr(args, "_pod_stage") else None
-    state = _load_decision_plan(desc, explicit_stage)
-    verification = state["agent"]["verification"]
-    if (
-        verification.get("status") == "passed"
-        and verification.get("fingerprint") != _project_verification_fingerprint()
-    ):
-        verification["status"] = "pending"
-    _save_decision_plan(state)
-    _set_agent_status(desc, "running")
-    max_steps = int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS))
-    stage_failures: dict[int, int] = {}
-    acceptance_replans = 0
-
-    print("🧠 [Pod Agent] 启动构建循环：Observe → Policy Select → Execute → Observe")
-    if original_file:
-        print(f"🧩 [Pod Agent] 需求来源: {original_file}")
-
-    for _ in range(max_steps):
-        state = _load_decision_plan(desc)
-        stage = _resume_stage(state)
-        if stage is None:
-            verification = state["agent"]["verification"]
-            if verification.get("required_action") == "review_component_tests":
-                _set_agent_status(desc, "blocked")
-                print("⛔ 组件测试缺失、被修改或准备无效；请显式修订相应层的测试计划后继续。不会自动改写业务代码或测试断言。")
-                raise SystemExit(1)
-            if verification.get("required_action") == "replan_interfaces":
-                if acceptance_replans >= 1:
-                    _set_agent_status(desc, "blocked")
-                    print("⛔ 缺少有效行为验收；Interface 重新规划后仍未满足要求。")
-                    raise SystemExit(1)
-                issues = verification.get("last_result", {}).get("checks", {}).get("acceptance", {}).get("issues", [])
-                instruction = "补全独立行为验收，覆盖原始需求；不得用smoke或样本试跑代替。" + str(issues)
-                updated = prepare_stage_rebuild("interfaces", instruction)
-                updated["stages"]["interfaces"]["last_evidence"] = {"status": "rejected", "evidence": issues}
-                _save_decision_plan(updated)
-                args._pod_rebuild_from = 4
-                acceptance_replans += 1
-                print("🔁 缺少有效行为验收，重新规划 Interface 测试；已冻结上游保持不变。")
-                continue
-            verification_status = verification.get("status", "pending")
-            if verification_status == "passed":
-                _set_agent_status(desc, "complete")
-                print("✅ [Pod Agent] 五阶段构建与应用运行验证均已完成。")
-                return
-
-            action = (
-                "repair_current_artifact"
-                if verification_status == "failed"
-                else "verify_application"
-            )
-            step = state["agent"].get("step", 0) + 1
-            print(f"\n🧠 [Pod Agent · Step {step}] {action} (application)")
-            if action == "verify_application":
-                result = _verify_application(
-                    desc,
-                    state,
-                    getattr(args, "_pod_verify_timeout", None),
-                )
-                execution = result.get("checks", {}).get("execution")
-                observation = {
-                    "verification_status": result.get("status"),
-                    "structure": result.get("checks", {}).get("structure", {}).get("status"),
-                    "execution": execution.get("status") if execution else "skipped",
-                    "command": execution.get("command", []) if execution else [],
-                    "suggested_files": result.get("repair", {}).get("suggested_files", []),
-                }
-                event_status = "succeeded" if result.get("status") == "passed" else "failed"
-                _append_agent_event(desc, {
-                    "action": action,
-                    "stage": "application",
-                    "status": event_status,
-                    "decision_status": "policy_selected",
-                    "summary": "Run the frozen application's declared behavior acceptance and diagnostics.",
-                    "observation": observation,
-                })
-                if result.get("status") == "passed":
-                    _set_agent_status(desc, "complete")
-                    print("✅ [verify_application] 应用结构与实际运行命令均已通过。")
-                    return
-                print("🔁 [verify_application] 运行失败；下一步只允许修复证据指向的当前文件。")
-                continue
-
-            repair_attempts = max(
-                int(verification.get("repair_attempts", verification.get("repairs", 0))),
-                int(verification.get("repairs", 0)),
-            )
-            if repair_attempts >= MAX_APPLICATION_REPAIR_ATTEMPTS:
-                _set_agent_status(desc, "blocked")
-                print(f"⛔ [Pod Agent] 已达到 {MAX_APPLICATION_REPAIR_ATTEMPTS} 轮应用修复上限，冻结上游保持不变。")
-                raise SystemExit(1)
-            verification["repair_attempts"] = repair_attempts + 1
-            _save_decision_plan(state)
-            try:
-                repaired = _repair_current_artifact(
-                    desc, state, getattr(args, "progress_callback", None),
-                )
-            except Exception as error:
-                _append_agent_event(desc, {
-                    "action": action,
-                    "stage": "application",
-                    "status": "failed",
-                    "decision_status": "policy_selected",
-                    "summary": "Repair only the evidence-selected current artifact.",
-                    "observation": {"error": f"{type(error).__name__}: {error}"},
-                })
-                if repair_attempts + 1 >= MAX_APPLICATION_REPAIR_ATTEMPTS:
-                    _set_agent_status(desc, "blocked")
-                    print(f"⛔ [repair_current_artifact] 已用完 {MAX_APPLICATION_REPAIR_ATTEMPTS} 轮修复机会，未修改冻结上游。")
-                    raise SystemExit(1)
-                print("🔁 [repair_current_artifact] 补丁未通过约束，将重试当前修复工具。")
-                continue
-            _append_agent_event(desc, {
-                "action": action,
-                "stage": "application",
-                "status": "succeeded",
-                "decision_status": "policy_selected",
-                "summary": "Applied a bounded patch to the traceback-selected artifact.",
-                "observation": repaired,
-            })
-            print(
-                f"🩹 [repair_current_artifact] 已修复 {repaired['file']}；"
-                "下一步重新执行同一验证命令。"
-            )
-            continue
-
-        action = STAGE_BUILD_TOOLS[stage]
-        history = state.get("agent", {}).get("history", [])
-        last_action = history[-1] if history else {}
-        is_retry = stage_failures.get(stage, 0) > 0 or (
-            last_action.get("stage") == STAGE_NAMES[stage]
-            and last_action.get("status") == "failed"
-        )
-        decision_status = "policy_retry" if is_retry else "policy_selected"
-        summary = (
-            f"Retry the current {STAGE_NAMES[stage]} stage after its governed tool failed."
-            if is_retry
-            else f"The {STAGE_NAMES[stage]} stage is the earliest incomplete stage."
-        )
-
-        print(
-            f"\n🧠 [Pod Agent · Step {state['agent'].get('step', 0) + 1}] "
-            f"{action} ({STAGE_NAMES[stage]})"
-        )
-        print(f"   决策摘要: {summary}")
-
-        args._pod_stage = stage
-        args.auto_repair = bool(getattr(args, "auto_repair", False) or args.yes)
-        try:
-            _execute_pod_build_tool(args)
-        except SystemExit as error:
-            stage_failures[stage] = stage_failures.get(stage, 0) + 1
-            _append_agent_event(desc, {
-                "action": action,
-                "stage": STAGE_NAMES[stage],
-                "status": "failed",
-                "decision_status": decision_status,
-                "summary": summary,
-                "observation": {
-                    "exit_code": error.code if isinstance(error.code, int) else 1,
-                    "stage_status": _load_decision_plan(desc)["stages"][STAGE_NAMES[stage]]["status"],
-                },
-            })
-            if stage_failures[stage] >= 2:
-                _set_agent_status(desc, "blocked")
-                print("⛔ [Pod Agent] 当前 Build Tool 连续失败，已保留冻结上游与 Agent 状态。")
-                raise
-            print("🔁 [Pod Agent] 已观察到失败；下一步只允许重试当前 Build Tool。")
-            continue
-        except Exception as error:
-            _append_agent_event(desc, {
-                "action": action,
-                "stage": STAGE_NAMES[stage],
-                "status": "failed",
-                "decision_status": decision_status,
-                "summary": summary,
-                "observation": {"error": f"{type(error).__name__}: {error}"},
-            })
-            _set_agent_status(desc, "blocked")
-            raise
-
-        updated = _load_decision_plan(desc)
-        _append_agent_event(desc, {
-            "action": action,
-            "stage": STAGE_NAMES[stage],
-            "status": "succeeded",
-            "decision_status": decision_status,
-            "summary": summary,
-            "success_criteria": [f"The {STAGE_NAMES[stage]} stage is complete and frozen."],
-            "observation": _agent_project_observation(updated),
-        })
-
-    _set_agent_status(desc, "blocked")
-    print(f"⛔ [Pod Agent] 达到最大步骤数 {max_steps}，已保存状态，可再次运行续接。")
-    raise SystemExit(1)
+            requested = ""
+    if requested:
+        state = prepare_stage_rebuild(requested, desc)
+    else:
+        state = _load_decision_plan(desc, getattr(args, "_pod_stage", None))
+    state["agent"].get("verification", {}).pop("required_action", None)
+    state["agent"]["current_request"] = desc
+    coordinator = PodCoordinator(Path.cwd(), state, call_llm, save=_save_decision_plan,
+                                 progress_callback=getattr(args, "progress_callback", None),
+                                 max_steps=int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS)))
+    try:
+        coordinator.build()
+    except Exception:
+        state["agent"]["status"] = "blocked"
+        coordinator.persist()
+        raise
+    print("✅ Pod 各层 Agent 已完成，开发检查结果已记录。")

@@ -30,7 +30,7 @@ export async function writeRunTrace(
   durationMs: number,
 ): Promise<Record<string, unknown>> {
   const id = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
-  const directory = resolve(projectRoot, ".aipod", "runs");
+  const directory = resolve(process.env.AIPOD_DATA_DIR ?? resolve(projectRoot, ".aipod"), "runs");
   await mkdir(directory, { recursive: true });
   const trace = redact({
     id, route, status: result.status, startedAt: new Date().toISOString(),

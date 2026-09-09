@@ -1,65 +1,20 @@
+import { ConstructionAgent } from "./agent/agent.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { randomUUID } from "node:crypto";
 
-import {
-  commitArtifacts, generateArtifacts, validateArtifacts, validateTypeScript,
-} from "./agent/artifacts.js";
+import { validateTypeScript } from "./agent/artifacts.js";
 import type { ModelClient, StageName } from "./agent/types.js";
 import {
-  applyComponents, loadProject, saveProject, type ProjectBean,
+  loadProject, saveProject, type ProjectBean,
 } from "./agent/project.js";
-import { planStage, validateStagePlan } from "./agent/planner.js";
 import { validateServiceSource } from "./contracts.js";
-import { loadProjectConfiguration } from "./shared-config.js";
 
-export async function createComponents(
-  projectRoot: string,
-  client: ModelClient,
-  category: "model" | "provider" | "service",
-  description: string,
-): Promise<string[]> {
-  const stage = `${category}s` as Extract<StageName, "models" | "providers" | "services">;
-  const project = await loadProject(projectRoot);
-  const plan = await planStage(
-    client, stage, description, project, [],
-    await loadProjectConfiguration(projectRoot),
-  );
-  const errors = validateStagePlan(stage, plan, project);
-  if (errors.length) throw new Error(errors.join("; "));
-  const artifacts = await generateArtifacts(client, stage, plan, project, projectRoot, randomUUID());
-  const artifactErrors = validateArtifacts(artifacts);
-  if (artifactErrors.length) throw new Error(artifactErrors.join("; "));
-  await commitArtifacts(projectRoot, stage, artifacts);
-  applyComponents(project, stage, plan.components ?? []);
-  await saveProject(projectRoot, project);
-  return artifacts.map((artifact) => artifact.path);
+export async function createComponents(projectRoot: string, client: ModelClient, category: "model" | "provider" | "service", description: string): Promise<string[]> {
+  return new ConstructionAgent(projectRoot, client).runStage(`${category}s` as StageName, description);
 }
 
-export async function composeRoutes(
-  projectRoot: string,
-  client: ModelClient,
-  instruction: string,
-): Promise<string[]> {
-  const project = await loadProject(projectRoot);
-  const plan = await planStage(
-    client, "pipelines", instruction, project, [],
-    await loadProjectConfiguration(projectRoot),
-  );
-  const errors = validateStagePlan("pipelines", plan, project);
-  if (errors.length) throw new Error(errors.join("; "));
-  const artifacts = await generateArtifacts(client, "pipelines", plan, project);
-  const artifactErrors = validateArtifacts(artifacts);
-  if (artifactErrors.length) throw new Error(artifactErrors.join("; "));
-  await commitArtifacts(projectRoot, "pipelines", artifacts);
-  for (const route of plan.routes ?? []) {
-    const value = { ...route, file: `src/pipelines/${route.name}.ts` };
-    const index = project.routes.findIndex((item) => item.name === route.name);
-    if (index >= 0) project.routes[index] = value;
-    else project.routes.push(value);
-  }
-  await saveProject(projectRoot, project);
-  return artifacts.map((artifact) => artifact.path);
+export async function composeRoutes(projectRoot: string, client: ModelClient, instruction: string): Promise<string[]> {
+  return new ConstructionAgent(projectRoot, client).runStage("pipelines", instruction);
 }
 
 export async function addBean(projectRoot: string, bean: ProjectBean): Promise<void> {

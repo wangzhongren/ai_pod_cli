@@ -1,769 +1,284 @@
 <p align="center">
-  <img src="docs/assets/aipod-icon.png" alt="AIPod" width="128">
+  <img src="docs/assets/aipod-icon.png" alt="AIPod" width="112">
 </p>
 
-<h1 align="center">AIPod</h1>
+# AIPod
 
-<p align="center"><strong>A governed software construction agent and compositional runtime for AI-built Python applications.</strong></p>
+**让 Agent 在明确的文件边界内开发，由 Pod 协调修改和验收。**
 
-<p align="center">
-  <a href="https://pypi.org/project/AIPodCli/"><img alt="PyPI" src="https://img.shields.io/pypi/v/AIPodCli"></a>
-  <a href="https://pypi.org/project/AIPodCli/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/AIPodCli"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
-</p>
+AIPod 是一个 AI 应用开发框架，提供 **Python** 和 **Node.js / TypeScript** 两个实现。你描述目标，Agent 使用文件与 shell 工具完成开发；产物是可以阅读、修改和运行的普通项目代码。
 
-AIPod lets AI build ordinary Python applications inside a small, explicit architecture.
-The model generates one bounded artifact at a time; local code controls ordering,
-Contracts, validation, freezing, retries, and repair scope.
+框架保留五层结构：
 
 ```text
 Model → Provider → Service → Pipeline → Interface
- data    capability    business    composition    delivery
+数据      基础能力      领域行为      执行编排      用户入口
 ```
 
-The result is not an opaque AI session. It is a resumable project with typed boundaries,
-registered routes, runtime evidence, and generated source code that can be inspected and
-maintained with normal tools.
+每层 Agent 共用一套工具和执行循环。Pod 决定层级调度、处理跨层修改申请，并检查最终交付结果。
 
-> AIPod is currently alpha software. Review generated code and platform installers before
-> production use.
+> 本文描述 GitHub `main` 分支的新工作区 Agent 流程。本次重构尚未重新发布到 PyPI/npm；使用这一流程请按下面的源码安装方式运行。
 
-## Quick start
+[Python 包](https://pypi.org/project/AIPodCli/) · [Node 包](https://www.npmjs.com/package/aipod-node) · [Node 使用说明](aipod-node/README.md) · [执行模型](docs/execution.md)
 
-Python 3.10 or newer is required.
+## 核心工作方式
 
-```bash
-pip install -U AIPodCli
+1. **在同一工作区开发。** Agent 可以查看项目文件，在自己的范围内增删改文件、搜索代码和运行 shell。
+2. **上游保持只读。** 后续 Agent 发现上游问题时，提交修改原因、目标文件和建议给 Pod。
+3. **由文件所属 Agent 修改。** Pod 批准后，将任务交回对应 Agent；申请方不会获得上游写权限。
+4. **按实际需要检查。** Agent 自行选择编译、测试或启动命令，修改后重新检查，最后由 Pod 验收。
 
-mkdir todo-app
-cd todo-app
-aipod init
+例如 Service 需要调整 Provider：
+
+```mermaid
+sequenceDiagram
+    participant S as Service Agent
+    participant P as Pod Agent
+    participant R as Provider Agent
+    S->>P: 提交问题、目标文件和修改建议
+    alt Pod 批准
+        P->>R: 分配修改任务与可写文件
+        R->>R: 修改并运行检查
+        R-->>P: 返回结果与检查记录
+        P-->>S: 返回更新后的结果，继续开发
+    else Pod 拒绝
+        P-->>S: 返回拒绝原因
+    end
 ```
 
-Configure an OpenAI-compatible model endpoint once:
+跨层修改可能使中间层失效，Pod 会安排这些层重新检查后再继续。批准、拒绝、执行结果及未完成状态都会保存，便于恢复。
 
-```bash
-aipod config set OPENAI_API_KEY sk-your-key
-aipod config set OPENAI_BASE_URL https://api.openai.com/v1
-aipod config set OPENAI_MODEL your-model
-```
+默认构建不再为每个组件强制安排“生成测试 → 冻结测试 → 生成实现 → 复制项目验证”的流程。普通测试仍然可用，Agent 可以按需要编写和运行。
 
-Build an application:
+## 五层分别负责什么
 
-```bash
-aipod pod --yes \
-  "Create a local todo application with persistent tasks, add/list/complete routes, and a CLI Adapter."
-```
+| 层 | 职责 | 典型内容 |
+|---|---|---|
+| Model | 定义共享数据 | 用户、订单、向量、场景状态、事件 |
+| Provider | 提供基础能力 | 存储、文件、网络、时钟、渲染设备 |
+| Service | 实现领域行为 | 创建任务、计算价格、更新位置、检测碰撞 |
+| Pipeline | 组合执行步骤 | 顺序、分支合并、并行、重复、流处理 |
+| Interface | 提供用户入口 | CLI、Web、桌面界面、消息入口 |
 
-Inspect and test it:
+Service 使用 Model 和 Provider，Service 之间的组合放在 Pipeline 中。Interface 通过已注册的路由调用 Pipeline。
 
-```bash
-aipod inspect --summary --json
-aipod inspect project --json
-aipod interface list
-aipod interface smoke <interface-name>
-```
+这套结构可以用于业务工具，也可以组织模拟程序、游戏原型等项目。具体实现能力仍取决于模型、需求和使用的基础库。
 
-Run a generated Interface Adapter with a JSON event:
+## 快速开始：Python
 
-```bash
-aipod interface run <interface-name> \
-  --payload '{"action":"list"}'
-```
+需要 **Python 3.10+**。以下示例适用于 macOS；Linux 的 Agent shell 还需要 `bubblewrap`。
 
-Adapters that expose CLI-style arguments can receive raw arguments after `--`:
-
-```bash
-aipod interface run <interface-name> -- \
-  --mode once \
-  --payload '{"message_id":"m-1","topic":"orders","payload":{}}'
-```
-
-## Why AIPod
-
-Large AI-generated applications usually fail at their boundaries:
-
-- one component produces `shipment_count` while another expects `shipments_count`;
-- a Model is accidentally injected as an infrastructure dependency;
-- generated code imports symbols from the wrong package;
-- one Service injects and directly executes another Service, bypassing Pipeline governance;
-- a downstream failure causes an upstream working file to be rewritten;
-- a Pipeline exists but no verified user-facing Interface reaches it;
-- syntax checks pass while imports or dependency injection fail at runtime.
-
-AIPod addresses these failures with five rules:
-
-1. **Build in dependency order.** Earlier layers are completed before downstream layers.
-2. **Make boundaries machine-readable.** IDs, dependencies, Contracts, routes, lifecycle,
-   permissions, and verification commands are stored as project state.
-3. **Freeze accepted upstream work.** A downstream failure may retry or repair its own
-   scope, but does not silently reopen stable layers.
-4. **Require evidence before completion.** Generated artifacts must pass local structural
-   and disposable runtime checks before a stage can freeze.
-5. **Keep orchestration out of Services.** A Service can see its Contract, Models, and
-   Providers, but never another Service. Composition belongs exclusively to Pipelines.
-
-## The five layers
-
-### Model
-
-Models are shared typed data. Runtime value objects and persistent SQLModel entities are
-both supported.
-
-```python
-from ai_pod_cli import Model
-
-
-class Message(Model):
-    message_id: str
-    topic: str
-    payload: dict
-```
-
-Models are imported as data types. They are never injected.
-
-### Provider
-
-Providers expose infrastructure capabilities such as files, databases, HTTP clients, or
-message transports. They may be injected into Services.
-
-Built-in Service-visible Providers include:
-
-- `ConfigStore`
-- `ModelRepository`
-
-`PipelineRunner` is a reserved Runtime capability used behind Interface and CLI route
-boundaries. It is not a way for one Service to reach another Service.
-
-### Service
-
-Services implement business transformations through `execute(ctx)`.
-
-```python
-from ai_pod_cli.context import PipelineContext
-
-
-class MessageProcessingService:
-    def execute(self, ctx: PipelineContext) -> dict:
-        message_id = ctx.get("message_id")
-        result = {"message_id": message_id, "status": "processed"}
-        ctx.set("result", result)
-        return result
-```
-
-A Service has a deliberately narrow capability view:
-
-| Visible to a Service | Hidden from a Service |
-|---|---|
-| Its input/output Contract | Other Services |
-| Frozen Models as imported data types | `modules.services.*` imports |
-| Providers declared as DI dependencies | Service construction and `execute()` calls |
-| `PipelineContext` data | Pipeline scheduling, loops, parallelism, retries between Services |
-
-Service-to-Service dependencies are rejected independently by the Planner, Canonical
-Plan reducer, source validator, and DI Runtime. A Service must not become a hidden
-orchestrator:
-
-```python
-# Invalid: this bypasses Contract checks, Trace, Failure, retry, and execution policy.
-class GameLoopService:
-    def __init__(self, physics_service, render_service):
-        self.physics_service = physics_service
-        self.render_service = render_service
-
-    def execute(self, ctx):
-        self.physics_service.execute(ctx)
-        return self.render_service.execute(ctx)
-```
-
-### Pipeline
-
-Pipelines compose Services in deterministic order and are registered as named routes.
-
-```python
-from ai_pod_cli.config import load_beans
-from ai_pod_cli.container import Pod, build_container
-
-
-def run(ctx):
-    S = Pod(build_container(load_beans()))
-    (S(ValidateMessage) | S(ProcessMessage)).execute_all(ctx)
-    return ctx.summary()
-```
-
-Interfaces see route names and descriptions, not Service classes.
-
-The same Pipeline Runtime supports governed asynchronous, parallel, repeated, and
-streaming execution. Operators are explicit:
-
-| Runtime declaration | Meaning |
-|---|---|
-| `A \| B` | Deterministic sequential composition |
-| `parallel(A, B)` | Isolated concurrent branches with an explicit merge policy |
-| `repeat(frame, ...)` | Governed repetition controlled by Context fields |
-| `stream(source)` | Bounded asynchronous event processing with backpressure |
-
-Existing synchronous Pipelines remain compatible. AI declares these policies, while the
-local Runtime owns scheduling, merging, stopping, cancellation, and Trace.
-
-```python
-from ai_pod_cli.container import parallel
-
-
-async def run(ctx):
-    S = Pod(build_container(load_beans()))
-    flow = parallel(
-        S(QueryInventory),
-        S(QueryPrice),
-        merge="strict",
-        failure_policy="collect_all",
-        concurrency=2,
-    ) | S(BuildResponse)
-    await flow.execute_all_async(ctx)
-    return ctx.summary()
-```
-
-Repeated workflows such as game frames, workers, polling, and bounded retries remain
-visible in the Pipeline instead of being hidden inside a coordinating Service:
-
-```python
-from ai_pod_cli.container import Pod, build_container, repeat
-
-
-def run(ctx):
-    S = Pod(build_container(load_beans()))
-    frame = (
-        S(InputHandlingService)
-        | S(SceneUpdateService)
-        | S(PhysicsService)
-        | S(RenderService)
-    )
-    repeat(
-        frame,
-        until_field="quit_requested",
-        max_iterations_field="max_frames",
-        output_field="executed_frames",
-        trace_limit=20,
-    ).execute_all(ctx)
-    return ctx.summary()
-```
-
-The stop condition is a named Context field, not an arbitrary AI-generated callback.
-Each iteration uses an isolated Context snapshot, merges successful writes
-deterministically, stops on `Failure`, and retains only a bounded number of iteration
-traces.
-
-See
-[docs/execution.md](https://github.com/wangzhongren/ai_pod_cli/blob/main/docs/execution.md)
-for async routes, deterministic branch merging, repetition, stream processing, failure
-policies, and Contract behavior.
-
-### Interface
-
-An Interface is a delivery bundle around one AI-generated project Adapter. It can bridge
-any external event source to frozen Pipeline routes:
-
-```text
-CLI arguments    \
-HTTP request      \
-queue message      ─→ InterfaceAdapter ─→ context.run_route() ─→ Pipeline
-desktop UI event  /
-file/timer event /
-```
-
-AIPod provides the stable SDK:
-
-```python
-from ai_pod_cli.interface import InterfaceAdapter, InterfaceContext
-```
-
-AI generates project-specific glue:
-
-```python
-class GeneratedInterfaceAdapter(InterfaceAdapter):
-    def required_routes(self):
-        return ["process_message"]
-
-    def start(self, context: InterfaceContext, payload=None):
-        message = receive_external_message(payload)
-        return context.run_route("process_message", message)
-```
-
-The Adapter cannot import Models, Providers, Services, the DI container, or
-`PipelineRunner`. Its only business capability is `InterfaceContext.run_route()`.
-
-## Multi-file Interface Adapters
-
-Complex adapters are split into focused files and generated one file per model call:
-
-```text
-interfaces/order-monitor/
-├── adapter.py          Adapter entry class
-├── queue_consumer.py   message transport
-├── window.py           desktop UI
-├── event_bridge.py     thread/UI bridge
-├── install.ps1         platform lifecycle
-└── interface.json      canonical manifest
-```
-
-The manifest identifies the entry source and class:
-
-```json
-{
-  "name": "order-monitor",
-  "kind": "windows_desktop_queue",
-  "platform": "windows",
-  "adapter": {
-    "entry_path": "interfaces/order-monitor/adapter.py",
-    "class_name": "GeneratedInterfaceAdapter"
-  },
-  "artifacts": [
-    {"path": "interfaces/order-monitor/adapter.py", "role": "adapter_entry"},
-    {"path": "interfaces/order-monitor/queue_consumer.py", "role": "adapter_module"},
-    {"path": "interfaces/order-monitor/window.py", "role": "adapter_module"},
-    {"path": "interfaces/order-monitor/test_behavior.py", "role": "behavior_test", "format": "python"}
-  ],
-  "lifecycle": {
-    "run": ["{python}", "-m", "ai_pod_cli", "interface", "run", "order-monitor"]
-  },
-  "permissions": ["message_queue_connect", "desktop_notification"],
-  "verify": [
-    {
-      "name": "adapter_smoke",
-      "kind": "smoke",
-      "required": true,
-      "command": ["{python}", "-m", "ai_pod_cli", "interface", "smoke", "order-monitor"],
-      "timeout": 30
-    },
-    {
-      "name": "order_behavior",
-      "kind": "behavior",
-      "required": true,
-      "command": ["{python}", "-m", "ai_pod_cli.behavior_tests", "interfaces/order-monitor/test_behavior.py"],
-      "cases": [{"test": "OrderBehavior.test_process_message", "requirement": "A supplied order message produces the expected order state"}],
-      "timeout": 60
-    }
-  ]
-}
-```
-
-All Adapter source files are staged together, loaded as a private Python package so
-relative imports work, and smoked in a disposable project. The complete Interface bundle
-is committed atomically after artifact and Adapter checks. Application completion
-additionally requires the declared behavior acceptance below.
-
-The Adapter is generated during construction. Running the finished application does not
-call AI.
-
-## Python source output protocol
-
-Python component generation (`pod` and `create`), Pipeline composition, Interface
-delivery files, and the legacy entry generator separate metadata from source:
-
-1. Generate JSON metadata such as Contracts, dependencies, method signatures,
-   configuration additions and extra packages, without a `code` or `content` field.
-2. Freeze that metadata and request one XML-like source artifact through text mode:
-
-```xml
-<create>
-  <path>modules/services/priceorder.py</path>
-  <content><![CDATA[
-class PriceOrder:
-    def execute(self, ctx):
-        return {"total_cents": 9000}
-]]></content>
-</create>
-```
-
-The source response is not forced into JSON. The planned path must match exactly;
-multiple actions, nested operands, extra fields and malformed XML are rejected.
-If a metadata response also includes unrequested root-level `code` or `content`,
-those fields are discarded. Source is still requested separately through XML;
-discarded metadata code is never executed or used as a fallback. Contract fields
-named `code` or `content` inside inputs/outputs are preserved.
-CDATA splitting supports literal `]]>` in source, and the codec preserves source line endings.
-This uses the same strict ActUnit-compatible artifact subset as AIPod Node, implemented
-locally without requiring an unpublished ActUnit package or a Node process.
-
-Source format failures retry against the frozen metadata. Existing component checks,
-disposable runtime verification and Interface bundle validation still apply. Planning
-and exact-patch repair continue to use JSON. New components normally need three
-model calls: metadata, test source, then implementation source. Both source files
-use XML; retries reuse the frozen metadata and tests.
-
-Source requests default to a 65,536-token output budget and a 600-second SDK timeout.
-JSON metadata, planning and patch requests default to 32,768 tokens; the model client
-default timeout is 600 seconds. Internal stage-specific small limits have been removed. `generate_source()` accepts
-`source_max_tokens` and `source_timeout_seconds` overrides for controlled experiments
-or callers with different limits. The output budget can include model reasoning tokens;
-it does not represent the length of the generated source alone.
-
-## Pod Agent
-
-`aipod pod` is a resumable local state machine over governed build tools:
-
-```text
-Observe → Policy Select → Execute → Validate → Freeze → Observe
-```
-
-The stage order is deterministic:
-
-```text
-generate_models
-generate_providers
-generate_services
-compose_pipelines
-generate_interfaces
-verify_application
-repair_current_artifact   # only after real failure evidence
-```
-
-The model does not choose this order. It decides the contents of the current bounded
-artifact.
-
-### Modifying an existing Pod
-
-Studio and `--stage auto` use one focused AI call to classify the earliest layer affected
-by a requested change. The local scheduler then freezes upstream and rebuilds that layer
-plus downstream:
-
-```bash
-aipod pod --stage auto --yes \
-  "Add task priority and display it in the desktop window."
-```
-
-An explicit stage remains available as a manual override:
-
-```bash
-aipod pod --stage interfaces --yes \
-  "Replace the CLI Adapter with a desktop and message-queue Adapter."
-```
-
-## Progressive verification
-
-Validation happens before freezing, not only at the end:
-
-| Layer | Required evidence |
-|---|---|
-| Model | real model validation and assertions in frozen tests |
-| Provider | real DI and method calls against explicit fixtures in frozen tests |
-| Service | no Service visibility; real execution with explicit test parameters and assertions |
-| Pipeline | isolated execution with explicit real entry parameters before route registration |
-| Interface | every Artifact validated, Adapter package imported, smoke executed |
-
-After all layers complete, frozen component tests and every required Interface verification command run again.
-Optional installation checks remain visible but do not fail runtime proof.
-
-Component planning declares a non-empty `tests` array before implementation:
-
-```json
-{"tests": [{"name": "test_viewer_cannot_create", "requirement": "An active viewer is rejected and no database rows change"}]}
-```
-
-AIPod generates a `unittest.TestCase` named `ComponentTests` using its testing SDK.
-For example, a Service that only permits administrators to create tasks should have
-separate successful-admin and denied-viewer cases. The denied case can look like:
-
-```python
-import unittest
-from ai_pod_cli.testing import Sandbox
-
-class ComponentTests(unittest.TestCase):
-    def test_viewer_cannot_create(self):
-        with Sandbox() as s:
-            s.seed("UserAccount", {"username": "reader", "role": "viewer", "is_active": True})
-            before = s.snapshot()
-            with self.assertRaises(PermissionError):
-                s.run("BugCreateService", {"current_user_username": "reader", "title": "Example"})
-            self.assertEqual(s.snapshot(), before)
-```
-
-Use the actual project's required fields in fixtures and calls. The SDK provides
-`seed`, `model`, `run`, `call_provider`, `rows`, `count`, `snapshot` and `path`.
-Each `with Sandbox(config={}, provider_overrides={})` creates fresh temporary
-configuration, SQLite storage, dependency injection and resource paths. It does
-not infer business data, roles or input values. Only declared dependency Providers
-may be replaced by test doubles; the target, Models and Services run their actual code.
-An expected exception counts as a real component invocation. Missing/skipped cases,
-no target invocation and obvious constant-only assertions fail verification.
-
-Tests are saved before implementation under `tests/components/<ID>_<spec-hash>.py`.
-Their hashes and frozen metadata are recorded in `.aipod/component-tests.json`,
-and the registry records the accepted test descriptor. Source retries and resumes
-reuse the exact tests. Explicit requirement revisions can create a new version;
-previous test files remain available for review. Automatic repair cannot rewrite
-tests to obtain a pass. Fixture or SDK setup errors stop implementation repair and
-require an explicit test-plan revision. Legacy components without tests require
-such a revision before they can pass component reuse verification.
-
-The SDK is available inside the framework's component test worker. The worker runs
-in a disposable project, with isolated test data and a timeout. This is execution
-and data isolation, not an operating-system security boundary for hostile code.
-
-Rerun a component's frozen tests with the same worker:
-
-```bash
-python -m ai_pod_cli.component_tests --project-root . --component BugCreateService
-```
-
-Omit `--component` to run all recorded component tests. The command reports JSON
-results and exits with a nonzero code on failure; the generated test file does not
-need to construct a container or connect to the application's database.
-
-Pipeline planning declares public `inputs` and non-empty `verification_cases`, each with
-a unique `name` and explicit `params`. A default-starting application includes an empty
-parameter scenario; a route needing user input provides concrete values for that input.
-The Pipeline sandbox never derives sample parameters or files from downstream Service
-requirements. Each case uses its own disposable project, and exceptions, timeouts,
-unhandled Runtime Failure records, and premature process exits fail the check.
-Cases remain frozen while source is repaired. Reusing an existing Pipeline also reruns
-its entry scenarios. Public inputs are saved beside the source in `.contract.json` and
-referenced by `routes.toml`; inferred internal requirements do not replace this boundary.
-
-An entry scenario is a smoke check. Every Interface must also declare a required
-`kind: "behavior"` command using the framework's unittest driver, plus named `cases`
-mapping test methods to requirements. Plans missing these checks are rejected, and
-old smoke-only passes are invalidated. The driver is available directly:
-
-```bash
-python -m ai_pod_cli.behavior_tests tests/test_behavior.py
-```
-
-Each test uses a real registered route and `self.assert*` assertions on observed behavior.
-The driver rejects empty tests, missing real route execution, ignored framework failures,
-and tests containing only obviously constant assertions. Bare Python `assert` does not
-count as unittest evidence. Every declared case must execute and pass; a missing or skipped
-case cannot be replaced by another passing test. JSON proof includes per-test execution
-and assertion counts. Acceptance test files are excluded from automatic repair targets.
-
-Python Pod allows up to 10 application repair attempts, including rejected patches,
-and verifies again after every applied repair. Attempts persist across resumes;
-existing plans count their already-applied repairs toward this limit. The default
-scheduler budget is 40 steps so all 10 rounds and the final verification can run.
-
-These are minimum evidence checks, not a proof of complete requirements coverage or
-arbitrary test correctness. The planner must declare meaningful scenarios and expected
-outcomes; reviewers can inspect the frozen cases. Pure exception-only Interface route tests currently
-need a successful route invocation in the same test to satisfy the execution evidence.
-
-Run structure-only inspection:
-
-```bash
-aipod verify --json
-```
-
-A structure-only result is `unverified`, not `passed`.
-
-Run a real command:
-
-```bash
-aipod verify --json -- python -m unittest
-```
-
-Verification records the command, exit code, bounded stdout/stderr, project-local
-traceback locations, repair candidates, and a source fingerprint. A stale pass is reset
-to `pending` when relevant project files change.
-
-## Contracts
-
-Components publish machine-readable inputs and outputs. AIPod validates:
-
-- required fields;
-- scalar and structured types;
-- shared Model paths;
-- nested schemas;
-- Pipeline data flow;
-- runtime values at component boundaries;
-- Service visibility (`Service → Service` is always invalid);
-- deterministic branch merges and bounded repeat traces.
-
-Type, Model, missing-field, and nested-schema conflicts are errors. Similar-but-different
-field names are warnings because semantic similarity is heuristic.
-
-Python Contracts normalize equivalent structured schemas and type annotations before
-checking them. For example, these describe the same list of shared Models:
-
-```python
-{"type": "array", "items": {"model": "modules.models.gameentity.GameEntity"}}
-"List[modules.models.gameentity.GameEntity] — entities in the current frame"
-```
-
-Supported annotations include `List[T]`, `list[T]`, `typing.List[T]`, `Dict[str, T]`,
-`Optional[T]`, `Union[A, B]`, and `T | None`, including nested combinations. Normalization
-preserves Model path capitalization, item schemas, and `required`, `default`, and
-description metadata. Static Pipeline checks, runtime validation and Model
-materialization, and verification samples all use this same representation.
-
-This is a small Contract syntax, not full Python typing or JSON Schema support.
-Unknown legacy type names and unsupported generic tokens such as `Tuple[int, int]`
-remain compatible as type labels; retaining a label does not validate its elements.
-Malformed supported generics and executable type expressions are rejected.
-
-## Native Studio
-
-Install Studio support and open a project:
-
-```bash
-pip install "AIPodCli[studio]"
-aipod studio .
-```
-
-<p align="center">
-  <img src="docs/assets/aipod-studio.png" alt="AIPod Studio" width="920">
-</p>
-
-Studio provides:
-
-- project switching and initialization;
-- Model, Provider, Service, Pipeline, and Interface visualization;
-- AI component creation and visual Pipeline composition;
-- Pod build progress, cancellation, and stage evidence;
-- source inspection;
-- Interface Adapter, lifecycle, permission, and verification inspection;
-- program output and persisted run traces.
-
-## Project structure
-
-```text
-project/
-├── aipod_plan.json          resumable Plan and public Agent state
-├── beans_config.json        Bean registry and Contracts
-├── config.toml              project configuration
-├── routes.toml              route-to-Pipeline registry
-├── requirements.txt         project-specific dependencies
-├── modules/
-│   ├── models/
-│   ├── providers/
-│   └── services/
-├── pipelines/
-├── interfaces/
-│   └── <interface-id>/
-│       ├── interface.json
-│       ├── adapter.py
-│       └── additional Adapter modules and lifecycle files
-├── docs/aipod/              generated human-readable plans
-└── .aipod/runs/             redacted execution traces
-```
-
-## CLI reference
-
-| Command | Purpose | Uses AI |
-|---|---|:---:|
-| `aipod init [--install-deps]` | Initialize a project | No |
-| `aipod pod DESC [--file FILE] [--stage auto|LAYER] [--yes]` | Build or modify a complete Pod | Yes |
-| `aipod create --category TYPE --name NAME --desc DESC` | Generate one component | Yes |
-| `aipod add --category TYPE --name NAME --class-path PATH --desc DESC` | Register existing code | No |
-| `aipod compose CMD [--name ROUTE]` | Generate and register a Pipeline | Yes |
-| `aipod interface list` | List Interface manifests | No |
-| `aipod interface run NAME [--payload JSON] [-- ARGS...]` | Run a frozen Adapter | No |
-| `aipod interface smoke NAME` | Execute Adapter smoke | No |
-| `aipod interface install/uninstall NAME` | Execute declared lifecycle command | No |
-| `aipod run ROUTE --params JSON` | Run one Pipeline route | No |
-| `aipod inspect [TARGET] [NAME] --json` | Read project state | No |
-| `aipod verify --json -- COMMAND...` | Produce runtime and repair evidence | No |
-| `aipod visualize [--output FILE] [--open]` | Export the project graph | No |
-| `aipod studio [PATH]` | Open native Studio | No |
-| `aipod config set/get/remove/list/path` | Manage model configuration | No |
-
-`aipod entry` remains available for legacy standalone entry generation. New Pod projects
-should use Interface Adapters.
-
-## Configuration
-
-Global model configuration is stored outside individual projects. Environment variables
-or a local `.env` override saved values:
-
-```text
-OPENAI_API_KEY
-OPENAI_BASE_URL
-OPENAI_MODEL
-OPENAI_TIMEOUT_SECONDS
-```
-
-The PyPI distribution is named `AIPodCli`; the Python import package is `ai_pod_cli`.
-
-Python and Node.js use the same global model configuration file:
-
-```text
-~/.aipod/config.toml
-
-[env]
-OPENAI_API_KEY = "..."
-OPENAI_BASE_URL = "https://api.openai.com/v1"
-OPENAI_MODEL = "your-model"
-OPENAI_TIMEOUT_SECONDS = "600"
-```
-
-They also share project-level `config.toml` and dot-notation `ConfigStore` access. Process
-environment variables override project `.env`, which overrides global `[env]` values.
-
-## Security and trust boundary
-
-AIPod provides governance, not hostile-code isolation.
-
-- Generated code is checked structurally and executed in disposable project copies before
-  freezing.
-- Adapter code can see routes but is prohibited from importing Services or runtime
-  internals.
-- Service code can see Models and Providers but is prohibited from importing, injecting,
-  constructing, or invoking another Service.
-- Generated lifecycle files must be reviewed before changing system integration.
-- The final application is ordinary Python and runs with the current user's permissions.
-- Third-party packages and remote model providers remain separate trust boundaries.
-
-Do not treat generated code as safe for production without review, platform permissions,
-and deployment isolation appropriate to the application.
-
-## Current boundaries
-
-- Synchronous code cannot safely force an async Pipeline inside an already-running event
-  loop; async callers must use `PipelineRunner.run_async()`.
-- Stream processing is in-process and bounded, but durable offsets, distributed workers,
-  and exactly-once delivery remain responsibilities of the selected queue/provider.
-- Parallel execution isolates Context data, but external side effects still require
-  idempotency and transaction design in the application Services.
-- `repeat` is an in-process governed loop. Distributed scheduling, durable checkpoints,
-  and process supervision remain deployment concerns.
-- Contract analysis cannot prove arbitrary Python semantics.
-- Synthetic smoke cannot prove access to real external databases, queues, accounts, or
-  operating-system permissions.
-- Complex platform installation may require explicit manual steps, signing, entitlements,
-  or user approval.
-- Model providers may time out or truncate large generations; Pod state remains resumable.
-
-## Development
-
-### Node.js subproject
-
-An initial TypeScript implementation lives in [`aipod-node/`](aipod-node/). It provides
-the governed Runtime foundation—Service isolation, Contracts, sequential and parallel
-Pipelines, `repeat`, async streams, and route dispatch—plus a resumable five-stage AI
-construction Agent, complete generated-project semantic type checking, a persistent
-HTTP Broker/Worker runtime, CLI, and local browser-based Studio.
-
-```bash
-cd aipod-node
-npm install
-npm test
-```
-
-See [`aipod-node/README.md`](aipod-node/README.md) for its current scope and API.
+### 从源码安装
 
 ```bash
 git clone https://github.com/wangzhongren/ai_pod_cli.git
 cd ai_pod_cli
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[studio]"
-python -m unittest tests.test_runtime
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+
+mkdir ../demo-python
+cd ../demo-python
+aipod init
 ```
 
-Build and validate the package:
+### 配置模型
+
+支持 OpenAI-compatible 接口。填写你实际使用的接口地址和模型名称：
 
 ```bash
-python -m build
-python -m twine check dist/*
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="your-model"
 ```
+
+也可以通过 `aipod config set KEY VALUE` 保存到 `~/.aipod/config.toml`。Python 和 Node 共享这份全局配置。
+
+### 开发与修改
+
+```bash
+aipod pod "开发一个本地待办应用：任务持久化，支持新增、列表和完成，通过 CLI 使用。" --yes
+```
+
+需求较长时可以从文件读取：
+
+```bash
+aipod pod --file requirements.md --yes
+```
+
+修改已有项目，自动判断最早受影响的层：
+
+```bash
+aipod pod "调整 CLI 的输出格式，保留已有任务行为。" --stage auto --yes
+```
+
+也可以明确指定层：
+
+```bash
+aipod pod "调整任务完成规则。" --stage services --yes
+```
+
+指定层之前的产物保持只读；确实需要修改时，仍走 Pod 的审批与转交流程。这里的审批是框架内部协调，不会每次都要求用户确认。
+
+### 查看和运行
+
+```bash
+aipod inspect project --json
+aipod inspect pipelines --json
+aipod interface list
+```
+
+根据实际生成的名称、参数和启动说明运行，例如：
+
+```bash
+aipod run list_tasks --params '{}'
+aipod interface run todo_cli --payload '{"action":"list"}'
+```
+
+`list_tasks`、`todo_cli` 及事件格式只是示例，具体以项目注册信息为准。运行已经生成的应用不需要再次调用 AI，除非应用本身包含 AI 功能。
+
+## Node.js / TypeScript
+
+Node 版本使用相同的 Agent 协作规则，需要 **Node.js 20+**。在仓库根目录执行：
+
+```bash
+cd aipod-node
+npm ci
+npm run build
+
+npm run cli -- init ../../demo-node
+npm run cli -- pod "开发一个有类型契约的问候服务、路由和 CLI 入口。" --project-root ../../demo-node
+npm run cli -- inspect ../../demo-node
+```
+
+完整命令、运行时示例和版本差异见 [Node README](aipod-node/README.md)。
+
+| 内容 | Python | Node |
+|---|---|---|
+| 组件代码 | Python | TypeScript / JavaScript |
+| Model | Pydantic / SQLModel | TypeScript 数据声明 |
+| 内置持久化 | SQLModel `ModelRepository` | JSON `ModelRepository` |
+| 组件注册 | `beans_config.json` | `aipod.json` |
+| 路由注册 | `routes.toml` | `aipod.json` |
+| Pod 状态 | `aipod_plan.json` | `.aipod/plan.json` |
+| Studio | 原生窗口，可选依赖 | 本机 Web 页面 |
+
+两个版本共享设计，底层 API 和已有运行时功能并非完全一致。
+
+## 文件权限
+
+| Agent | Python 可写范围 | Node 可写范围 |
+|---|---|---|
+| Model | `modules/models/` | `src/models/` |
+| Provider | `modules/providers/` | `src/providers/` |
+| Service | `modules/services/` | `src/services/` |
+| Pipeline | `pipelines/` | `src/pipelines/` |
+| Interface | `interfaces/`、`app.py` | `src/interfaces/`、`interfaces/` |
+
+每层还可以写自己的 `tests/<layer>/` 和 `docs/<layer>/`。Pod 管理共享配置、依赖及 `tests/pod/`、`docs/pod/`；运行时注册信息和 Pod 状态由控制器更新，Agent 不直接写这些文件。
+
+文件工具和 shell 受同一套写入范围约束。路径穿越、指向其他层的符号链接写入和硬链接绕过都会被拒绝。
+
+- **macOS**：使用系统 `sandbox-exec` 执行写权限限制。
+- **Linux**：需要可运行的 `bubblewrap`。新的共享根文件应先通过文件工具创建，再交给 shell 修改。
+- **原生 Windows**：目前不支持这一受限 shell 执行方式；可使用具备 bubblewrap 的 Linux 环境。
+
+缺少权限执行后端时会报错，不会自动切换成无约束 shell。这是开发期的文件写入边界，不是恶意代码的完整安全隔离，也不限制交付应用在正常启动后的全部行为。
+
+## 检查、临时数据与恢复
+
+Agent 在项目目录运行命令，临时数据和缓存保存在 `.aipod/work/<owner>/`。shell 不继承模型 API 凭据；内置存储使用 Agent 的临时数据位置。自定义外部系统仍需要明确的测试配置。
+
+Agent 修改文件或收到上游更新后，需要重新执行检查再交接。Pod 使用同一套工具做最终检查，也可以编写普通验收测试、运行程序并安排所属 Agent 修复。
+
+默认限制：
+
+- 每次 Agent 调用最多 **40 个动作**。
+- 每次 Pod 运行最多 **10 次修改申请**。
+- shell 默认 **60 秒**，单次最多 **120 秒**，返回有限长度的输出。
+
+失败或中断时保留工作区中的部分改动和状态，不会假装回滚成完整版本。已批准但未完成的修改会继续交给所属 Agent 处理。
+
+你也可以手动运行检查：
+
+```bash
+aipod verify --json
+aipod verify --json -- python -m unittest discover -s tests/services
+```
+
+第一条只做结构检查，结果为 `unverified`。第二条还会执行指定命令；请替换成项目实际使用的测试入口。命令成功是执行证据，不等于完整覆盖了需求。
+
+已有的 `ai_pod_cli.testing.Sandbox`、`component_tests` 和行为测试驱动保留为可选工具，不是新构建流程的前置条件。
+
+## Agent 动作协议
+
+这一协议由框架与模型交互使用，日常使用 CLI 不需要手写。
+
+工具与控制信息使用 JSON：
+
+```json
+{"tool":"read","path":"modules/models/task.py"}
+```
+
+```json
+{"tool":"shell","command":"python -m unittest discover -s tests/services","timeout":60}
+```
+
+```json
+{"tool":"request_change","target":"providers","paths":["modules/providers/store.py"],"reason":"当前 API 无法完成需求中的操作","change":"补充所需操作并保留现有调用兼容性"}
+```
+
+源码创建和更新使用 XML-like / CDATA：
+
+```xml
+<create><path>modules/services/example.py</path><content><![CDATA[
+class Example:
+    def execute(self, ctx):
+        return {"value": 42}
+]]></content></create>
+```
+
+每次响应一个动作。读取长文件时支持 `offset` / `limit`，通过返回的 `next_offset` 继续读取。Agent 结束工作时提交 `finish` 及注册元数据，控制器检查归属和契约后写入注册表。
+
+## Studio
+
+Python 原生 Studio：
+
+```bash
+# 在已克隆的仓库目录安装可选依赖
+python -m pip install -e '.[studio]'
+aipod studio /path/to/project
+```
+
+Node 本机 Web Studio：
+
+```bash
+# 在仓库的 aipod-node 目录执行
+npm run cli -- studio /path/to/project
+```
+
+Studio 提供项目结构、源码、路由、运行记录和 Pod 构建状态查看。
+
+## 开发与验证
+
+在仓库根目录运行 Python 回归：
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+Node 回归：
+
+```bash
+cd aipod-node
+npm ci
+npm test
+```
+
+权限相关测试需要系统允许启动受限子进程。受外层沙盒限制而跳过的项目，应在具备相应权限的本机环境补跑。
+
+更多运行时能力，包括异步、并行、重复和流处理，见 [执行模型](docs/execution.md)。Node 的 Broker/Worker 示例见 [distributed-orders](aipod-node/examples/distributed-orders/README.md)。
 
 ## License
 
