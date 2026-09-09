@@ -18,3 +18,5 @@ export * from "./traces.js";
 export * from "./verification.js";
 export * from "./distributed/index.js";
 export * from "./agent/index.js";
+export * from "./test-sandbox.js";
+export * from "./component-tests.js";

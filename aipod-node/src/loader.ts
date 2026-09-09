@@ -47,7 +47,9 @@ export async function compileProjectSources(projectRoot: string): Promise<string
     const local = relative(sourceRoot, source).replace(/\.ts$/, ".js");
     const target = resolve(outputRoot, local);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, output.outputText);
+    const compiledSource = output.outputText.replace(/(from\s+|import\s*\()(["'])aipod-node\2/g,
+      (_, prefix: string) => `${prefix}${JSON.stringify(new URL("./index.js", import.meta.url).href)}`);
+    await writeFile(target, compiledSource);
   }
   return errors;
 }

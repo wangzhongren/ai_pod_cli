@@ -51,6 +51,9 @@ export async function repairArtifact(
   evidence: string[],
   options: { service?: boolean } = {},
 ): Promise<void> {
+  if (file.startsWith("tests/") || /(?:^|\/)component-tests\.json$/.test(file) || /\.test\.[cm]?[jt]s$/.test(file)) {
+    throw new Error("Repairs cannot modify frozen component tests or their registry");
+  }
   const path = resolve(projectRoot, file);
   const source = await readFile(path, "utf8");
   const raw = await client.complete(

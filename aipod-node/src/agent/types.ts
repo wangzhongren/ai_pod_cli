@@ -11,6 +11,7 @@ export interface ComponentPlan {
   dependencies: string[];
   inputs: Contract;
   outputs: Contract;
+  tests?: { name: string; requirement: string }[];
 }
 
 export interface RoutePlan {
@@ -93,6 +94,7 @@ export interface AgentState {
   };
   history: AgentHistoryItem[];
   revisionScope?: Record<StageName, string[]>;
+  testRevisionToken?: string;
 }
 
 export interface AgentEvent {

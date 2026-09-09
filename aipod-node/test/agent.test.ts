@@ -15,8 +15,26 @@ import {
   type ModelClient,
 } from "../src/index.js";
 
+const scenario = [{ name: "test_behavior", requirement: "Verify the explicitly specified component behavior" }];
+function fixtureTests(system: string): string | undefined {
+  if (!system.startsWith("GENERATE_COMPONENT_TESTS:")) return;
+  const id = system.split("\n")[0]!.split(":")[2]!;
+  const path = JSON.parse(/The path must be exactly ("(?:\\.|[^"\\])*")\./.exec(system)![1]!);
+  const body = id === "User" ? 'const value = await sandbox.model("User", {id:"u1", name:"Ada"}); assert.equal(value.name,"Ada");'
+    : id === "Clock" ? 'assert.ok((await sandbox.callProvider("Clock", "now")) instanceof Date);'
+      : id === "OtherService" ? 'const {result}=await sandbox.run("OtherService", {}); assert.equal(result.status,"success"); if(result.status==="success") assert.equal(result.output.other,true);'
+        : 'const {result}=await sandbox.run("GreetingService", {name:"Ada"}); assert.equal(result.status,"success"); if(result.status==="success") assert.equal(result.output.greeting,"Hello Ada");';
+  return encodeSourceArtifact({path, content: `import {defineComponentTests} from "aipod-node"; export default defineComponentTests([{name:"test_behavior", async run(sandbox, assert){${body}}}]);`});
+}
+function planned(raw: Record<string, unknown>): Record<string, unknown> {
+  if(Array.isArray(raw.components)) for(const component of raw.components as { tests?: unknown }[]) component.tests ??= scenario;
+  return raw;
+}
+
 // Deterministic fixture responses are encoded on the same XML boundary as live output.
 async function xmlFixtureResponse(client: ModelClient, system: string, user: string): Promise<string> {
+  const tests = fixtureTests(system);
+  if (tests) return tests;
   const match = /The path must be exactly ("(?:\\.|[^"\\])*")\./.exec(system);
   assert.ok(match, "generation prompt must supply the exact planned path");
   const response = await client.complete(system, user);
@@ -24,7 +42,7 @@ async function xmlFixtureResponse(client: ModelClient, system: string, user: str
 }
 
 function withXmlFixture(client: ModelClient): ModelClient {
-  return { complete: (system, user) => client.complete(system, user),
+  return { complete: async (system, user) => planned(await client.complete(system, user)),
     completeText: (system, user) => xmlFixtureResponse(client, system, user) };
 }
 
@@ -45,7 +63,7 @@ class FakeClient implements ModelClient {
         summary: "User model",
         components: [{
           id: "User", file: "user.ts", description: "User data",
-          dependencies: [], inputs: {}, outputs: {},
+          dependencies: [], inputs: {}, outputs: {}, tests: scenario,
         }],
       };
     }
@@ -54,7 +72,7 @@ class FakeClient implements ModelClient {
         summary: "Clock provider",
         components: [{
           id: "Clock", file: "clock.ts", description: "Current time",
-          dependencies: [], inputs: {}, outputs: {},
+          dependencies: [], inputs: {}, outputs: {}, tests: scenario,
         }],
       };
     }
@@ -65,7 +83,7 @@ class FakeClient implements ModelClient {
           id: "GreetingService", file: "greeting-service.ts",
           description: "Build a greeting", dependencies: ["Clock"],
           inputs: { name: { type: "string" } },
-          outputs: { greeting: { type: "string" } },
+          outputs: { greeting: { type: "string" } }, tests: scenario,
         }],
       };
     }
@@ -291,7 +309,7 @@ test("cross-file type errors stop a stage before freezing and resume preserves u
     },
   };
   try {
-    await assert.rejects(new ConstructionAgent(root, withXmlFixture(client)).run("Build typed app"), /providers verification failed.*TS2322/);
+    await assert.rejects(new ConstructionAgent(root, withXmlFixture(client)).run("Build typed app"), /TS2322/);
     const failed = await loadState(root, "Build typed app");
     assert.equal(failed.stages.models.status, "complete");
     assert.equal(failed.stages.providers.status, "failed");
@@ -412,7 +430,7 @@ test("construction agent cancels cooperatively before committing a partial stage
         summary: "would create a model",
         components: [{
           id: "Draft", file: "draft.ts", description: "draft",
-          dependencies: [], inputs: {}, outputs: {},
+          dependencies: [], inputs: {}, outputs: {}, tests: scenario,
         }],
       };
     },

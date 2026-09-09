@@ -3,7 +3,8 @@ import { basename, dirname, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 
 import { validateServiceSource } from "../contracts.js";
-import { visibleLedger, type ProjectManifest } from "./project.js";
+import { applyComponents, visibleLedger, type ProjectManifest } from "./project.js";
+import { prepareComponentTests, runComponentTests } from "../component-tests.js";
 import { decodeSourceArtifact, sourceArtifactInstruction } from "./source-codec.js";
 import type {
   ComponentPlan, InterfaceArtifactPlan, InterfacePlan, ModelClient, RoutePlan,
@@ -45,6 +46,7 @@ function validateComponentSource(
   content: string,
 ): string[] {
   const errors = validateTypeScript(content, plan.file);
+  if (/\bTestSandbox\b|\bdefineComponentTests\b/.test(content)) errors.push("Production components cannot import or invoke the test SDK");
   if (!new RegExp(`\\b${plan.id}\\b`).test(content)) errors.push(`Source does not export '${plan.id}'`);
   if (stage === "models" && !/export\s+(?:interface|type|class)\s+/.test(content)) {
     errors.push("Model must export an interface, type, or class");
@@ -67,12 +69,14 @@ async function generateComponent(
   stage: Extract<StageName, "models" | "providers" | "services">,
   plan: ComponentPlan,
   project: ProjectManifest,
+  frozenTests: string,
+  priorEvidence: string[] = [],
 ): Promise<Artifact> {
   const directory = stage;
   const path = `src/${directory}/${basename(plan.file)}`;
   const visibility = JSON.stringify(visibleLedger(project, stage), null, 2);
   if (!client.completeText) throw new Error("ModelClient.completeText is required for XML-like source generation");
-  let evidence: string[] = [];
+  let evidence: string[] = priorEvidence;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const rules = stage === "services"
       ? "The Service cannot import, inject, instantiate, resolve, or execute another Service or PipelineRunner. It may use only its Contract, type-only Model imports, and declared Provider dependencies. Export one class whose optional constructor receives one dependency object keyed by exact Provider IDs and whose execute(context) returns its declared outputs."
@@ -81,7 +85,7 @@ async function generateComponent(
         : "Generate one infrastructure Provider class. It must not orchestrate Services. Its optional constructor receives one dependency object keyed by exact Provider IDs.";
     const raw = await client.completeText(
       `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nVisible frozen ledger:\n${visibility}\n${sourceArtifactInstruction(path)}`,
-      `Plan:\n${JSON.stringify(plan, null, 2)}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}${stage === "services" ? `\nUse import type { PipelineContext } from "aipod-node" and execute(context: PipelineContext). Inside execute, create const ctx = context.typed(${JSON.stringify(plan.inputs)}, ${JSON.stringify(plan.outputs)}). Use ctx.get for declared inputs, ctx.set for declared outputs, and return ctx.output({...}) to check the complete output. Keep contracts literal for inferred field types; do not cast inputs or outputs to any.` : ""}`,
+      `Plan:\n${JSON.stringify(plan, null, 2)}\nFrozen executable tests (implement their specified behavior; never change, evade or mock these tests):\n${frozenTests}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}${stage === "services" ? `\nUse import type { PipelineContext } from "aipod-node" and execute(context: PipelineContext). Inside execute, create const ctx = context.typed(${JSON.stringify(plan.inputs)}, ${JSON.stringify(plan.outputs)}). Use ctx.get for declared inputs, ctx.set for declared outputs, and return ctx.output({...}) to check the complete output. Keep contracts literal for inferred field types; do not cast inputs or outputs to any.` : ""}`,
     );
     try {
       const artifact = decodeSourceArtifact(raw, path);
@@ -161,11 +165,35 @@ export async function generateArtifacts(
   stage: StageName,
   plan: StagePlan,
   project: ProjectManifest,
+  projectRoot?: string,
+  revisionToken?: string,
 ): Promise<Artifact[]> {
   if (stage === "models" || stage === "providers" || stage === "services") {
-    return Promise.all((plan.components ?? []).map((item) =>
-      generateComponent(client, stage, item, project)
-    ));
+    const components = plan.components ?? [];
+    if (!components.length) return [];
+    if (!projectRoot) throw new Error("A project root is required to freeze and execute component tests before implementation");
+    const records = [];
+    const sources: string[] = [];
+    for (const component of components) {
+      const record = await prepareComponentTests(client, projectRoot, stage, component, project, revisionToken);
+      records.push(record); sources.push(await readFile(resolve(projectRoot, record.path), "utf8"));
+    }
+    const candidateProject = structuredClone(project);
+    applyComponents(candidateProject, stage, components);
+    const artifacts = await Promise.all(components.map((item, index) => generateComponent(client, stage, item, project, sources[index]!)));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const evidence = [];
+      for (const record of records) evidence.push(await runComponentTests(projectRoot, candidateProject, record, artifacts));
+      if (evidence.every((errors) => !errors.length)) return artifacts;
+      if (evidence.some((errors) => errors.some((error) => error.includes("TEST_SETUP:") || error.includes("frozen component test was modified")))) {
+        throw new Error(`Component test setup is invalid; implementation repair is forbidden: ${evidence.flat().join("; ")}`);
+      }
+      if (attempt === 2) throw new Error(`Component behavior tests failed: ${evidence.flat().join("; ")}`);
+      for (let index = 0; index < components.length; index += 1) if (evidence[index]!.length) {
+        artifacts[index] = await generateComponent(client, stage, components[index]!, project, sources[index]!, evidence[index]);
+      }
+    }
+    throw new Error("Component tests did not complete");
   }
   if (stage === "pipelines") {
     return (plan.routes ?? []).map((route) => ({

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import {
   commitArtifacts, generateArtifacts, validateArtifacts, validateTypeScript,
@@ -26,7 +27,7 @@ export async function createComponents(
   );
   const errors = validateStagePlan(stage, plan, project);
   if (errors.length) throw new Error(errors.join("; "));
-  const artifacts = await generateArtifacts(client, stage, plan, project);
+  const artifacts = await generateArtifacts(client, stage, plan, project, projectRoot, randomUUID());
   const artifactErrors = validateArtifacts(artifacts);
   if (artifactErrors.length) throw new Error(artifactErrors.join("; "));
   await commitArtifacts(projectRoot, stage, artifacts);

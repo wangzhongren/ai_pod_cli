@@ -6,6 +6,13 @@ import { tmpdir } from "node:os";
 import { ConstructionAgent, decodeSourceArtifact, encodeSourceArtifact, loadState } from "../src/index.js";
 import { generateArtifacts } from "../src/agent/artifacts.js";
 
+const testPlan = [{ name: "test_user_data", requirement: "User accepts an explicit string id" }];
+function userTests(system: string): string | undefined {
+  if (!system.startsWith("GENERATE_COMPONENT_TESTS:")) return;
+  const path = JSON.parse(/The path must be exactly ("(?:\\.|[^"\\])*")\./.exec(system)![1]!);
+  return encodeSourceArtifact({ path, content: 'import {defineComponentTests} from "aipod-node"; export default defineComponentTests([{name:"test_user_data",async run(sandbox,assert){const user=await sandbox.model("User",{id:"u1"});assert.equal(user.id,"u1");}}]);' });
+}
+
 test("source XML preserves quotes, Unicode, line endings, tags, DSML literals and CDATA terminators", () => {
   const samples = [
     'export const value = "中文 😀 & <tag>";\r\nconst path = "C:\\\\tmp";\r\n',
@@ -59,20 +66,25 @@ test("artifact XML rejects extra actions, path drift, malformed content and unsu
 });
 
 test("component generation retries XML path errors through the text channel", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aipod-codec-tests-"));
+  try {
   let attempts = 0;
   const artifacts = await generateArtifacts({
     complete: async () => { throw new Error("source must never use JSON mode"); },
     completeText: async (system, user) => {
       assert.match(system, /XML-like/);
+      const tests = userTests(system);
+      if (tests) return tests;
       attempts += 1;
       if (attempts === 1) return encodeSourceArtifact({ path: "src/models/other.ts", content: "export interface User {}" });
       assert.match(user, /Artifact path must equal planned path/);
       return encodeSourceArtifact({ path: "src/models/user.ts", content: "export interface User { id: string }\n" });
     },
-  }, "models", { summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {} }] },
-  { schemaVersion: 1, beans: [], routes: [], interfaces: [] });
+  }, "models", { summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {}, tests: testPlan }] },
+  { schemaVersion: 1, beans: [], routes: [], interfaces: [] }, root);
   assert.equal(attempts, 2);
   assert.deepEqual(artifacts, [{ path: "src/models/user.ts", content: "export interface User { id: string }\n" }]);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("Interface delivery files use XML text even when the artifact itself is JSON", async () => {
@@ -94,8 +106,8 @@ test("invalid model XML never commits a candidate file or completes its stage", 
   let attempts = 0;
   try {
     await assert.rejects(new ConstructionAgent(root, {
-      complete: async () => ({ summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {} }] }),
-      completeText: async () => { attempts += 1; return valid + valid; },
+      complete: async () => ({ summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {}, tests: testPlan }] }),
+      completeText: async (system) => { const tests = userTests(system); if (tests) return tests; attempts += 1; return valid + valid; },
     }).run("Generate User"), /exactly one artifact/);
     assert.equal(attempts, 3);
     assert.equal((await loadState(root, "Generate User")).stages.models.status, "failed");

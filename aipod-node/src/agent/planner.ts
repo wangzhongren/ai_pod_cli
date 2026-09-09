@@ -27,6 +27,7 @@ function component(value: unknown): ComponentPlan {
     dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
     inputs: typeof item.inputs === "object" && item.inputs ? item.inputs : {},
     outputs: typeof item.outputs === "object" && item.outputs ? item.outputs : {},
+    tests: Array.isArray(item.tests) ? item.tests.map((test) => ({ name: String(test.name ?? ""), requirement: String(test.requirement ?? "") })) : [],
   };
 }
 
@@ -103,6 +104,10 @@ export function validateStagePlan(
       if (!fileName.test(item.file)) errors.push(`Invalid component file '${item.file}'`);
       if (ids.has(item.id)) errors.push(`Duplicate component '${item.id}'`);
       ids.add(item.id);
+      if (!item.tests?.length || new Set(item.tests.map((test) => test.name)).size !== item.tests.length
+        || item.tests.some((test) => !/^test_[A-Za-z0-9_]+$/.test(test.name) || !test.requirement.trim())) {
+        errors.push(`Component '${item.id}' needs named test_ scenarios and explicit behavior requirements before implementation`);
+      }
       if (stage === "models" && item.dependencies.length) errors.push(`Model '${item.id}' cannot have dependencies`);
       for (const dependency of item.dependencies) {
         const category = known.get(dependency);
@@ -162,7 +167,7 @@ export async function planStage(
       ? "An Interface sees route names and public descriptions only. It never imports Services."
       : "Use only IDs visible in the supplied frozen ledger.";
   const shape = ["models", "providers", "services"].includes(stage)
-    ? '{"summary":"...","components":[{"id":"PascalCase","file":"lowercase.ts","description":"...","dependencies":[],"inputs":{},"outputs":{}}]}'
+    ? '{"summary":"...","components":[{"id":"PascalCase","file":"lowercase.ts","description":"...","dependencies":[],"inputs":{},"outputs":{},"tests":[{"name":"test_explicit_scenario","requirement":"explicit setup, action and expected behavior, including denied/error cases when required"}]}]}'
     : stage === "pipelines"
       ? '{"summary":"...","routes":[{"name":"routeName","description":"...","services":["ServiceId"],"execution":{"mode":"sequential|parallel|repeat"}}]}'
       : '{"summary":"...","interfaces":[{"name":"appCli","file":"app-cli.ts","description":"...","route":"routeName","kind":"cli|web|desktop|worker|consumer","artifacts":[{"path":"interfaces/appCli/install.sh","role":"installer|uninstaller|adapter_module|metadata|resource","format":"shell|json|typescript|text","instruction":"..."}],"lifecycle":{"install":["sh","interfaces/appCli/install.sh"],"uninstall":[]},"permissions":[],"verify":[{"name":"smoke","command":["node","--version"],"timeoutMs":30000,"required":true}]}]}';
@@ -178,7 +183,7 @@ export async function planStage(
     })))}`;
   }
   const raw = await client.complete(
-    `PLAN_STAGE:${stage}\nYou plan exactly one AIPod Node stage. ${rules}\nFrozen visible ledger:\n${visibility}\nAvailable shared project configuration:\n${JSON.stringify(publicConfiguration(configuration), null, 2)}\nReturn strict JSON shaped as ${shape}`,
+    `PLAN_STAGE:${stage}\nYou plan exactly one AIPod Node stage. ${rules}\nEvery new Model, Provider and Service must plan explicit named test scenarios. Tests are written and frozen before implementation; do not invent default users, roles or privileges. Derive fixtures and permission/error expectations from the requirements and contracts.\nFrozen visible ledger:\n${visibility}\nAvailable shared project configuration:\n${JSON.stringify(publicConfiguration(configuration), null, 2)}\nReturn strict JSON shaped as ${shape}`,
     `Objective:\n${objective}\nPrevious public validation evidence:\n${JSON.stringify(evidence)}${revision}`,
   );
   return normalizeStagePlan(stage, raw);

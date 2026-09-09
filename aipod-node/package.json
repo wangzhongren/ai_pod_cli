@@ -1,6 +1,6 @@
 {
   "name": "aipod-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Governed compositional runtime and construction agent for Node.js applications",
   "license": "MIT",
   "type": "module",
@@ -55,10 +55,8 @@
     "distributed-worker"
   ],
   "dependencies": {
+    "@types/node": "^24.0.0",
     "smol-toml": "^1.8.0",
     "typescript": "^5.9.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0"
   }
 }

@@ -17,6 +17,7 @@ import { addBean, composeRoutes, createComponents } from "./operations.js";
 import type { Contract } from "./contracts.js";
 import { startStudio } from "./studio.js";
 import { runVerificationCommand } from "./verification.js";
+import { verifyComponentTests } from "./component-tests.js";
 import {
   DistributedStreamPublisher, DistributedWorker, HttpStreamTransport,
   startStreamBroker,
@@ -186,6 +187,8 @@ async function verify(): Promise<void> {
     validation: { valid: boolean; issues: unknown[] };
   };
   const evidence = [...model.validation.issues];
+  const componentEvidence = await verifyComponentTests(root, await loadProject(root));
+  evidence.push(...componentEvidence);
   if (!evidence.length) {
     try { await loadRunner(root); } catch (error) {
       evidence.push(error instanceof Error ? error.message : String(error));
@@ -199,6 +202,7 @@ async function verify(): Promise<void> {
   const result = {
     status: evidence.length ? "failed" : check.length ? "passed" : "unverified",
     evidence,
+    componentTests: { status: componentEvidence.length ? "failed" : "passed", evidence: componentEvidence },
     command: commandEvidence,
   };
   console.log(JSON.stringify(result, null, 2));

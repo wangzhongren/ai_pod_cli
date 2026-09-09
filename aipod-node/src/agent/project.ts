@@ -13,6 +13,7 @@ export interface ProjectBean {
   dependencies: string[];
   inputs: Contract;
   outputs: Contract;
+  tests?: { name: string; requirement: string }[];
 }
 
 export interface ProjectManifest {

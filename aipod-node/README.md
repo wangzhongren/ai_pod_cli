@@ -399,3 +399,86 @@ The checker resolves relative `.js` imports back to TypeScript sources and maps
 assignment incompatibilities, Runtime API misuse, exact file/line/column, and diagnostic
 codes. Agent verification, `inspect`, `verify`, and real Route loading all use the same
 semantic check.
+
+## Component tests before implementation
+
+Model, Provider and Service plans must now include explicit scenarios:
+
+```json
+"tests": [
+  {"name":"test_authorized_request","requirement":"An explicitly seeded authorized user succeeds"},
+  {"name":"test_denied_request","requirement":"An explicitly seeded unauthorized user is denied and no rows are written"}
+]
+```
+
+The same generation Agent first writes executable TypeScript tests through the XML
+source protocol, using the frozen specification and the public SDK signatures. It
+does not receive a candidate implementation at this step. The framework validates
+the test source and SDK usage, then stores it at
+`tests/components/<Id>_<spec-hash>.test.ts` with its SHA-256 in
+`.aipod/component-tests.json`. Only then is implementation source generated.
+
+Every candidate runs those same fixed tests in a separate process. Failed behavior
+feeds implementation repair; tests and scenario requirements are not rewritten to
+make a candidate pass. Invalid fixtures or SDK usage stop implementation repair and
+require an explicit test-plan revision. Explicit component creation/revision can
+create a new test version; old test files remain. A retry with the same specification
+reuses the frozen version. Legacy plans without scenarios are replanned, and legacy
+components without executable tests are reported as unverified.
+
+Tests use the stable SDK rather than constructing runtime components themselves:
+
+```typescript
+import { defineComponentTests } from "aipod-node";
+
+export default defineComponentTests([{
+  name: "test_denied_request",
+  async run(sandbox, assert) {
+    await sandbox.seed("users", [{ id: "viewer", role: "viewer" }]);
+    const { result } = await sandbox.run("CreateTicket", {
+      actor_id: "viewer", title: "Example",
+    });
+    assert.equal(result.status, "failure");
+    if (result.status === "failure") assert.equal(result.error.code, "forbidden");
+    assert.equal(await sandbox.count("tickets"), 0);
+  },
+}]);
+```
+
+The role and denial rule above belong to that application's requirement. The SDK
+contains no business authorization policy and never creates users or grants roles.
+
+Each scenario receives its own temporary project, working directory, empty
+`ModelRepository`, and explicit configuration (`config: { ... }`, empty by default).
+Production data, configuration and credentials are not copied. Available methods:
+
+- `seed(collection, rows)` saves explicit rows through the real isolated repository;
+  each row needs an `id`.
+- `run(serviceId, params)` executes a real governed Service and returns `{ result, context }`.
+- `callProvider(id, method, args)` calls a real Provider method.
+- `model(id, data)` checks a real TypeScript interface/type with the compiler, or
+  constructs a runtime Model class using its explicit `constructor(data)`.
+- `rows(collection)`, `count(collection)` and `snapshot()` inspect the isolated store.
+- `path(relativePath)` returns a sandbox path; `writeFile(relativePath, content)`
+  creates a text fixture and returns its path. Fixtures cannot overwrite source,
+  tests, runtime registry or configuration.
+
+Cases may supply `providers: { DependencyProvider: { method() { ... } } }` for
+declared external dependency Providers. The tested target, any Service, and the
+built-in `ModelRepository`/`ConfigStore` cannot be replaced. External connections are
+disabled, and the worker's filesystem permissions restrict writes to its temporary
+project. Custom database/transport Providers need explicit fixtures appropriate to
+their own APIs; the SDK does not invent them.
+
+Tracked assertions are `ok`, `equal`, `notEqual`, `deepEqual`, `notDeepEqual`, `match`,
+`throws` and asynchronous `rejects`. Expected failure results and expected exceptions
+can pass. Empty/skipped scenarios, missing real target calls, absent or obvious
+constant assertions, swallowed assertion failures, changed candidate source or
+configuration, timeouts and early process exit cannot count as successful tests.
+The parent process checks a completion receipt for every declared scenario.
+
+Application verification, resumed construction and `aipod-node verify` rerun frozen
+component tests. Results retain test and implementation hashes in
+`.aipod/component-test-results/`. `verify` still distinguishes these component checks
+from an explicit application verification command. Pipeline and Interface construction
+keep their existing verification flow; this change does not add another runtime layer.

@@ -1,6 +1,7 @@
 import { access, readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import ts from "typescript";
 
 async function walk(directory: string): Promise<string[]> {
@@ -53,6 +54,14 @@ export async function typeCheckProject(
       "aipod-node/*": [resolve(dirname(runtimeTypes), "*")],
     },
   };
+  try {
+    const nodeTypesRoot = dirname(createRequire(import.meta.url).resolve("@types/node/package.json"));
+    options.typeRoots = [resolve(projectRoot, "node_modules/@types"), dirname(nodeTypesRoot)];
+    // Under worker permissions we can read this package, but deliberately cannot
+    // enumerate its parent @types directory. Load Node's declarations explicitly.
+    rootNames.push(resolve(nodeTypesRoot, "index.d.ts"));
+  }
+  catch { /* Caller-installed type packages remain available through normal resolution. */ }
   const program = ts.createProgram({ rootNames, options });
   return ts.getPreEmitDiagnostics(program).map((diagnostic) => {
     const position = diagnostic.file && diagnostic.start !== undefined

@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { verifyComponentTests } from "../component-tests.js";
 
 import { validateServiceSource } from "../contracts.js";
 import { smokeInterface, verifyInterface } from "../interface.js";
@@ -118,6 +120,7 @@ export async function verifyProject(
     }
   }
   errors.push(...(await typeCheckProject(projectRoot)).map(formatSemanticDiagnostic));
+  errors.push(...await verifyComponentTests(projectRoot, project));
   return [...new Set(errors)];
 }
 
@@ -186,6 +189,7 @@ export class ConstructionAgent {
       fromStage = requestedStage;
     }
     const state = newState(instruction.trim());
+    state.testRevisionToken = randomUUID();
     const scope = current.status === "complete"
       ? await revisionScope(this.projectRoot, project, fromStage, targets) : undefined;
     if (scope) state.revisionScope = scope;
@@ -223,6 +227,7 @@ export class ConstructionAgent {
         this.onProgress({ stage, action: "planning", message: `Planning ${stage}` });
         await saveState(this.projectRoot, state);
 
+        if (record.plan?.components?.some((component) => !component.tests?.length)) delete record.plan;
         const plan = record.plan ?? await planStage(
           this.client, stage, objective, project, record.evidence,
           configuration,
@@ -260,7 +265,7 @@ export class ConstructionAgent {
         await saveState(this.projectRoot, state);
 
         this.onProgress({ stage, action: "generating", message: `Generating ${stage}` });
-        const artifacts = await generateArtifacts(this.client, stage, plan, project);
+        const artifacts = await generateArtifacts(this.client, stage, plan, project, this.projectRoot, state.testRevisionToken);
         this.#checkCancelled();
         for (const artifact of artifacts) {
           this.onProgress({
@@ -309,6 +314,10 @@ export class ConstructionAgent {
       let evidence = await this.#verifyApplication(project);
       while (evidence.length && state.verification.repairs < 2) {
         this.#checkCancelled();
+        if (evidence.some((item) => /TEST_SETUP:|frozen component test was modified|no frozen executable component tests/.test(item))) {
+          evidence.push("Frozen component tests require explicit test-plan revision; implementation repair was stopped");
+          break;
+        }
         const target = repairTarget(project, evidence);
         if (!target) break;
         if (state.revisionScope && !STAGES.some((stage) => stageEntries(project, stage).some((entry) =>
