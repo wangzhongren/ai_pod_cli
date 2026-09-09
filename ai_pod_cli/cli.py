@@ -18,7 +18,6 @@ from ai_pod_cli.commands.run import handle_run
 from ai_pod_cli.commands.studio import handle_studio
 from ai_pod_cli.commands.visualize import handle_visualize
 from ai_pod_cli.commands.verify import handle_verify
-from ai_pod_cli.commands.utility import handle_utility
 
 
 def main():
@@ -37,7 +36,7 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8")
 
     # init/config 命令不要求 beans_config.json 存在
-    skip_init_cmds = ("init", "config", "studio", "utility")
+    skip_init_cmds = ("init", "config", "studio")
     if len(sys.argv) > 1 and sys.argv[1] not in skip_init_cmds:
         init_config_if_not_exists()
 
@@ -101,7 +100,7 @@ def main():
 
     # 9. inspect
     inspect_parser = subparsers.add_parser("inspect", help="Inspect the project for AI agents")
-    inspect_parser.add_argument("target", nargs="?", default="project", choices=["project", "components", "pipelines", "component", "pipeline", "runs", "run", "utilities", "utility"], help="Project view to inspect")
+    inspect_parser.add_argument("target", nargs="?", default="project", choices=["project", "components", "pipelines", "component", "pipeline", "runs", "run"], help="Project view to inspect")
     inspect_parser.add_argument("name", nargs="?", default="", help="Component, pipeline, or run id")
     inspect_parser.add_argument("--json", action="store_true", help="Print the stable Agent Project Model as JSON")
     inspect_parser.add_argument("--summary", action="store_true", help="Return only compact project counts and validation")
@@ -135,17 +134,6 @@ def main():
     verify_parser.add_argument("--json", action="store_true", help="Emit structured repair evidence")
     verify_parser.add_argument("check", nargs=argparse.REMAINDER, help="Command to run after --, e.g. -- python app.py --smoke")
 
-    utility_parser = subparsers.add_parser("utility", help="Find, read or register globally reusable utility classes")
-    utility_parser.add_argument("action", choices=("list", "read", "write"))
-    utility_parser.add_argument("name", nargs="?", default="")
-    utility_parser.add_argument("--project-root", default=".")
-    utility_parser.add_argument("--query", default="")
-    utility_parser.add_argument("--file", default="", help="Existing Python utility source file")
-    utility_parser.add_argument("--description", default="")
-    utility_parser.add_argument("--cases", default="", help="JSON file containing executable method test cases")
-    utility_parser.add_argument("--expected-sha256", default=None, help="Current hash required when updating an existing utility")
-    utility_parser.add_argument("--verify", nargs=argparse.REMAINDER, help="Caller verification command required for updates")
-
     args = parser.parse_args()
 
     handlers = {
@@ -162,7 +150,6 @@ def main():
         "visualize": handle_visualize,
         "studio": handle_studio,
         "verify": handle_verify,
-        "utility": handle_utility,
     }
     if args.command in {"create", "compose", "pod"} and args.json:
         execute_json_command(args.command, handlers[args.command], args)
@@ -192,8 +179,6 @@ def main():
         handle_studio(args)
     elif args.command == "verify":
         handle_verify(args)
-    elif args.command == "utility":
-        handle_utility(args)
 
 
 def _apply_global_env():

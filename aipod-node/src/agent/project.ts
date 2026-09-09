@@ -3,7 +3,6 @@ import { basename, resolve } from "node:path";
 
 import type { Contract } from "../contracts.js";
 import { analyzePipelineContracts } from "../contracts.js";
-import { listUtilities, type UtilityEntry } from "../utilities.js";
 import type { ComponentPlan, InterfacePlan, RoutePlan, StageName } from "./types.js";
 
 export interface ProjectBean {
@@ -21,9 +20,6 @@ export interface ProjectManifest {
   beans: ProjectBean[];
   routes: (RoutePlan & { file: string })[];
   interfaces: InterfacePlan[];
-  /** Derived construction context; never persisted into aipod.json. */
-  projectRoot?: string;
-  utilities?: UtilityEntry[];
 }
 
 export const manifestPath = (projectRoot: string) => resolve(projectRoot, "aipod.json");
@@ -34,23 +30,19 @@ export async function loadProject(projectRoot: string): Promise<ProjectManifest>
   parsed.beans ??= [];
   parsed.routes ??= [];
   parsed.interfaces ??= [];
-  parsed.projectRoot = resolve(projectRoot);
-  parsed.utilities = await listUtilities(projectRoot);
   return parsed;
 }
 
 export async function saveProject(projectRoot: string, project: ProjectManifest): Promise<void> {
   const target = manifestPath(projectRoot);
   const temporary = `${target}.tmp`;
-  const { projectRoot: _projectRoot, utilities: _utilities, ...manifest } = project;
-  await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(temporary, `${JSON.stringify(project, null, 2)}\n`);
   await rename(temporary, target);
 }
 
 export function visibleLedger(project: ProjectManifest, stage: StageName): Record<string, unknown> {
   if (stage === "interfaces") {
     return {
-      utilities: project.utilities ?? [],
       routes: project.routes.map(({ name, description, execution, services }) => ({
         name, description, execution,
         contract: analyzePipelineContracts(services, project.beans.filter(
@@ -67,7 +59,6 @@ export function visibleLedger(project: ProjectManifest, stage: StageName): Recor
         ? ["model", "provider"]
         : ["service"];
   return {
-    utilities: project.utilities ?? [],
     beans: project.beans
       .filter((bean) => categories.includes(bean.category))
       .filter((bean) => !(stage === "services" && bean.id === "PipelineRunner")),

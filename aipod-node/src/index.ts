@@ -18,4 +18,3 @@ export * from "./traces.js";
 export * from "./verification.js";
 export * from "./distributed/index.js";
 export * from "./agent/index.js";
-export * from "./utilities.js";

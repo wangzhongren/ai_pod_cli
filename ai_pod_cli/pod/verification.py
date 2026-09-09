@@ -208,7 +208,7 @@ def _project_verification_fingerprint() -> str:
     """Hash behavior-relevant project files so stale passes are never reused."""
     paths = [
         path for path in (
-            Path("beans_config.json"), Path("routes.toml"), Path("config.toml"), Path("utility_registry.json"),
+            Path("beans_config.json"), Path("routes.toml"), Path("config.toml"),
         )
         if path.is_file()
     ]
@@ -418,10 +418,6 @@ def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> 
     suggested = result.get("repair", {}).get("suggested_files", [])
     root = Path.cwd().resolve()
     protected = _acceptance_artifact_paths(state)
-    from ai_pod_cli.utility_imports import utility_catalog
-    # Shared libraries have their own hash/caller-verified update transaction.
-    # A one-artifact repair must not silently invalidate every other consumer.
-    protected.update((root / item["path"]).resolve() for item in utility_catalog(root))
     candidates: list[tuple[str, Path]] = []
     for raw_path in suggested:
         candidate = (root / str(raw_path)).resolve()
@@ -435,7 +431,7 @@ def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> 
         ):
             candidates.append((relative, candidate))
     if not candidates:
-        raise RuntimeError("验证失败，但没有 traceback 指向可安全修复的生产 Python 文件；验收文件不可修改，共享工具类须通过注册工具更新")
+        raise RuntimeError("验证失败，但没有 traceback 指向可安全修复的生产 Python 文件；行为验收和测试断言文件不可修改")
 
     relative_path, artifact = candidates[-1]
     source = artifact.read_text(encoding="utf-8")

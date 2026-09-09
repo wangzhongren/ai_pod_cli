@@ -3,7 +3,6 @@ import { basename, dirname, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 
 import { validateServiceSource } from "../contracts.js";
-import { utilityImportIssues } from "../utilities.js";
 import { visibleLedger, type ProjectManifest } from "./project.js";
 import { decodeSourceArtifact, sourceArtifactInstruction } from "./source-codec.js";
 import type {
@@ -44,10 +43,8 @@ function validateComponentSource(
   stage: Extract<StageName, "models" | "providers" | "services">,
   plan: ComponentPlan,
   content: string,
-  project: ProjectManifest,
 ): string[] {
   const errors = validateTypeScript(content, plan.file);
-  errors.push(...utilityImportIssues(content, `src/${stage}/${basename(plan.file)}`, project.utilities ?? []));
   if (!new RegExp(`\\b${plan.id}\\b`).test(content)) errors.push(`Source does not export '${plan.id}'`);
   if (stage === "models" && !/export\s+(?:interface|type|class)\s+/.test(content)) {
     errors.push("Model must export an interface, type, or class");
@@ -78,17 +75,17 @@ async function generateComponent(
   let evidence: string[] = [];
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const rules = stage === "services"
-      ? "The Service cannot import, inject, instantiate, resolve, or execute another Service or PipelineRunner. It may use its Contract, type-only Model imports, declared Provider dependencies and registered pure utility classes via normal imports. Export one class whose optional constructor receives one dependency object keyed by exact Provider IDs and whose execute(context) returns its declared outputs. Reuse relevant registered utility methods to keep this component focused; utilities are not DI dependencies."
+      ? "The Service cannot import, inject, instantiate, resolve, or execute another Service or PipelineRunner. It may use only its Contract, type-only Model imports, and declared Provider dependencies. Export one class whose optional constructor receives one dependency object keyed by exact Provider IDs and whose execute(context) returns its declared outputs."
       : stage === "models"
         ? "Generate a pure typed data declaration with no dependency injection or runtime orchestration."
         : "Generate one infrastructure Provider class. It must not orchestrate Services. Its optional constructor receives one dependency object keyed by exact Provider IDs.";
     const raw = await client.completeText(
-      `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nRegistered utilities are public pure helpers: reuse matching static methods with normal relative imports, never as DI dependencies. Keep domain orchestration and IO in their existing layers.\nVisible frozen ledger:\n${visibility}\n${sourceArtifactInstruction(path)}`,
+      `GENERATE_COMPONENT:${stage}:${plan.id}\nGenerate exactly one TypeScript file. ${rules}\nVisible frozen ledger:\n${visibility}\n${sourceArtifactInstruction(path)}`,
       `Plan:\n${JSON.stringify(plan, null, 2)}\nValidation evidence from the previous attempt:\n${JSON.stringify(evidence)}${stage === "services" ? `\nUse import type { PipelineContext } from "aipod-node" and execute(context: PipelineContext). Inside execute, create const ctx = context.typed(${JSON.stringify(plan.inputs)}, ${JSON.stringify(plan.outputs)}). Use ctx.get for declared inputs, ctx.set for declared outputs, and return ctx.output({...}) to check the complete output. Keep contracts literal for inferred field types; do not cast inputs or outputs to any.` : ""}`,
     );
     try {
       const artifact = decodeSourceArtifact(raw, path);
-      evidence = validateComponentSource(stage, plan, artifact.content, project);
+      evidence = validateComponentSource(stage, plan, artifact.content);
       if (!evidence.length) return artifact;
     } catch (error) {
       evidence = [error instanceof Error ? error.message : String(error)];
@@ -145,13 +142,12 @@ async function generateInterfaceArtifact(
   if (!client.completeText) throw new Error("ModelClient.completeText is required for XML-like source generation");
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const raw = await client.completeText(
-      `GENERATE_INTERFACE_ARTIFACT:${owner.name}:${artifact.path}\nGenerate exactly one ${artifact.format} Artifact for an AIPod Node Interface. Keep it inside the declared path. It may use the Interface's frozen route and registered public pure utilities via normal imports; never import Services or private project internals. Installers must use the active Node executable and establish the project root. ${sourceArtifactInstruction(artifact.path)}`,
-      `Interface:\n${JSON.stringify(owner, null, 2)}\nArtifact:\n${JSON.stringify(artifact, null, 2)}\nVisible routes:\n${JSON.stringify(project.routes.map(({ name, description }) => ({ name, description })))}\nRegistered public utilities:\n${JSON.stringify(project.utilities ?? [])}\nPrevious validation evidence:\n${JSON.stringify(evidence)}`,
+      `GENERATE_INTERFACE_ARTIFACT:${owner.name}:${artifact.path}\nGenerate exactly one ${artifact.format} Artifact for an AIPod Node Interface. Keep it inside the declared path. It may use only the Interface's frozen route; never import Services or project internals. Installers must use the active Node executable and establish the project root. ${sourceArtifactInstruction(artifact.path)}`,
+      `Interface:\n${JSON.stringify(owner, null, 2)}\nArtifact:\n${JSON.stringify(artifact, null, 2)}\nVisible routes:\n${JSON.stringify(project.routes.map(({ name, description }) => ({ name, description })))}\nPrevious validation evidence:\n${JSON.stringify(evidence)}`,
     );
     try {
       const candidate = decodeSourceArtifact(raw, artifact.path);
       evidence = validateArtifactContent(artifact.path, candidate.content);
-      if (artifact.format === "typescript" || artifact.format === "javascript") evidence.push(...utilityImportIssues(candidate.content, artifact.path, project.utilities ?? []));
       if (!evidence.length) return candidate;
     } catch (error) {
       evidence = [error instanceof Error ? error.message : String(error)];

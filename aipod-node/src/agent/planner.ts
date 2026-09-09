@@ -1,7 +1,5 @@
 import type { ProjectManifest } from "./project.js";
 import { visibleLedger } from "./project.js";
-import { callWithUtilityTools } from "./utility-tools.js";
-import { listUtilities } from "../utilities.js";
 import type {
   ComponentPlan, InterfacePlan, ModelClient, RoutePlan, StageName, StagePlan,
 } from "./types.js";
@@ -179,13 +177,9 @@ export async function planStage(
       ...item, file: item.file.split("/").at(-1),
     })))}`;
   }
-  const complete = project.projectRoot
-    ? (system: string, user: string) => callWithUtilityTools(client, project.projectRoot!, system, user)
-    : (system: string, user: string) => client.complete(system, user);
-  const raw = await complete(
+  const raw = await client.complete(
     `PLAN_STAGE:${stage}\nYou plan exactly one AIPod Node stage. ${rules}\nFrozen visible ledger:\n${visibility}\nAvailable shared project configuration:\n${JSON.stringify(publicConfiguration(configuration), null, 2)}\nReturn strict JSON shaped as ${shape}`,
     `Objective:\n${objective}\nPrevious public validation evidence:\n${JSON.stringify(evidence)}${revision}`,
   );
-  if (project.projectRoot) project.utilities = await listUtilities(project.projectRoot);
   return normalizeStagePlan(stage, raw);
 }

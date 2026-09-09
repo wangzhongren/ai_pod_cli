@@ -6,7 +6,6 @@ import { analyzePipelineContracts } from "./contracts.js";
 import { loadProject } from "./agent/project.js";
 import { loadState } from "./agent/state.js";
 import { formatSemanticDiagnostic, typeCheckProject } from "./semantic-check.js";
-import { listUtilities, validateUtilityImports } from "./utilities.js";
 
 export interface ProjectIssue {
   code: string;
@@ -21,7 +20,6 @@ const exists = async (path: string) => {
 export async function inspectProject(projectRoot: string): Promise<Record<string, unknown>> {
   const project = await loadProject(projectRoot);
   const issues: ProjectIssue[] = [];
-  issues.push(...(await validateUtilityImports(projectRoot)).map((message) => ({ code: "utility_validation", message })));
   const categories = new Map(project.beans.map((bean) => [bean.id, bean.category]));
   for (const bean of project.beans) {
     if (!bean.file.startsWith("aipod:") && !await exists(resolve(projectRoot, bean.file))) {
@@ -95,7 +93,6 @@ export async function inspectProject(projectRoot: string): Promise<Record<string
   }
   return {
     projectRoot: resolve(projectRoot),
-    utilities: await listUtilities(projectRoot),
     summary: {
       models: project.beans.filter((bean) => bean.category === "model").length,
       providers: project.beans.filter((bean) => bean.category === "provider").length,

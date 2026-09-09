@@ -12,7 +12,7 @@ def generate_source(
     llm: Callable, system: str, user: str, path: str | Callable[[dict], str], *,
     content_key: str = "code", source_max_tokens: int = DEFAULT_SOURCE_MAX_TOKENS,
     source_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    frozen_metadata: dict | None = None, project_root=".", utility_observations=None, **options,
+    frozen_metadata: dict | None = None, **options,
 ) -> dict:
     """Freeze JSON metadata, then request one source file through text mode.
 
@@ -22,14 +22,9 @@ def generate_source(
     """
     if source_max_tokens < 1 or source_timeout_seconds <= 0:
         raise ValueError("Source token budget and timeout must be positive")
-    from ai_pod_cli.utility_tools import call_with_utility_tools, utility_source_context
-    utility_events = list(utility_observations or [])
-    metadata = frozen_metadata if frozen_metadata is not None else call_with_utility_tools(
-        llm,
+    metadata = frozen_metadata if frozen_metadata is not None else llm(
         system + "\n本轮只返回 JSON 元数据，不生成源码，不要返回 code 或 content 字段。",
-        user, project_root=project_root, source_max_tokens=source_max_tokens,
-        source_timeout_seconds=source_timeout_seconds, on_tool_result=utility_events.append,
-        json_mode=True, **options,
+        user, json_mode=True, **options,
     )
     if not isinstance(metadata, dict):
         raise ValueError("Component metadata must be a JSON object")
@@ -50,7 +45,6 @@ def generate_source(
         "The requirements describe the completed metadata stage; their JSON output "
         "instructions do not apply to this source stage.\n"
         + system
-        + utility_source_context(project_root, observations=utility_events)
         + "\nSOURCE OUTPUT PROTOCOL: Return exactly one XML-like <create> action with "
         "one <path> and one <content>. Put all source inside CDATA. No prose, Markdown, "
         "attributes, extra operands or additional actions. The path must be exactly "

@@ -221,10 +221,6 @@ def load_beans_summary(*, include_services: bool = True) -> str:
         lines.append("")
         lines.append("  【service（有 execute，仅由 Pipeline 可见）】")
         lines.extend(services if services else ["  (无)"])
-    from ai_pod_cli.utility_imports import utility_summary
-    utilities = utility_summary()
-    lines.append("\n  【utility（项目全局共享；普通 import，无需 DI）】")
-    lines.extend(["  " + json.dumps(item, ensure_ascii=False) for item in utilities] or ["  (无)"])
     return "\n".join(lines)
 
 

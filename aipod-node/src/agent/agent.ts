@@ -5,7 +5,6 @@ import { validateServiceSource } from "../contracts.js";
 import { smokeInterface, verifyInterface } from "../interface.js";
 import { formatSemanticDiagnostic, typeCheckProject } from "../semantic-check.js";
 import { loadProjectConfiguration } from "../shared-config.js";
-import { validateUtilityImports } from "../utilities.js";
 import {
   commitArtifacts, generateArtifacts, validateArtifacts, verifyCommittedArtifact,
 } from "./artifacts.js";
@@ -90,7 +89,6 @@ export async function verifyProject(
   project: ProjectManifest,
 ): Promise<string[]> {
   const errors: string[] = [];
-  errors.push(...await validateUtilityImports(projectRoot));
   const categories = new Map(project.beans.map((bean) => [bean.id, bean.category]));
   for (const bean of project.beans) {
     for (const dependency of bean.dependencies) {
