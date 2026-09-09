@@ -276,6 +276,11 @@ class StudioPodService:
         label = str(event.get("label", "Model response"))[:180]
         characters = max(0, int(event.get("characters", 0)))
         event_type = str(event.get("type", "llm_delta"))
+        generation_phase = {"metadata": "生成元数据", "tests": "生成测试", "source": "生成源码"}.get(event.get("generation_phase"))
+        display_label = f"{label} · {generation_phase}" if generation_phase else label
+        attempt = event.get("generation_attempt", 1)
+        if event.get("generation_phase") in {"source", "tests"} and type(attempt) is int and attempt > 1:
+            display_label += f" · XML 格式重试第 {attempt - 1} 次"
         with self._pod_task_lock:
             task = self._pod_tasks.get(build_id)
             if task is None or task["status"] not in {"running", "cancelling"}:
@@ -313,11 +318,11 @@ class StudioPodService:
                     suffix = f"response complete · {characters:,} characters"
                 if event_type in {"llm_started", "llm_completed"}:
                     marker = "●" if event_type == "llm_started" else "✓"
-                    task["logs"].append(f"{marker} {label} · {suffix}")
+                    task["logs"].append(f"{marker} {display_label} · {suffix}")
                     if len(task["logs"]) > 500:
                         del task["logs"][:100]
                 _apply_phase_progress(task, stage, percent)
-                task["message"] = f"{label} · {suffix}"
+                task["message"] = f"{display_label} · {suffix}"
 
     @staticmethod
     def _pod_task_snapshot(task: dict) -> dict:

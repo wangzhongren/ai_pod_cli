@@ -3,6 +3,7 @@ import unittest
 import io
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from contextlib import redirect_stdout
@@ -19,6 +20,47 @@ from ai_pod_cli.config import init_config_if_not_exists
 
 
 class SourceGenerationTests(unittest.TestCase):
+    def test_progress_distinguishes_metadata_and_source_without_changing_labels(self):
+        events, original_events, labels = [], [], []
+        label = "Generating component 2/2: UserAccount"
+        def llm(_system, _user, **options):
+            labels.append(options["progress_label"])
+            for event_type in ("llm_started", "llm_delta", "llm_completed"):
+                event = {"type": event_type, "label": label,
+                         "characters": 665 if options["json_mode"] else 1469}
+                original_events.append(event)
+                options["progress_callback"](event)
+            return {} if options["json_mode"] else encode_source_artifact("account.py", "class UserAccount: pass\n")
+        result = generate_source(llm, "rules", "build", "account.py",
+                                 progress_label=label, progress_callback=events.append)
+        self.assertIn("UserAccount", result["code"])
+        self.assertEqual(labels, [label, label])
+        self.assertEqual([event["generation_phase"] for event in events], ["metadata"] * 3 + ["source"] * 3)
+        self.assertTrue(all(event["generation_attempt"] == 1 for event in events))
+        self.assertTrue(all("generation_phase" not in event for event in original_events))
+
+    def test_xml_progress_retry_does_not_repeat_metadata_phase(self):
+        events, modes = [], []
+        def llm(_system, _user, **options):
+            modes.append(options["json_mode"])
+            options["progress_callback"]({"type": "llm_started", "label": "Generating component 1/1: Item"})
+            if options["json_mode"]:
+                return {}
+            return "invalid XML" if len(modes) == 2 else encode_source_artifact("item.py", "value = 1\n")
+        generate_source(llm, "rules", "build", "item.py", progress_callback=events.append)
+        self.assertEqual(modes, [True, False, False])
+        self.assertEqual([(event["generation_phase"], event["generation_attempt"]) for event in events],
+                         [("metadata", 1), ("source", 1), ("source", 2)])
+
+    def test_frozen_metadata_emits_only_source_progress(self):
+        events = []
+        def llm(_system, _user, **options):
+            self.assertFalse(options["json_mode"])
+            options["progress_callback"]({"type": "llm_started"})
+            return encode_source_artifact("app.py", "value = 1\n")
+        generate_source(llm, "rules", "build", "app.py", frozen_metadata={}, progress_callback=events.append)
+        self.assertEqual(events, [{"type": "llm_started", "generation_phase": "source", "generation_attempt": 1}])
+
     def test_client_default_timeout_and_explicit_environment_override(self):
         for environment, expected in [({}, 600), ({"OPENAI_TIMEOUT_SECONDS": "45"}, 45)]:
             with patch.dict(os.environ, {"OPENAI_API_KEY": "test", **environment}, clear=True), patch(
@@ -93,11 +135,24 @@ class SourceGenerationTests(unittest.TestCase):
 
     def test_create_command_commits_xml_source_with_json_metadata(self):
         source = "from ai_pod_cli import Model\nclass Sample(Model):\n    value: int = 1\n"
+        test_source = (
+            "import unittest\nfrom ai_pod_cli.testing import Sandbox\n"
+            "class ComponentTests(unittest.TestCase):\n"
+            "    def test_default_value(self):\n"
+            "        with Sandbox() as s:\n"
+            "            item = s.model('Sample', {})\n"
+            "            self.assertEqual(item.value, 1)\n"
+        )
         modes = []
         def llm(*args, **options):
             modes.append(options["json_mode"])
             if options["json_mode"]:
-                return {"dependencies": [], "inputs": {}, "outputs": {}, "extra_deps": []}
+                return {"dependencies": [], "inputs": {}, "outputs": {}, "extra_deps": [],
+                        "tests": [{"name": "test_default_value", "requirement": "Default value is 1"}]}
+            test_path = re.search(r"tests/components/Sample_[a-f0-9]+\.py", args[0])
+            if test_path:
+                self.assertFalse(Path("modules/models/sample.py").exists())
+                return encode_source_artifact(test_path.group(), test_source)
             return encode_source_artifact("modules/models/sample.py", source)
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as tmp:
@@ -112,7 +167,8 @@ class SourceGenerationTests(unittest.TestCase):
                 self.assertEqual(Path("modules/models/sample.py").read_text(), source)
                 beans = json.loads(Path("beans_config.json").read_text())["beans"]
                 self.assertTrue(any(bean["id"] == "Sample" for bean in beans))
-                self.assertEqual(modes, [True, False])
+                self.assertEqual(modes, [True, False, False])
+                self.assertEqual(len(list(Path("tests/components").glob("Sample_*.py"))), 1)
             finally:
                 os.chdir(previous)
 

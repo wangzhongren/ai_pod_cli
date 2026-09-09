@@ -8,11 +8,22 @@ from ai_pod_cli.client import DEFAULT_SOURCE_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
 from ai_pod_cli.source_codec import decode_source_artifact, encode_source_artifact
 
 
+def _progress_options(options: dict, phase: str, attempt: int = 1) -> dict:
+    """Tag stream events without changing the caller's label or transport options."""
+    scoped = dict(options)
+    callback = scoped.get("progress_callback")
+    if callback is not None:
+        def emit(event):
+            callback({**event, "generation_phase": phase, "generation_attempt": attempt})
+        scoped["progress_callback"] = emit
+    return scoped
+
+
 def generate_source(
     llm: Callable, system: str, user: str, path: str | Callable[[dict], str], *,
     content_key: str = "code", source_max_tokens: int = DEFAULT_SOURCE_MAX_TOKENS,
     source_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    frozen_metadata: dict | None = None, **options,
+    frozen_metadata: dict | None = None, source_phase: str = "source", **options,
 ) -> dict:
     """Freeze JSON metadata, then request one source file through text mode.
 
@@ -24,7 +35,7 @@ def generate_source(
         raise ValueError("Source token budget and timeout must be positive")
     metadata = frozen_metadata if frozen_metadata is not None else llm(
         system + "\n本轮只返回 JSON 元数据，不生成源码，不要返回 code 或 content 字段。",
-        user, json_mode=True, **options,
+        user, json_mode=True, **_progress_options(options, "metadata"),
     )
     if not isinstance(metadata, dict):
         raise ValueError("Component metadata must be a JSON object")
@@ -59,7 +70,8 @@ def generate_source(
         "timeout_seconds": source_timeout_seconds,
     }
     for attempt in range(3):
-        raw = llm(source_system, source_user + evidence, json_mode=False, **source_options)
+        raw = llm(source_system, source_user + evidence, json_mode=False,
+                  **_progress_options(source_options, source_phase, attempt + 1))
         try:
             artifact = decode_source_artifact(raw, path)
             if not artifact["content"].strip():

@@ -16,6 +16,51 @@ from pathlib import Path
 from ai_pod_cli.contracts import canonical_contract, normalize_type
 
 
+SAMPLE_REJECTED = "[AIPOD_SAMPLE_REJECTED]"
+def _copy_sandbox_project(project_root: Path, root: Path, *, copy_config: bool = True) -> None:
+    """Copy artifacts without copying the configured or conventional SQLite data files."""
+    import tomlkit
+    from sqlalchemy.engine import make_url
+
+    original_db = None
+    config = project_root / "config.toml"
+    if config.is_file():
+        document = tomlkit.parse(config.read_text(encoding="utf-8"))
+        database = document.get("database", {})
+        url = database.get("url") if isinstance(database, dict) else None
+        if isinstance(url, str) and url.startswith("sqlite"):
+            parsed = make_url(url)
+            if parsed.database and parsed.database != ":memory:":
+                path = Path(parsed.database)
+                original_db = path.resolve() if path.is_absolute() else (project_root / path).resolve()
+    standard_ignore = shutil.ignore_patterns("__pycache__", ".aipod", ".git", ".venv", "venv", "node_modules", "*.db", "*.db-*", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*", ".env", ".env.*")
+    def ignore(folder, names):
+        ignored = set(standard_ignore(folder, names))
+        if not copy_config and Path(folder).resolve() == project_root.resolve():
+            ignored.add("config.toml")
+        if original_db is not None:
+            for name in names:
+                candidate = Path(folder, name).resolve()
+                if candidate == original_db or str(candidate) in {str(original_db) + suffix for suffix in ("-wal", "-shm", "-journal")}:
+                    ignored.add(name)
+        return ignored
+    shutil.copytree(project_root, root, ignore=ignore)
+
+
+def _isolate_sandbox_database(root: Path) -> None:
+    """Override the copied configuration before any generated code is imported."""
+    import tomlkit
+
+    path = root / "config.toml"
+    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
+    database = document.get("database")
+    if not isinstance(database, dict):
+        database = tomlkit.table()
+        document["database"] = database
+    database["url"] = "sqlite:///" + (root / ".aipod-sandbox.sqlite3").resolve().as_posix()
+    path.write_text(tomlkit.dumps(document), encoding="utf-8")
+
+
 def sample_value(name: str, spec) -> object:
     """Return a deterministic, side-effect-free sample for a contract field."""
     lowered = name.lower()
@@ -140,6 +185,10 @@ def materialize_path_fixtures(values: dict, root: str | Path = ".") -> None:
 
 
 def _run(root: Path, payload: dict, timeout: int) -> list[str]:
+    try:
+        _isolate_sandbox_database(root)
+    except Exception:
+        return [f"{SAMPLE_REJECTED} Unable to prepare an isolated sandbox database; verification did not run"]
     payload_path = root / ".aipod_sandbox_payload.json"
     payload_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     helper = r'''
@@ -152,13 +201,19 @@ from ai_pod_cli.config import load_beans
 from ai_pod_cli.container import Pod, build_container
 from ai_pod_cli.context import PipelineContext
 from ai_pod_cli.contracts import validate_contract_data, validate_contract_value
-from ai_pod_cli.sandbox import materialize_path_fixtures, sample_value
+from ai_pod_cli.sandbox import materialize_path_fixtures, sample_value, SAMPLE_REJECTED
+
+def report_exception(kind, error, traceback):
+    if isinstance(error, PermissionError):
+        print(SAMPLE_REJECTED + ' Synthetic execution was denied by PermissionError; authorization is not verified. Use explicit SDK tests; do not weaken source permissions.', file=sys.stderr)
+    else:
+        sys.__excepthook__(kind, error, traceback)
+sys.excepthook = report_exception
 
 payload = json.loads(Path('.aipod_sandbox_payload.json').read_text(encoding='utf-8'))
 beans = load_beans()
 container = build_container(beans)
 ctx = PipelineContext(payload.get('params', {}))
-
 # Services commonly operate on an existing entity selected by an ``*_id``
 # input.  Seed one deterministic row per frozen SQLModel so the sandbox tests
 # real business execution instead of failing immediately on an empty database.
@@ -234,12 +289,16 @@ else:
                 f"{component_id} 运行后没有产生声明的 outputs: {', '.join(missing)}"
             )
 print(json.dumps(ctx.summary(), ensure_ascii=False, default=str))
+Path(sys.argv[1]).write_text('passed', encoding='utf-8')
 '''
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(Path(__file__).resolve().parent.parent), env.get("PYTHONPATH", "")]))
+    receipt = root.parent / ".component-case-completed"
     try:
         completed = subprocess.run(
-            [sys.executable, "-c", helper], cwd=root, env=env,
+            [sys.executable, "-c", helper, str(receipt)], cwd=root, env=env,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=timeout,
         )
@@ -248,6 +307,8 @@ print(json.dumps(ctx.summary(), ensure_ascii=False, default=str))
     if completed.returncode:
         detail = (completed.stderr or completed.stdout).strip()
         return ["沙箱实际运行失败：\n" + detail[-5000:]]
+    if not receipt.is_file() or receipt.read_text(encoding="utf-8") != "passed":
+        return ["沙箱未完成验证，进程提前退出；不能判定通过"]
     return []
 
 
@@ -258,11 +319,14 @@ def verify_component_candidate(
     service_ids: list[str],
     timeout: int = 20,
 ) -> list[str]:
-    """Run only the current candidate after the already accepted service prefix."""
+    """Run the candidate with legacy smoke inputs; authorization denial is inconclusive."""
     project_root = Path(project_root).resolve()
     with tempfile.TemporaryDirectory(prefix="aipod_component_") as tmp:
         root = Path(tmp) / "project"
-        shutil.copytree(project_root, root, ignore=shutil.ignore_patterns("__pycache__", ".aipod"))
+        try:
+            _copy_sandbox_project(project_root, root)
+        except Exception:
+            return [f"{SAMPLE_REJECTED} Unable to copy sandbox artifacts without source database data"]
         modules_init = root / "modules" / "__init__.py"
         modules_init.parent.mkdir(parents=True, exist_ok=True)
         modules_init.touch(exist_ok=True)

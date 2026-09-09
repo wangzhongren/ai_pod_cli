@@ -10,6 +10,9 @@ from ai_pod_cli.source_generation import generate_source
 from ai_pod_cli.config import CONFIG_FILE, MODULES_DIR, load_beans, load_beans_summary, load_config_toml_safe, save_config, append_deps_to_requirements, get_module_path, extract_model_fields, extract_sql_resources
 from ai_pod_cli.validation import repair_feedback, request_repair, validate_component_contract
 from ai_pod_cli.repair import apply_code_patches, can_patch_code, classify_failures, patch_prompt
+from ai_pod_cli.test_generation import (
+    TEST_PLAN_PROMPT, prepare_component_tests, read_frozen_test, verify_frozen_component,
+)
 
 
 def handle_create(args):
@@ -199,6 +202,19 @@ def handle_create(args):
     """
 
     user_content = f"新组件名称: {args.name}\n组件分类: {args.category}\n人类诉求描述: {args.desc}"
+    system_prompt += TEST_PLAN_PROMPT
+    module_dir, class_path = get_module_path(args.category, args.name)
+    source_path = Path(module_dir, f"{args.name.lower()}.py").as_posix()
+    try:
+        frozen_metadata, test_descriptor, test_source = prepare_component_tests(
+            call_llm, system_prompt, user_content, source_path,
+            component={"name": args.name, "category": args.category, "description": args.desc},
+            project_root=Path.cwd(), allow_revision=True, temperature=0.1,
+        )
+        print(f"🧪 测试已冻结：{test_descriptor['path']}")
+    except Exception as error:
+        print(f"❌ 测试准备失败，尚未生成实现：{error}")
+        return
 
     max_attempts = 5
     feedback = ""
@@ -207,8 +223,8 @@ def handle_create(args):
         try:
             if candidate_result is None:
                 result = generate_source(
-                    call_llm, system_prompt, user_content + feedback,
-                    Path(get_module_path(args.category, args.name)[0], f"{args.name.lower()}.py").as_posix(),
+                    call_llm, system_prompt, user_content + feedback + "\n必须通过的冻结测试：\n" + test_source,
+                    source_path, frozen_metadata=frozen_metadata,
                     temperature=0.1,
                 )
             else:
@@ -241,7 +257,18 @@ def handle_create(args):
                         f"依赖 ID '{dependency}' 不存在；必须原样使用组件池中的 ID："
                         + ", ".join(sorted(item for item in known_ids if item))
                     )
+            if not violations:
+                violations.extend(verify_frozen_component(Path.cwd(), {
+                    "id": args.name, "category": args.category, "class_path": class_path,
+                    "file": f"{args.name.lower()}.py", "dependencies": dependencies,
+                    "inputs": inputs, "outputs": outputs, "methods": methods,
+                    "component_test": test_descriptor,
+                }, generated_code))
             if violations:
+                failure_kind = classify_failures(violations)
+                if failure_kind in {"test_setup", "authorization_fixture", "authorization_regression"}:
+                    print("❌ 测试准备或冻结规则失败，停止自动改写实现：" + "；".join(violations))
+                    return
                 if not request_repair(violations, attempt, max_attempts, interactive=not args.json):
                     return
                 failure_kind = classify_failures(violations)
@@ -274,6 +301,7 @@ def handle_create(args):
             return
 
     try:
+        read_frozen_test(Path.cwd(), test_descriptor)
         print(f"🔍 [AI 依赖分析成功] 大模型自动挑选了系统依赖: {dependencies}")
         if args.category == "service":
             print(f"📋 [数据契约] inputs: {list(inputs.keys())}, outputs: {list(outputs.keys())}")
@@ -329,7 +357,7 @@ def handle_create(args):
 
             print(f"⚙️  [配置追加] 已将 {added_count} 个新配置项写入 {CONFIG_TOML}")
 
-        print("🛡️  [生成预检通过] 代码语法、基础安全规则和组件契约均有效")
+        print("🛡️  [生成验证通过] 代码契约及冻结的沙盒测试均通过")
 
         # 物理写入文件（按分类写入不同子目录）
         module_dir, class_path = get_module_path(args.category, args.name)
@@ -356,6 +384,7 @@ def handle_create(args):
             "outputs": outputs,
             "methods": methods,
             "description": f"人类诉求: {args.desc}。技术规格: {ai_spec}",
+            "component_test": test_descriptor,
         }
         if args.category == "model":
             new_bean["fields"] = extract_model_fields(generated_code, args.name)

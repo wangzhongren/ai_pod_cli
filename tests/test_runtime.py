@@ -1,6 +1,7 @@
 """End-to-end tests for the deterministic AIPod runtime."""
 
 import asyncio
+import hashlib
 import json
 import io
 import os
@@ -359,6 +360,7 @@ class RuntimeIntegrationTests(unittest.TestCase):
                         "name": "BrokenService", "category": "service",
                         "description": "Uses MissingState", "depends_on": [],
                         "models": ["modules.models.missing.MissingState"],
+                        "tests": [{"name": "test_state", "requirement": "Uses the declared state"}],
                     }],
                     "pipelines": [], "interfaces": [], "config_additions": {},
                 }
@@ -1339,6 +1341,40 @@ class StudioApiTests(unittest.TestCase):
             self.assertGreaterEqual(providers["percent"], 25)
             self.assertLessEqual(providers["percent"], 39)
 
+    def test_studio_displays_metadata_source_and_xml_retry_as_distinct_steps(self):
+        from ai_pod_cli.source_generation import generate_source
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                init_config_if_not_exists()
+            finally:
+                os.chdir(previous_cwd)
+            api = StudioApi(tmp)
+            with patch("ai_pod_cli.studio_pod.threading.Thread.start"):
+                build_id = api.start_pod_build("build user account")["build_id"]
+            api._record_pod_progress(build_id, "🤖 [2/2] 生成 UserAccount (model)...")
+            label = "Generating component 2/2: UserAccount"
+            def llm(_system, _user, **options):
+                for event_type in ("llm_started", "llm_completed"):
+                    options["progress_callback"]({"type": event_type, "label": options["progress_label"],
+                                                  "characters": 665 if options["json_mode"] else 1469})
+                return {} if options["json_mode"] else encode_source_artifact("account.py", "value = 1\n")
+            generate_source(llm, "rules", "build", "account.py", progress_label=label,
+                            progress_callback=lambda event: api._record_pod_event(build_id, event))
+            task = api.pod_build_status(build_id)["task"]
+            self.assertIn("生成元数据 · response complete · 665 characters", "\n".join(task["logs"]))
+            self.assertIn("生成源码 · response complete · 1,469 characters", "\n".join(task["logs"]))
+            self.assertIn("生成源码", task["message"])
+            self.assertEqual(task["stage"], "models")
+            self.assertGreaterEqual(task["percent"], 10)
+            self.assertLessEqual(task["percent"], 24)
+            api._record_pod_event(build_id, {"type": "llm_started", "label": label,
+                                            "generation_phase": "source", "generation_attempt": 2})
+            retried = api.pod_build_status(build_id)["task"]
+            self.assertIn("生成源码 · XML 格式重试第 1 次", retried["message"])
+            self.assertEqual(retried["stage"], "models")
+
     def test_studio_pod_stage_start_percentages_are_monotonic(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -1958,7 +1994,12 @@ class StudioApiTests(unittest.TestCase):
                         ),
                     ),
                     patch(
-                        "ai_pod_cli.pod.tools.components.verify_component_candidate",
+                        "ai_pod_cli.pod.tools.components.prepare_component_tests",
+                        return_value=({key: value for key, value in generated_response.items() if key != "code"},
+                                      {"path": "tests/components/ErrorCodes_test.py"}, "frozen test"),
+                    ),
+                    patch(
+                        "ai_pod_cli.pod.tools.components.verify_frozen_component",
                         return_value=["sandbox import failed"],
                     ) as runtime_check,
                     patch(
@@ -1992,7 +2033,7 @@ class StudioApiTests(unittest.TestCase):
                     "class_path": "modules.providers.store.Store", "file": "store.py",
                 }
                 with patch(
-                    "ai_pod_cli.pod.tools.components.verify_component_candidate",
+                    "ai_pod_cli.pod.tools.components.verify_frozen_component",
                     return_value=[],
                 ) as runtime_check:
                     checks, violations = verify_reused_components(
@@ -2434,11 +2475,27 @@ class StudioApiTests(unittest.TestCase):
             os.chdir(project)
             try:
                 init_config_if_not_exists()
+                component_test = (
+                    "import unittest\nfrom ai_pod_cli.testing import Sandbox\n"
+                    "class ComponentTests(unittest.TestCase):\n"
+                    "    def test_ok(self):\n"
+                    "        with Sandbox() as s:\n"
+                    "            result = s.run('ExistingService', {})\n"
+                    "            self.assertTrue(result['ok'])\n"
+                )
+                test_path = project / "tests/components/ExistingService_frozen.py"
+                test_path.parent.mkdir(parents=True)
+                test_path.write_text(component_test, encoding="utf-8")
                 config = json.loads((project / "beans_config.json").read_text(encoding="utf-8"))
                 config["beans"].append({
                     "id": "ExistingService", "category": "service",
                     "class_path": "modules.services.existing.ExistingService",
                     "inputs": {}, "outputs": {"ok": "bool"},
+                    "component_test": {
+                        "path": "tests/components/ExistingService_frozen.py",
+                        "sha256": hashlib.sha256(component_test.encode()).hexdigest(),
+                        "required_tests": ["ComponentTests.test_ok"],
+                    },
                 })
                 save_config(config)
                 service = project / "modules/services/existing.py"
@@ -2469,7 +2526,8 @@ class StudioApiTests(unittest.TestCase):
                 plan = {
                     "pod_name": "reuse_test",
                     "reuse_components": ["ExistingService"],
-                    "components": [{"name": "ExistingService", "category": "service", "description": "same"}],
+                    "components": [{"name": "ExistingService", "category": "service", "description": "same",
+                                    "tests": [{"name": "test_ok", "requirement": "Returns ok=True"}]}],
                     "pipelines": [{"name": "existing_route", "instruction": "reuse it",
                                    "inputs": {"probe": "int"},
                                    "verification_cases": [{"name": "actual_entry", "params": {"probe": 7}}]}],

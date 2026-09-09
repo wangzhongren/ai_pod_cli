@@ -387,9 +387,9 @@ locally without requiring an unpublished ActUnit package or a Node process.
 
 Source format failures retry against the frozen metadata. Existing component checks,
 disposable runtime verification and Interface bundle validation still apply. Planning
-and exact-patch repair continue to use JSON. Python generation now normally needs two
-model calls per artifact because its metadata was previously generated with the source;
-this change does not claim a reduction in latency or model cost.
+and exact-patch repair continue to use JSON. New components normally need three
+model calls: metadata, test source, then implementation source. Both source files
+use XML; retries reuse the frozen metadata and tests.
 
 Source requests default to a 65,536-token output budget and a 600-second SDK timeout.
 JSON metadata, planning and patch requests default to 32,768 tokens; the model client
@@ -445,14 +445,70 @@ Validation happens before freezing, not only at the end:
 
 | Layer | Required evidence |
 |---|---|
-| Model | isolated import and class construction |
-| Provider | isolated import, DI construction, declared-method smoke |
-| Service | no Service visibility; DI construction and `execute(ctx)` with Contract-derived input |
+| Model | real model validation and assertions in frozen tests |
+| Provider | real DI and method calls against explicit fixtures in frozen tests |
+| Service | no Service visibility; real execution with explicit test parameters and assertions |
 | Pipeline | isolated execution with explicit real entry parameters before route registration |
 | Interface | every Artifact validated, Adapter package imported, smoke executed |
 
-After all layers complete, every required Interface verification command runs again.
+After all layers complete, frozen component tests and every required Interface verification command run again.
 Optional installation checks remain visible but do not fail runtime proof.
+
+Component planning declares a non-empty `tests` array before implementation:
+
+```json
+{"tests": [{"name": "test_viewer_cannot_create", "requirement": "An active viewer is rejected and no database rows change"}]}
+```
+
+AIPod generates a `unittest.TestCase` named `ComponentTests` using its testing SDK.
+For example, a Service that only permits administrators to create tasks should have
+separate successful-admin and denied-viewer cases. The denied case can look like:
+
+```python
+import unittest
+from ai_pod_cli.testing import Sandbox
+
+class ComponentTests(unittest.TestCase):
+    def test_viewer_cannot_create(self):
+        with Sandbox() as s:
+            s.seed("UserAccount", {"username": "reader", "role": "viewer", "is_active": True})
+            before = s.snapshot()
+            with self.assertRaises(PermissionError):
+                s.run("BugCreateService", {"current_user_username": "reader", "title": "Example"})
+            self.assertEqual(s.snapshot(), before)
+```
+
+Use the actual project's required fields in fixtures and calls. The SDK provides
+`seed`, `model`, `run`, `call_provider`, `rows`, `count`, `snapshot` and `path`.
+Each `with Sandbox(config={}, provider_overrides={})` creates fresh temporary
+configuration, SQLite storage, dependency injection and resource paths. It does
+not infer business data, roles or input values. Only declared dependency Providers
+may be replaced by test doubles; the target, Models and Services run their actual code.
+An expected exception counts as a real component invocation. Missing/skipped cases,
+no target invocation and obvious constant-only assertions fail verification.
+
+Tests are saved before implementation under `tests/components/<ID>_<spec-hash>.py`.
+Their hashes and frozen metadata are recorded in `.aipod/component-tests.json`,
+and the registry records the accepted test descriptor. Source retries and resumes
+reuse the exact tests. Explicit requirement revisions can create a new version;
+previous test files remain available for review. Automatic repair cannot rewrite
+tests to obtain a pass. Fixture or SDK setup errors stop implementation repair and
+require an explicit test-plan revision. Legacy components without tests require
+such a revision before they can pass component reuse verification.
+
+The SDK is available inside the framework's component test worker. The worker runs
+in a disposable project, with isolated test data and a timeout. This is execution
+and data isolation, not an operating-system security boundary for hostile code.
+
+Rerun a component's frozen tests with the same worker:
+
+```bash
+python -m ai_pod_cli.component_tests --project-root . --component BugCreateService
+```
+
+Omit `--component` to run all recorded component tests. The command reports JSON
+results and exits with a nonzero code on failure; the generated test file does not
+need to construct a container or connect to the application's database.
 
 Pipeline planning declares public `inputs` and non-empty `verification_cases`, each with
 a unique `name` and explicit `params`. A default-starting application includes an empty
@@ -487,7 +543,7 @@ scheduler budget is 40 steps so all 10 rounds and the final verification can run
 
 These are minimum evidence checks, not a proof of complete requirements coverage or
 arbitrary test correctness. The planner must declare meaningful scenarios and expected
-outcomes; reviewers can inspect the frozen cases. Pure exception-only tests currently
+outcomes; reviewers can inspect the frozen cases. Pure exception-only Interface route tests currently
 need a successful route invocation in the same test to satisfy the execution evidence.
 
 Run structure-only inspection:

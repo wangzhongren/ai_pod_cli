@@ -17,7 +17,9 @@ from ai_pod_cli.pod.state import save_decision_plan as _save_decision_plan
 from ai_pod_cli.repair import (
     apply_code_patches, can_patch_code, classify_failures, patch_prompt,
 )
-from ai_pod_cli.sandbox import verify_component_candidate
+from ai_pod_cli.test_generation import (
+    TEST_PLAN_PROMPT, prepare_component_tests, read_frozen_test, verify_frozen_component,
+)
 from ai_pod_cli.validation import (
     repair_feedback, request_repair, validate_component_contract,
 )
@@ -43,8 +45,8 @@ def verify_reused_components(
             continue
         candidate = dict(bean)
         candidate.setdefault("file", source_path.name)
-        current = verify_component_candidate(
-            Path.cwd(), candidate, source_path.read_text(encoding="utf-8"), [], timeout=20,
+        current = verify_frozen_component(
+            Path.cwd(), candidate, source_path.read_text(encoding="utf-8"), timeout=30,
         )
         if current:
             violations.extend(f"{component_id}: {item}" for item in current)
@@ -185,6 +187,17 @@ def generate_components(
         """
 
         try:
+            create_prompt += TEST_PLAN_PROMPT
+            module_dir, class_path = get_module_path(category, name)
+            source_path = Path(module_dir, f"{name.lower()}.py").as_posix()
+            frozen_metadata, test_descriptor, test_source = prepare_component_tests(
+                call_llm, create_prompt, f"生成组件: {name}", source_path,
+                component=comp, planned_tests=comp.get("tests", []), project_root=Path.cwd(),
+                allow_revision=getattr(args, "_pod_rebuild_from", None) is not None,
+                temperature=0.1, progress_callback=progress_callback,
+                progress_label=f"Generating component {i}/{len(components)}: {name}",
+            )
+            print(f"   🧪 测试已冻结：{test_descriptor['path']}")
             max_attempts = 5
             feedback = ""
             generated_valid = False
@@ -193,8 +206,8 @@ def generate_components(
                 if candidate_result is None:
                     result = generate_source(
                         call_llm, create_prompt,
-                        f"生成组件: {name}{feedback}",
-                        Path(get_module_path(category, name)[0], f"{name.lower()}.py").as_posix(),
+                        f"生成组件: {name}{feedback}\n以下测试已冻结，必须实现其行为，禁止改写测试：\n{test_source}",
+                        source_path, frozen_metadata=frozen_metadata,
                         temperature=0.1,
                         progress_callback=progress_callback,
                         progress_label=f"Generating component {i}/{len(components)}: {name}",
@@ -268,15 +281,20 @@ def generate_components(
                         "outputs": outputs,
                         "methods": methods,
                         "description": f"{description}。技术规格: {ai_spec}",
+                        "component_test": test_descriptor,
                     }
-                    runtime_violations = verify_component_candidate(
-                        Path.cwd(), candidate_bean, code, [], timeout=20,
+                    runtime_violations = verify_frozen_component(
+                        Path.cwd(), candidate_bean, code, timeout=30,
                     )
                     violations.extend(runtime_violations)
                 evidence = reduce_evidence(violations)
                 stage_record["last_evidence"] = evidence
                 _save_decision_plan(decision_state)
                 if violations:
+                    failure_kind = classify_failures(violations)
+                    if failure_kind in {"test_setup", "authorization_fixture", "authorization_regression"}:
+                        print("   ⛔ 测试准备或冻结规则失败，停止自动改写实现：" + "；".join(violations))
+                        break
                     if request_repair(
                         violations, attempt, max_attempts,
                         interactive=not args.json and not args.yes,
@@ -309,7 +327,7 @@ def generate_components(
                 generated_valid = True
                 stage_record.setdefault("runtime_checks", []).append({
                     "component": name, "status": "passed",
-                    "check": "isolated_import_di_and_smoke",
+                    "check": "frozen_component_tests", "test": test_descriptor,
                 })
                 _save_decision_plan(decision_state)
                 break
@@ -320,6 +338,7 @@ def generate_components(
                 break
 
             # 写入文件（按分类写入不同子目录）
+            read_frozen_test(Path.cwd(), test_descriptor)
             module_dir, class_path = get_module_path(category, name)
             os.makedirs(module_dir, exist_ok=True)
             file_path = os.path.join(module_dir, f"{name.lower()}.py")
@@ -343,6 +362,7 @@ def generate_components(
                 "outputs": outputs,
                 "methods": methods,
                 "description": f"{description}。技术规格: {ai_spec}",
+                "component_test": test_descriptor,
             }
             if category == "model":
                 new_bean["fields"] = extract_model_fields(code, name)

@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from copy import deepcopy
 
 from ai_pod_cli.client import call_llm
 from ai_pod_cli.config import (
@@ -25,6 +26,7 @@ from ai_pod_cli.pod.tools.interfaces import (
 from ai_pod_cli.pod.tools.pipelines import generate_pipelines
 from ai_pod_cli.pipeline_validation import validate_pipeline_inputs
 from ai_pod_cli.project_model import build_project_model
+from ai_pod_cli.test_generation import TEST_PLAN_PROMPT, validate_test_plan
 
 
 
@@ -237,6 +239,8 @@ def _execute_pod_build_tool(args):
     """
 
     stage_record = decision_state["stages"][stage_name]
+    if stage < 3:
+        system_prompt += TEST_PLAN_PROMPT
     if isinstance(stage_record.get("plan"), dict):
         plan = stage_record["plan"]
         print(f"📌 [复用冻结规划] {stage_name} 阶段不再调用规划器。")
@@ -266,7 +270,12 @@ def _execute_pod_build_tool(args):
         _save_decision_plan(decision_state)
 
     planning_errors = []
-    if stage == 3:
+    if stage < 3:
+        for component in plan.get("components", []):
+            planning_errors.extend(
+                f"{component.get('name')}: {error}" for error in validate_test_plan(component.get("tests"))
+            )
+    elif stage == 3:
         for pipe in plan.get("pipelines", []):
             planning_errors.extend(validate_pipeline_inputs(pipe.get("inputs"), pipe.get("verification_cases")))
     elif stage == 4:
@@ -312,7 +321,7 @@ def _execute_pod_build_tool(args):
         raise SystemExit(1)
 
     pod_name = plan.get("pod_name", "unnamed_pod")
-    components = plan.get("components", [])
+    components = deepcopy(plan.get("components", []))
     requested_reuse = [str(item) for item in plan.get("reuse_components", [])]
     pipelines = plan.get("pipelines", [])
     interfaces = plan.get("interfaces", [])

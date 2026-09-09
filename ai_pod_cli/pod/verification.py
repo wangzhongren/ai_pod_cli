@@ -16,7 +16,8 @@ from ai_pod_cli.pod.state import (
     load_decision_plan as _load_decision_plan,
     save_decision_plan as _save_decision_plan,
 )
-from ai_pod_cli.repair import apply_file_patches, file_patch_prompt
+from ai_pod_cli.repair import apply_file_patches, file_patch_prompt, classify_failures
+from ai_pod_cli.test_generation import verify_frozen_component
 from ai_pod_cli.validation import (
     validate_component_contract, validate_entry_contract, validate_entry_imports,
     validate_pipeline_contract,
@@ -218,6 +219,9 @@ def _project_verification_fingerprint() -> str:
             paths.extend(sorted(path for path in directory.rglob("*") if path.is_file()))
     digest = hashlib.sha256()
     digest.update(APPLICATION_PROOF_VERSION.encode("utf-8") + b"\0")
+    digest.update(b"frozen-component-tests.v1\0")
+    if Path(".aipod/component-tests.json").is_file():
+        paths.append(Path(".aipod/component-tests.json"))
     plan_path = Path("aipod_plan.json")
     if plan_path.is_file():
         try:
@@ -240,7 +244,7 @@ def _project_verification_fingerprint() -> str:
 
 
 def _verify_application(desc: str, state: dict, timeout: int | None = None) -> dict:
-    """Execute declared checks and require behavior evidence for every Interface."""
+    """Rerun frozen component tests and require behavior evidence for every Interface."""
     from ai_pod_cli.commands.verify import verify_project
 
     specs = _application_verification_specs(state)
@@ -250,6 +254,37 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
     baseline = verify_project([], timeout=1)
     required_failures = []
     successful_required = []
+    component_checks = []
+    planned = {
+        comp.get("name")
+        for stage in state.get("stages", {}).values()
+        for comp in (stage.get("plan") or {}).get("components", [])
+        if comp.get("tests")
+    }
+    registered = load_beans().get("beans", []) if Path("beans_config.json").is_file() else []
+    for missing in sorted(planned - {bean.get("id") for bean in registered}):
+        component_checks.append({
+            "component": missing, "status": "failed", "source": "",
+            "issues": [f"[AIPOD_TEST_INVALID] Planned component is missing: {missing}"],
+            "failure_kind": "test_setup",
+        })
+    for bean in registered:
+        if not bean.get("component_test") and bean.get("id") not in planned and bean.get("type") != "ai_created":
+            continue
+        module = str(bean.get("class_path", "")).rsplit(".", 1)[0]
+        source_path = Path(*module.split(".")).with_suffix(".py")
+        if not source_path.is_file():
+            issues = [f"Component source missing: {source_path}"]
+        else:
+            candidate = {"file": source_path.name, **bean}
+            issues = verify_frozen_component(Path.cwd(), candidate, source_path.read_text(encoding="utf-8"))
+        component_checks.append({
+            "component": bean.get("id"), "status": "failed" if issues else "passed",
+            "issues": issues, "source": source_path.as_posix(),
+            "failure_kind": classify_failures(issues) if issues else None,
+        })
+        if issues and classify_failures(issues) != "test_setup":
+            suggested_files.append(source_path.as_posix())
     for spec in specs:
         effective_timeout = max(1, int(timeout)) if timeout is not None else spec["timeout"]
         invalid_command = None
@@ -299,7 +334,9 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
     # traceback and diagnostics used by the repair step.
     result = deepcopy(next(iter(required_failures or successful_required), baseline))
     structure_failed = baseline["checks"]["structure"].get("status") == "failed"
-    result["status"] = "failed" if acceptance_issues or required_failures or structure_failed else "passed"
+    component_failed = any(check["status"] == "failed" for check in component_checks)
+    result["status"] = "failed" if acceptance_issues or required_failures or structure_failed or component_failed else "passed"
+    result["checks"]["components"] = component_checks
     result["checks"]["interfaces"] = interface_checks
     result["checks"]["acceptance"] = {
         "status": "failed" if acceptance_issues or any(
@@ -312,6 +349,8 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
     result["repair"]["suggested_files"] = list(dict.fromkeys(suggested_files))
     if acceptance_issues:
         result["repair"]["action"] = "replan_interfaces"
+    if any(check["failure_kind"] == "test_setup" for check in component_checks):
+        result["repair"]["action"] = "review_component_tests"
     latest = _load_decision_plan(desc)
     verification = latest["agent"]["verification"]
     verification["attempts"] = int(verification.get("attempts", 0)) + 1
@@ -322,7 +361,9 @@ def _verify_application(desc: str, state: dict, timeout: int | None = None) -> d
     verification["last_result"] = result
     verification["fingerprint"] = _project_verification_fingerprint()
     verification["proof_version"] = APPLICATION_PROOF_VERSION
-    if acceptance_issues:
+    if result.get("repair", {}).get("action") == "review_component_tests":
+        verification["required_action"] = "review_component_tests"
+    elif acceptance_issues:
         verification["required_action"] = "replan_interfaces"
     else:
         verification.pop("required_action", None)
@@ -415,6 +456,8 @@ def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> 
     result = verification.get("last_result") or {}
     if result.get("repair", {}).get("action") == "replan_interfaces":
         raise RuntimeError("缺少有效行为验收计划；必须重新规划 Interface 验收，不能通过源码修复伪造验收证据")
+    if result.get("repair", {}).get("action") == "review_component_tests":
+        raise RuntimeError("[AIPOD_TEST_SETUP] 冻结测试或测试准备无效；请显式修订测试计划，不能自动修改业务代码或断言")
     suggested = result.get("repair", {}).get("suggested_files", [])
     root = Path.cwd().resolve()
     protected = _acceptance_artifact_paths(state)
@@ -442,6 +485,9 @@ def _repair_current_artifact(desc: str, state: dict, progress_callback=None) -> 
         str(execution.get("stdout", ""))[-8000:],
         str(execution.get("stderr", ""))[-8000:],
     ]
+    for check in checks.get("components", []):
+        if check.get("status") == "failed":
+            evidence.extend(str(item) for item in check.get("issues", []))
     for check in checks.get("interfaces", []):
         if not check.get("required") or check.get("status") == "passed":
             continue

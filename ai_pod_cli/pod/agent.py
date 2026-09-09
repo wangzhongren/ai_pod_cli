@@ -161,6 +161,10 @@ def handle_pod(args):
         stage = _resume_stage(state)
         if stage is None:
             verification = state["agent"]["verification"]
+            if verification.get("required_action") == "review_component_tests":
+                _set_agent_status(desc, "blocked")
+                print("⛔ 组件测试缺失、被修改或准备无效；请显式修订相应层的测试计划后继续。不会自动改写业务代码或测试断言。")
+                raise SystemExit(1)
             if verification.get("required_action") == "replan_interfaces":
                 if acceptance_replans >= 1:
                     _set_agent_status(desc, "blocked")

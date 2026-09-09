@@ -7,6 +7,12 @@ import ast
 
 def classify_failures(violations: list[str]) -> str:
     text = "\n".join(violations).lower()
+    if "[aipod_test_setup]" in text or "[aipod_test_invalid]" in text:
+        return "test_setup"
+    if "[aipod_authorization_regression]" in text:
+        return "authorization_regression"
+    if "[aipod_sample_rejected]" in text:
+        return "authorization_fixture"
     if any(token in text for token in ("modulenotfounderror", "importerror", "cannot import")):
         return "import"
     if any(token in text for token in ("依赖 id", "dependency", "class_path")):
@@ -43,7 +49,33 @@ def patch_prompt(code: str, violations: list[str], failure_kind: str) -> str:
 - 禁止返回 code、dependencies、inputs、outputs 或完整文件。
 - 禁止修改类名、删除主体、顺手重构或改变无关方法。
 - import 错误只修改 import 行或引用该 import 的最小表达式。
+- 不得删除权限拒绝、把授权失败改成 pass、默认提升为管理员或放宽权限条件。
+  合成样本缺少授权身份应修正测试场景，不能修改业务授权规则。
 """
+
+
+def _authorization_guards(code: str) -> list[str]:
+    """Preserve explicit PermissionError exits and the conditions guarding them."""
+    guards = []
+    def visit(node, parents):
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+            target = node.exc.func
+            if (isinstance(target, ast.Name) and target.id == "PermissionError"
+                    or isinstance(target, ast.Attribute) and target.attr == "PermissionError"):
+                conditions = [ast.dump(parent.test, include_attributes=False)
+                              for parent in parents if isinstance(parent, ast.If)]
+                owners = [parent.name for parent in parents
+                          if isinstance(parent, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))]
+                guards.append(repr((owners, conditions)))
+        for child in ast.iter_child_nodes(node):
+            visit(child, [*parents, node])
+    visit(ast.parse(code), [])
+    return sorted(guards)
+
+
+def _preserve_authorization(original: str, updated: str) -> None:
+    if _authorization_guards(original) != _authorization_guards(updated):
+        raise ValueError("自动补丁不得删除或改变 PermissionError 授权条件；请修正测试身份或显式修改权限需求")
 
 
 def apply_code_patches(code: str, patches, class_name: str, failure_kind: str) -> str:
@@ -76,6 +108,7 @@ def apply_code_patches(code: str, patches, class_name: str, failure_kind: str) -
     tree = ast.parse(updated)
     if not any(isinstance(node, ast.ClassDef) and node.name == class_name for node in tree.body):
         raise ValueError(f"补丁不得删除或重命名类 {class_name}")
+    _preserve_authorization(code, updated)
     return updated
 
 
@@ -116,6 +149,7 @@ def apply_file_patches(code: str, patches) -> str:
     missing = sorted(required_symbols - updated_symbols)
     if missing:
         raise ValueError(f"补丁不得删除或重命名现有符号: {missing}")
+    _preserve_authorization(code, updated)
     return updated
 
 

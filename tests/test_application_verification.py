@@ -1,6 +1,7 @@
 """Application acceptance requires executed behavior evidence, never smoke alone."""
 
 from copy import deepcopy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -113,6 +114,53 @@ class ApplicationVerificationTests(unittest.TestCase):
         self.assertEqual(default_interface_verification({"name": "app", "adapter": {}})["kind"], "smoke")
         plan = normalize_interface_plan({"interfaces": [{"name": "legacy"}]})
         self.assertEqual([check["kind"] for check in plan["interfaces"][0]["verify"]], ["smoke"])
+
+    def test_final_verification_reruns_frozen_component_tests_after_source_changes(self):
+        test_source = (
+            "import unittest\nfrom ai_pod_cli.testing import Sandbox\n"
+            "class ComponentTests(unittest.TestCase):\n"
+            "    def test_value(self):\n"
+            "        with Sandbox() as s:\n"
+            "            result = s.model('Value', {})\n"
+            "            self.assertEqual(result.value, 1)\n"
+        )
+        path = "tests/components/Value_frozen.py"
+        self.write(path, test_source)
+        source = "from ai_pod_cli import Model\nclass Value(Model):\n    value: int = 1\n"
+        self.write("modules/models/value.py", source)
+        bean = {
+            "id": "Value", "category": "model", "class_path": "modules.models.value.Value",
+            "file": "value.py", "dependencies": [], "inputs": {}, "outputs": {},
+            "component_test": {"path": path, "sha256": hashlib.sha256(test_source.encode()).hexdigest(),
+                               "required_tests": ["ComponentTests.test_value"]},
+        }
+        self.write("beans_config.json", json.dumps({"beans": [bean]}))
+        state = self.state([self.behavior()])
+        passed, _ = self.run_verification(state)
+        self.assertEqual(passed["status"], "passed", passed)
+        self.write("modules/models/value.py", source.replace("= 1", "= 2"))
+        failed, _ = self.run_verification(state)
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["checks"]["components"][0]["status"], "failed")
+        self.assertIn("modules/models/value.py", failed["repair"]["suggested_files"])
+        self.assertEqual((self.root / path).read_text(), test_source)
+
+    def test_changed_component_test_stops_application_source_repair(self):
+        self.write("modules/models/value.py", "from ai_pod_cli import Model\nclass Value(Model):\n    value: int = 1\n")
+        self.write("tests/components/Value_frozen.py", "pass\n")
+        self.write("beans_config.json", json.dumps({"beans": [{
+            "id": "Value", "category": "model", "class_path": "modules.models.value.Value",
+            "component_test": {"path": "tests/components/Value_frozen.py", "sha256": "original-test-hash"},
+        }]}))
+        state = self.state([self.behavior()])
+        result, _ = self.run_verification(state)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["repair"]["action"], "review_component_tests")
+        state = json.loads((self.root / "aipod_plan.json").read_text())
+        with patch("ai_pod_cli.pod.verification.call_llm") as llm:
+            with self.assertRaisesRegex(RuntimeError, "AIPOD_TEST_SETUP"):
+                _repair_current_artifact("acceptance integration", state)
+            llm.assert_not_called()
 
     def test_smoke_and_plain_runtime_success_cannot_pass_application(self):
         runtime = {**self.smoke("runtime"), "kind": "runtime"}
