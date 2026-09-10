@@ -50,6 +50,8 @@ Model → Provider → Service → Pipeline → Interface
 
 所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。提示词将协议明确为 AIPod 原创的专用文本指令集（AIPod Instruction Set），采用 XML-like 表示语法。Agent 在普通响应正文中输出一条指令，由 AIPod 控制器解析执行并反馈结果。读写文件、shell、上游修改申请和 finish 都使用这一格式；源码和复杂命令放在 CDATA 中，对象使用嵌套标签，列表成员使用 `<item>`。
 
+SDK 参考集中在 [sdk-reference.ts](src/agent/sdk-reference.ts)，随包发布，并按当前层注入系统提示词。它包含准确的依赖注入方式、契约、调用签名、返回结构及最小示例；Interface/Pod 还会收到长驻入口的启动检查说明。历史对话裁剪后参考仍然保留，Agent 优先使用它，缺少具体细节时再查源码。其他章节也可通过 `import { sdkReference } from "aipod-node"` 后调用 `sdkReference("interfaces")` 等方式取得。回归测试会把提示词中的原样示例组成临时项目，完成 TypeScript 检查及真实 SDK 执行。
+
 解析失败返回 `executed: false`、具体 `parse_error`（类别、原因及可定位时的行列和片段）、`format_help` 与 `format_example`。模型会收到针对 DSML 外壳、标签不匹配、CDATA 未闭合等错误的修正说明；损坏的指令不会被猜测执行。执行阶段的错误与解析错误分别反馈。
 
 | Owner | 可写范围 |

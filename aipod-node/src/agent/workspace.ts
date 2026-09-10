@@ -7,6 +7,7 @@ import { STAGES, type ModelClient, type StageName, type ConversationMessage } fr
 import { decodeAction } from "./action-codec.js";
 import { encodeSourceArtifact } from "./source-codec.js";
 import { INSTRUCTION_SET_PROMPT, parseErrorFeedback } from "./instruction-protocol.js";
+import { sdkReference } from "./sdk-reference.js";
 
 export type Owner = StageName | "pod";
 export const DEFAULT_AGENT_MAX_STEPS = 100;
@@ -197,8 +198,9 @@ Create/update files with complete source in CDATA:
 <create><path>src/services/impl/example.ts</path><content><![CDATA[complete source]]></content></create>
 To replace an existing file, use the same fields with update:
 <update><path>src/services/impl/example.ts</path><content><![CDATA[complete replacement source]]></content></update>
-File instructions use project-relative paths. Inspect installed SDK files outside this project with a
-read-only shell command, not an absolute path in the read instruction.
+File instructions use project-relative paths. Use the bundled SDK reference below first. If a
+specific SDK detail is missing, inspect it with a read-only shell command, not an absolute path
+in the read instruction.
 If upstream must change, use:
 <request_change><target>providers</target><paths><item>src/providers/impl/store.ts</item></paths>
 <reason>observed evidence</reason><change>specific correction</change></request_change>
@@ -237,21 +239,7 @@ Every instruction uses XML-like tags, including read, shell, request_change and 
 Keep the tag names exactly as shown above, with the same name in each opening and closing tag.
 Return one complete instruction only. No prose before/after the instruction and no Markdown code fences.
 Use node -e/python -c or a test file for checks; shell here-documents may require unavailable
-system temp permissions.
-Runtime API reference (already available; do not repeatedly rediscover module locations):
-Import PipelineContext, ModelRepository, ConfigStore, service, sequence and loader APIs from aipod-node.
-Provider/Service constructors receive ONE object keyed by dependency IDs, e.g. deps.ModelRepository.
-await repo.save('collection', {...entity}) uses entity.id; optional third argument selects the id field.
-await repo.get('collection', id) returns an object or undefined; list/find/delete are also available.
-Repository generics require Record<string, unknown>; spread typed interfaces into ordinary records
-for save, or use a compatible record type. ConfigStore.get('section.key', default) reads config.
-Service execute(context: PipelineContext) uses context.typed(literalInputs, literalOutputs);
-the typed view has get/set/output. Return ctx.output({...declaredOutputs}).
-Pipeline: export function createPipeline(container: Container) { return service(container, 'ServiceId'); }
-export function createRoute(container: Container) { return {name:'route', pipeline:createPipeline(container)}; }
-Interface/server: const runner = await loadRunner(projectRoot); await runner.run(route, params)
-returns {result, context}. A success result has status='success' and output; a failure has
-status='failure' and error.message. Reuse a loaded runner in a server instead of recompiling per request.`;
+system temp permissions.`;
 const roles: Record<Owner, string> = {
   models: "Export pure TypeScript data interfaces/types/classes. No dependency injection or orchestration.",
   providers: "Export infrastructure classes. Optional constructor accepts an object keyed by declared Provider IDs. Reuse ModelRepository and ConfigStore.",
@@ -266,6 +254,7 @@ export class WorkspaceAgent {
   async run(objective: string, project: unknown, requestChange: (owner: Owner, action: Action) => Promise<Record<string, unknown>>,
     finish: (action: Action, tools: WorkspaceTools) => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
     if (!this.client.completeText) throw new Error("completeText is required for workspace actions");
+    const system = `WORKSPACE_AGENT:${this.tools.owner}\n${INSTRUCTION_PROMPT}\n${roles[this.tools.owner]}\n\n${sdkReference(this.tools.owner)}`;
     const history: {assistant: string; observation: Record<string, unknown>}[] = [];
     const task = { objective, writablePaths: this.tools.paths, temporaryDirectory: this.tools.scratch, project };
     for (let step = 0; step < this.maxSteps; step += 1) {
@@ -274,7 +263,7 @@ export class WorkspaceAgent {
       for (const item of history) conversation.push({role: "assistant", content: item.assistant},
         {role: "user", content: (item.observation.parse_error ? "Instruction parsing failed; nothing was executed:\n" : "Instruction result:\n") + JSON.stringify(item.observation) + "\nUse the AIPod Instruction Set defined above. Correct any rejected instruction before continuing; do not repeat completed work."});
       conversation[conversation.length - 1]!.content += `\nInstructions remaining for this layer: ${this.maxSteps - step}. Finish with registrations after the required implementation and a successful check.`;
-      const raw = await this.client.completeText(`WORKSPACE_AGENT:${this.tools.owner}\n${INSTRUCTION_PROMPT}\n${roles[this.tools.owner]}`, JSON.stringify({ task, history }), conversation);
+      const raw = await this.client.completeText(system, JSON.stringify({ task, history }), conversation);
       if (this.cancelled()) throw new Error("Pod Agent cancelled");
       let action: Action | undefined, result: Record<string, unknown>;
       try {

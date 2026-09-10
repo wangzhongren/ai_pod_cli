@@ -17,6 +17,10 @@ Model → Provider → Service → Pipeline → Interface
 
 每层 Agent 共用一套工具和执行循环。Pod 决定层级调度、处理跨层修改申请，并检查最终交付结果。
 
+SDK 用法随框架集中维护，并按层注入每个 Agent 的系统提示词：Model 获得数据模型说明，Provider/Service 获得配置、存储和依赖注入说明，Pipeline 获得组合与路由说明，Interface/Pod 获得入口加载、返回结构和启动检查说明。常用调用可直接参照提示词；只有缺失的具体细节或实际行为不符时才需要查 SDK 源码。说明始终保留在系统提示词中，不随历史对话裁剪而丢失。
+
+Python 参考位于 [sdk_reference.py](ai_pod_cli/sdk_reference.py)，Node 参考位于 [sdk-reference.ts](aipod-node/src/agent/sdk-reference.ts)。两端分别维护准确的签名和示例，例如 Python 的 `load_manifest()` 返回 `(路径, manifest)`，Node 的 `runner.run()` 返回 `{result, context}`。回归测试直接编译、执行这些示例，覆盖依赖注入、存储、路由和 Interface，检查说明与当前 SDK 是否一致。
+
 > 本文描述 GitHub `main` 分支的新工作区 Agent 流程。本次重构尚未重新发布到 PyPI/npm；使用这一流程请按下面的源码安装方式运行。
 
 [Python 包](https://pypi.org/project/AIPodCli/) · [Node 包](https://www.npmjs.com/package/aipod-node) · [Node 使用说明](aipod-node/README.md) · [执行模型](docs/execution.md)

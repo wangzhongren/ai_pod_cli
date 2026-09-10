@@ -7,6 +7,7 @@ import json
 from ai_pod_cli.workspace import WorkspaceTools, parse_action
 from ai_pod_cli.source_codec import encode_source_artifact
 from ai_pod_cli.instruction_protocol import INSTRUCTION_SET_PROMPT, parse_error_feedback
+from ai_pod_cli.sdk_reference import sdk_reference
 
 DEFAULT_AGENT_MAX_STEPS = 100
 DEFAULT_POD_MAX_STEPS = 200
@@ -38,8 +39,9 @@ To create OR replace a file, preserve complete source in CDATA:
 To replace an existing file, use the same fields with update:
 <update><path>modules/services/impl/example.py</path><content><![CDATA[complete replacement source]]></content></update>
 Read existing files before editing them. read supports offset/limit; follow next_offset until null
-before replacing a whole file. File instructions use project-relative paths. Inspect an installed SDK
-outside this project with a read-only shell command, not an absolute path in the read instruction.
+before replacing a whole file. File instructions use project-relative paths. Use the bundled SDK
+reference below first. If a specific SDK detail is missing, inspect it with a read-only shell
+command, not an absolute path in the read instruction.
 
 When another owner must change files, ask Pod (never edit them yourself):
 <request_change><target>providers</target><paths><item>modules/providers/impl/store.py</item></paths>
@@ -89,23 +91,6 @@ Return one complete instruction only. No prose before/after the instruction and 
 Use python -c/node -e or a test file for checks; shell here-documents may require unavailable
 system temp permissions. Do not weaken ownership rules to work around a failed command.
 
-Runtime API reference (these APIs already exist; do not repeatedly rediscover their locations):
-from ai_pod_cli import Model, PipelineContext
-from sqlmodel import Field
-from injector import inject
-from ai_pod_cli.repository import ModelRepository
-from ai_pod_cli.config_store import ConfigStore
-Models inherit Model (persistent: class Entity(Model, table=True), with Field(primary_key=True)).
-Provider/Service constructors use @inject and type annotations, e.g. repo: ModelRepository.
-repo.save(entity) returns the entity; repo.get(EntityClass, id) returns an entity or None;
-repo.list(EntityClass), repo.find(EntityClass, field=value), repo.delete(entity) are available.
-config.get("section.key", default) reads project config. Repository initializes tables on use.
-Service execute(self, ctx) reads ctx.get("field", default), writes ctx.set("field", value), and may
-return a dict of declared outputs. Python PipelineContext has NO ctx.output() method.
-Pipeline wiring: from ai_pod_cli.container import Pod, build_container; from ai_pod_cli.config import load_beans.
-S = Pod(build_container(load_beans())); return S(ServiceClass).execute_all(ctx) inside run(ctx).
-For multiple Services use (S(First) | S(Second)).execute_all(ctx). Pod is NOT a context manager.
-Interface: from ai_pod_cli.runner import PipelineRunner; PipelineRunner().run(route, params).
 '''
 
 LAYER_PROMPTS = {
@@ -127,7 +112,8 @@ class WorkspaceAgent:
         )
 
     def run(self, objective: str, context: dict, *, request_change, finish) -> dict:
-        system = INSTRUCTION_PROMPT + "\nLayer: " + self.tools.stage + "\n" + LAYER_PROMPTS[self.tools.stage]
+        system = (INSTRUCTION_PROMPT + "\nLayer: " + self.tools.stage + "\n"
+                  + LAYER_PROMPTS[self.tools.stage] + "\n\n" + sdk_reference(self.tools.stage))
         history = []
         initial = {"objective": objective, "writable_paths": self.tools.paths,
                    "temporary_directory": str(self.tools.scratch), "project": context}
