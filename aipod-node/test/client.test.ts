@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpenAICompatibleClient } from "../src/agent/client.js";
+import type { ConversationMessage } from "../src/agent/types.js";
+
+test("workspace conversation preserves executed actions and observations as successive turns", async (context) => {
+  const conversation: ConversationMessage[] = [{role:"user",content:"Build"}, {role:"assistant",content:"<read><path>missing</path></read>"}, {role:"user",content:"File does not exist. Create it."}];
+  context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    assert.deepEqual(body.messages, [{role:"system",content:"XML actions"}, ...conversation]);
+    return Response.json({choices:[{message:{content:"<list/>"},finish_reason:"stop"}]});
+  });
+  const client = new OpenAICompatibleClient({apiKey:"test",model:"test"});
+  assert.equal(await client.completeText("XML actions", "fallback", conversation), "<list/>");
+});
+
+test("empty model responses retry the same request before entering tool history", async (context) => {
+  let attempts = 0;
+  context.mock.method(globalThis, "fetch", async () => Response.json({choices:[{message:{content:++attempts === 1 ? null : "<list/>"},finish_reason:"stop"}]}));
+  const client = new OpenAICompatibleClient({apiKey:"test",model:"test"});
+  assert.equal(await client.completeText("XML actions", "List files"), "<list/>");
+  assert.equal(attempts, 2);
+});
 
 test("text generation sends no JSON mode and preserves the complete XML response", async (context) => {
   const system = "Generate one XML-like create action with CDATA source.";

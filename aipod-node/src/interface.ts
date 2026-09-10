@@ -1,5 +1,5 @@
 import { loadProject } from "./agent/project.js";
-import { loadRunner } from "./loader.js";
+import { loadRunner, compiledSourcePath } from "./loader.js";
 import type { PipelineRunner } from "./runner.js";
 import { runVerificationCommand, type CommandEvidence } from "./verification.js";
 import { resolve } from "node:path";
@@ -39,10 +39,7 @@ export async function loadInterface(
   const definition = project.interfaces.find((item) => item.name === name);
   if (!definition) throw new Error(`Unknown Interface '${name}'`);
   const runner = await loadRunner(projectRoot);
-  const buildFile = definition.file
-    .replace(/^src[\\/]interfaces[\\/]/, ".aipod/build/interfaces/")
-    .replace(/\.ts$/, ".js");
-  const path = resolve(projectRoot, buildFile);
+  const path = compiledSourcePath(projectRoot, definition.file);
   const version = createHash("sha256").update(await readFile(path)).digest("hex");
   const module = await import(`${pathToFileURL(path).href}?v=${version}`) as Record<string, unknown>;
   const className = `${definition.name}Adapter`;

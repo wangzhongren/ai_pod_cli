@@ -22,6 +22,7 @@ class DynamicAIContainerModule(Module):
     def __init__(self, config: dict):
         super().__init__()
         self._config = config
+        self.classes = {}
 
     def configure(self, binder):
         # Ensure the cwd is on sys.path so dynamic imports from modules/ work
@@ -36,6 +37,7 @@ class DynamicAIContainerModule(Module):
             module_path, class_name = bean["class_path"].rsplit(".", 1)
             module = importlib.import_module(module_path)
             cls = getattr(module, class_name)
+            self.classes[bean["id"]] = cls
             binder.bind(cls, to=cls, scope=singleton)
 
 
@@ -61,8 +63,10 @@ def build_container(config: dict) -> Injector:
                 + ", ".join(str(item) for item in hidden)
                 + "; compose them in a Pipeline"
             )
-    container = Injector([DynamicAIContainerModule(config)])
+    module = DynamicAIContainerModule(config)
+    container = Injector([module])
     container._aipod_config = config
+    container._aipod_classes = module.classes
     return container
 
 
@@ -621,12 +625,15 @@ class Pod:
         """Resolve a component from the container and wrap it for pipe chaining."""
         instance = self._container.get(cls)
         config = getattr(self._container, "_aipod_config", {})
-        bean = next(
-            (item for item in config.get("beans", []) if item.get("id") == cls.__name__),
-            {},
-        )
+        classes = getattr(self._container, "_aipod_classes", {})
+        matches = [item for item in config.get("beans", []) if classes.get(item.get("id")) is cls]
+        named = next((item for item in matches if item.get("id") == cls.__name__), None)
+        if len(matches) > 1 and named is None:
+            raise ValueError(f"Multiple registered IDs export {cls.__name__}; use distinct implementation classes")
+        bean = named or (matches[0] if matches else next(
+            (item for item in config.get("beans", []) if item.get("id") == cls.__name__), {}))
         return _ComponentRef(
-            cls.__name__, instance, self._container,
+            bean.get("id", cls.__name__), instance, self._container,
             inputs=bean.get("inputs"), outputs=bean.get("outputs"),
         )
 

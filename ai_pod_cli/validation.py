@@ -153,6 +153,22 @@ def validate_service_helpers(code: str) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
+def _component_source(tree, component):
+    """Include this class and reachable local helpers, not neighboring Services."""
+    functions = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    selected, seen, pending = [component], set(), [component]
+    while pending:
+        current = pending.pop()
+        for node in ast.walk(current):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                name = node.func.id
+                if name in functions and name not in seen:
+                    seen.add(name)
+                    selected.append(functions[name])
+                    pending.append(functions[name])
+    return ast.unparse(ast.Module(body=selected, type_ignores=[]))
+
+
 def validate_component_contract(
     code: str, class_name: str, category: str,
     inputs: dict | None = None, outputs: dict | None = None,
@@ -273,7 +289,7 @@ def validate_component_contract(
             return [f"service 组件 '{class_name}' 必须定义 execute(self, ctx) 方法"]
 
         if inputs is not None or outputs is not None:
-            actual = extract_component_fields(code)
+            actual = extract_component_fields(_component_source(tree, component))
             declared_inputs = set((inputs or {}).keys())
             declared_outputs = set((outputs or {}).keys())
             undeclared_reads = set(actual["reads"]) - declared_inputs

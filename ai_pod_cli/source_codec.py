@@ -72,7 +72,7 @@ def decode_source_artifact(text: str, expected_path: str | None = None) -> dict[
                 start = position + len(marker)
                 end = text.find("]]>", start)
                 if end < 0:
-                    raise ValueError("Incomplete CDATA section")
+                    raise ValueError("Incomplete CDATA section: close with ]]> (not ]]]), then </content>")
                 chunks.append(text[start:end])
                 position = end + 3
             elif text[position] == "<":

@@ -89,4 +89,10 @@ export async function ensureProjectDirectories(projectRoot: string): Promise<voi
     "models", "providers", "services", "pipelines", "interfaces",
     ...["providers", "services"].flatMap((layer) => ["contracts", "impl", "public"].map((area) => `${layer}/${area}`)),
   ].map((directory) => mkdir(resolve(projectRoot, "src", directory), { recursive: true })));
+  // The runtime emits ESM; NodeNext must classify a fresh project's TypeScript the same way.
+  try {
+    await writeFile(resolve(projectRoot, "package.json"), '{"private":true,"type":"module"}\n', { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
 }

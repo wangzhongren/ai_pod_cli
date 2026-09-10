@@ -1,4 +1,7 @@
-import type { ModelClient } from "./types.js";
+import type { ModelClient, ConversationMessage } from "./types.js";
+import { setTimeout as delay } from "node:timers/promises";
+
+class RetryableModelError extends Error {}
 
 export const DEFAULT_JSON_MAX_TOKENS = 32_768;
 export const DEFAULT_SOURCE_MAX_TOKENS = 65_536;
@@ -38,11 +41,22 @@ export class OpenAICompatibleClient implements ModelClient {
     return parseJson(await this.#request(system, user, true));
   }
 
-  async completeText(system: string, user: string): Promise<string> {
-    return this.#request(system, user, false);
+  async completeText(system: string, user: string, conversation?: ConversationMessage[]): Promise<string> {
+    return this.#request(system, user, false, conversation);
   }
 
-  async #request(system: string, user: string, jsonMode: boolean): Promise<string> {
+  async #request(system: string, user: string, jsonMode: boolean, conversation?: ConversationMessage[]): Promise<string> {
+    for (let attempt = 1; ; attempt += 1) {
+      try { return await this.#requestOnce(system, user, jsonMode, conversation); }
+      catch (error) {
+        const transient = error instanceof RetryableModelError || error instanceof TypeError || error instanceof Error && error.name === "AbortError";
+        if (!transient || attempt >= 3) throw error;
+        await delay(500 * attempt);
+      }
+    }
+  }
+
+  async #requestOnce(system: string, user: string, jsonMode: boolean, conversation?: ConversationMessage[]): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS);
     try {
@@ -62,14 +76,17 @@ export class OpenAICompatibleClient implements ModelClient {
             // JSON-mode endpoints can reject requests before generation unless
             // the messages explicitly request JSON, even if they show a schema.
             { role: "system", content: jsonMode ? `${system}\nReturn a strict JSON object.` : system },
-            { role: "user", content: user },
+            ...(conversation ?? [{ role: "user", content: user }]),
           ],
           ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
           temperature: 0.1,
         }),
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`Model request failed (${response.status}): ${await response.text()}`);
+      if (!response.ok) {
+        const ErrorType = response.status === 429 || response.status >= 500 ? RetryableModelError : Error;
+        throw new ErrorType(`Model request failed (${response.status}): ${await response.text()}`);
+      }
       const payload = await response.json() as {
         choices?: { message?: { content?: string }; finish_reason?: string }[];
       };
@@ -77,7 +94,7 @@ export class OpenAICompatibleClient implements ModelClient {
         throw new Error("Model response was truncated (finish_reason=length)");
       }
       const content = payload.choices?.[0]?.message?.content;
-      if (!content) throw new Error("Model response has no content");
+      if (!content?.trim()) throw new RetryableModelError("Model response has no content");
       return content;
     } finally {
       clearTimeout(timeout);

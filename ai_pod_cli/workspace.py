@@ -12,7 +12,7 @@ import sys
 import tempfile
 import time
 
-from ai_pod_cli.source_codec import decode_source_artifact
+from ai_pod_cli.action_codec import decode_action
 
 LAYERS = ("models", "providers", "services", "pipelines", "interfaces")
 SHARED = ("requirements.txt", "pyproject.toml", "config.toml", "README.md", ".venv", "venv", "tests/pod", "docs/pod")
@@ -38,18 +38,7 @@ def path_owner(path: str) -> str | None:
 
 
 def parse_action(raw: str) -> dict:
-    """Source stays XML/CDATA; small tool arguments and finish manifests use JSON."""
-    if not isinstance(raw, str):
-        raise ValueError("Model action must be text")
-    value = raw.strip()
-    if value.startswith("<"):
-        return {"tool": "write", **decode_source_artifact(value)}
-    result = json.loads(value)
-    if not isinstance(result, dict) or not isinstance(result.get("tool"), str):
-        raise ValueError("Return exactly one tool action")
-    if result["tool"] == "write":
-        raise ValueError("File source must use XML/CDATA, not JSON")
-    return result
+    return decode_action(raw)
 
 
 class WorkspaceTools:
@@ -106,6 +95,8 @@ class WorkspaceTools:
         if not target.is_relative_to(self.root) or target != lexical:
             raise PermissionError("Symbolic links cannot cross the file ownership boundary")
         if write:
+            if path in {"beans_config.json", "routes.toml", "aipod_plan.json"}:
+                raise PermissionError("The controller owns registrations/state. Submit components/pipelines/interfaces in <finish>; do not write these files or request_change for them")
             if not any(relative == Path(base) or self.directory_grant(base) and Path(base) in relative.parents for base in self.paths):
                 raise PermissionError(f"{self.stage} cannot modify {path}; request_change must go through Pod")
             if target.is_file() and target.stat().st_nlink != 1:

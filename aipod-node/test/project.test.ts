@@ -16,6 +16,20 @@ import {
   typeCheckProject,
   verifyInterface,
 } from "../src/index.js";
+import { ensureProjectDirectories } from "../src/agent/project.js";
+
+test("fresh projects type-check ESM entry points and preserve existing package metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aipod-esm-init-'));
+  try {
+    await ensureProjectDirectories(root);
+    await writeFile(join(root, 'src/interfaces/entry.ts'), 'export const entry = import.meta.url;\n');
+    assert.deepEqual(await typeCheckProject(root), []);
+    const custom = '{"name":"keep-me","type":"module","scripts":{"custom":"node --version"}}';
+    await writeFile(join(root, 'package.json'), custom);
+    await ensureProjectDirectories(root);
+    assert.equal(await readFile(join(root, 'package.json'), 'utf8'), custom);
+  } finally { await rm(root, {recursive:true, force:true}); }
+});
 
 async function runnableProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "aipod-node-project-"));
@@ -122,6 +136,23 @@ test("project model, dynamic loader, trace, and Interface execute real generated
     assert.equal(await readFile(join(root, "installed.txt"), "utf8"), "installed");
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Interface loading uses the Agent compilation directory without a default build cache", async () => {
+  const root = await runnableProject();
+  const previous = process.env.AIPOD_BUILD_DIR;
+  process.env.AIPOD_BUILD_DIR = join(root, '.agent-build');
+  try {
+    const { adapter } = await loadInterface(root, 'CalculatorCli');
+    const execution = await adapter.start({value:4}) as {context:{get(key:string):unknown}};
+    assert.equal(execution.context.get('value'), 6);
+    await access(join(root, '.agent-build/interfaces/calculator-cli.js'));
+    await assert.rejects(access(join(root, '.aipod/build/interfaces/calculator-cli.js')));
+  } finally {
+    if (previous === undefined) delete process.env.AIPOD_BUILD_DIR;
+    else process.env.AIPOD_BUILD_DIR = previous;
+    await rm(root, {recursive:true, force:true});
   }
 });
 

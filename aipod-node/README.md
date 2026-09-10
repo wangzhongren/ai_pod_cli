@@ -48,7 +48,7 @@ Model → Provider → Service → Pipeline → Interface
              Pod 调度、审批与验收
 ```
 
-所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。源码创建和更新使用 XML-like / CDATA；其他动作及结束时的注册信息使用 JSON。
+所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。Agent 在普通响应正文中输出一条 XML-like 文本指令，由 AIPod 控制器解析执行并反馈结果。读写文件、shell、上游修改申请和 finish 都使用这一格式；源码和复杂命令放在 CDATA 中，对象使用嵌套标签，列表成员使用 `<item>`。
 
 | Owner | 可写范围 |
 |---|---|
@@ -61,8 +61,11 @@ Model → Provider → Service → Pipeline → Interface
 
 其他层的文件保持只读，注册表与 Pod 状态由控制器管理。发现上游问题时，Agent 发出申请：
 
-```json
-{"tool":"request_change","target":"providers","paths":["src/providers/impl/storage/store.ts"],"reason":"已观察到的接口问题","change":"必要的修改及兼容要求"}
+```xml
+<request_change><target>providers</target>
+<paths><item>src/providers/impl/storage/store.ts</item></paths>
+<reason>已观察到的接口问题</reason><change>必要的修改及兼容要求</change>
+</request_change>
 ```
 
 Pod 批准后交给原 Owner 修改，重新检查受影响的中间层，再让申请者继续。申请者不会获得上游写权限。决定与结果保存在 `.aipod/plan.json`，已批准但中断的工作可以续接。

@@ -1,6 +1,7 @@
 """CLI entry point — argparse setup and command dispatch."""
 
 import argparse
+import os
 import sys
 
 from ai_pod_cli.config import init_config_if_not_exists

@@ -104,9 +104,11 @@ export interface AgentEvent {
   artifact?: string;
 }
 
+export interface ConversationMessage { role: "assistant" | "user"; content: string }
+
 export interface ModelClient {
   /** Structured planning and exact-patch repair. */
   complete(system: string, user: string): Promise<Record<string, unknown>>;
   /** Required for source generation; no JSON response mode or parsing. */
-  completeText?(system: string, user: string): Promise<string>;
+  completeText?(system: string, user: string, conversation?: ConversationMessage[]): Promise<string>;
 }

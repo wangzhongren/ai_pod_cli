@@ -74,7 +74,7 @@ export async function compileProjectSources(projectRoot: string): Promise<string
   return errors;
 }
 
-function compiledPath(projectRoot: string, sourceFile: string): string {
+export function compiledSourcePath(projectRoot: string, sourceFile: string): string {
   const sourceRoot = resolve(projectRoot, "src");
   const source = resolve(projectRoot, sourceFile);
   const local = relative(sourceRoot, source);
@@ -83,7 +83,7 @@ function compiledPath(projectRoot: string, sourceFile: string): string {
 }
 
 async function importExport(projectRoot: string, file: string, id: string): Promise<unknown> {
-  const path = compiledPath(projectRoot, file);
+  const path = compiledSourcePath(projectRoot, file);
   const modified = (await stat(path)).mtimeMs;
   const module = await import(`${pathToFileURL(path).href}?v=${modified}`) as Record<string, unknown>;
   const exported = module[id];

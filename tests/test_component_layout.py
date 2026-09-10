@@ -12,6 +12,7 @@ from ai_pod_cli.component_layout import SourceGraph, validate_layout
 from ai_pod_cli.pod.coordinator import PodCoordinator
 from ai_pod_cli.pod.state import load_and_upgrade_plan
 from ai_pod_cli.workspace import WorkspaceTools, LAYERS
+from ai_pod_cli.validation import validate_component_contract
 
 
 class ComponentLayoutTests(unittest.TestCase):
@@ -41,13 +42,21 @@ class ComponentLayoutTests(unittest.TestCase):
         self.assertEqual(validate_layout(self.root, self.beans), [])
         self.write("beans_config.json", json.dumps({"beans": self.beans}))
         script = """import json
-from ai_pod_cli.container import build_container
+from ai_pod_cli.container import build_container, Pod
 from ai_pod_cli import PipelineContext
 from modules.services.public import Calculate
 container = build_container(json.load(open('beans_config.json')))
 ctx = PipelineContext()
 container.get(Calculate).execute(ctx)
 assert ctx.get('total') == 12
+config = json.load(open('beans_config.json'))
+config['beans'][1]['outputs'] = {'total': 'str'}
+try:
+    Pod(build_container(config))(Calculate).execute_all(PipelineContext())
+except ValueError as error:
+    assert 'total' in str(error)
+else:
+    raise AssertionError('A public alias must retain its registered output contract')
 """
         result = subprocess.run([sys.executable, "-c", script], cwd=self.root, capture_output=True, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -104,6 +113,20 @@ assert ctx.get('total') == 12
     def test_legacy_flat_components_still_work(self):
         self.write("modules/services/legacy.py", "class Legacy:\n    def execute(self, ctx): pass\n")
         self.assertEqual(validate_layout(self.root, [{"id": "Legacy", "category": "service", "class_path": "modules.services.legacy.Legacy"}], stage="services"), [])
+
+    def test_colocated_services_keep_separate_fields_and_validate_local_helpers(self):
+        source = '''def read_value(ctx):
+    return ctx.get('value')
+class First:
+    def execute(self, ctx):
+        ctx.set('answer', read_value(ctx))
+class Second:
+    def execute(self, ctx):
+        ctx.set('other', ctx.get('name'))
+'''
+        self.assertEqual(validate_component_contract(source, 'First', 'service', {'value':'int'}, {'answer':'int'}), [])
+        self.assertEqual(validate_component_contract(source, 'Second', 'service', {'name':'str'}, {'other':'str'}), [])
+        self.assertTrue(any("'value'" in issue for issue in validate_component_contract(source, 'First', 'service', {}, {'answer':'int'})))
 
     def test_scaffold_and_scoped_owner_repair_register_public_entry(self):
         for stage in ("providers", "services"):

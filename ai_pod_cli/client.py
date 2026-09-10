@@ -77,6 +77,7 @@ def call_llm(
     timeout_seconds: float | None = None,
     progress_callback: Callable[[dict], None] | None = None,
     progress_label: str = "Model response",
+    conversation: list[dict] | None = None,
 ) -> dict | str:
     """Call the LLM with retry on network errors or invalid JSON.
 
@@ -101,7 +102,7 @@ def call_llm(
         "model": model,
         "messages": [
             {"role": "system", "content": (system_prompt + "\nReturn a strict JSON object.") if json_mode else system_prompt},
-            {"role": "user", "content": user_content},
+            *(conversation if conversation is not None else [{"role": "user", "content": user_content}]),
         ],
         "temperature": temperature,
         "max_tokens": max_tokens if max_tokens is not None else (
@@ -182,6 +183,9 @@ def call_llm(
                     time.sleep(delay)
                     delay *= 2
                 continue
+
+            if not isinstance(raw_content, str) or not raw_content.strip():
+                raise ValueError("Model response has no content")
 
             if json_mode:
                 # 尝试解析 JSON

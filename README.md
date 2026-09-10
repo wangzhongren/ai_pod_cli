@@ -239,35 +239,46 @@ aipod verify --json -- python -m unittest discover -s tests/services
 
 已有的 `ai_pod_cli.testing.Sandbox`、`component_tests` 和行为测试驱动保留为可选工具，不是新构建流程的前置条件。
 
-## Agent 动作协议
+## Agent 指令协议
 
 这一协议由框架与模型交互使用，日常使用 CLI 不需要手写。
 
-工具与控制信息使用 JSON：
-
-```json
-{"tool":"read","path":"modules/models/task.py"}
-```
-
-```json
-{"tool":"shell","command":"python -m unittest discover -s tests/services","timeout":60}
-```
-
-```json
-{"tool":"request_change","target":"providers","paths":["modules/providers/store.py"],"reason":"当前 API 无法完成需求中的操作","change":"补充所需操作并保留现有调用兼容性"}
-```
-
-源码创建和更新使用 XML-like / CDATA：
+Agent 在普通响应正文中输出一条 XML-like 文本指令，AIPod 控制器解析执行并反馈结果。标签名称严格按下列格式书写，源码和复杂 shell 命令放在 CDATA 中：
 
 ```xml
-<create><path>modules/services/example.py</path><content><![CDATA[
+<read><path>modules/models/task.py</path></read>
+```
+
+```xml
+<shell><command><![CDATA[python -m unittest discover -s tests/services]]></command><timeout>60</timeout></shell>
+```
+
+```xml
+<request_change><target>providers</target>
+<paths><item>modules/providers/impl/store.py</item></paths>
+<reason>当前 API 无法完成需求中的操作</reason>
+<change>补充所需操作并保留现有调用兼容性</change></request_change>
+```
+
+```xml
+<create><path>modules/services/impl/example.py</path><content><![CDATA[
 class Example:
     def execute(self, ctx):
         return {"value": 42}
 ]]></content></create>
 ```
 
-每次响应一个动作。读取长文件时支持 `offset` / `limit`，通过返回的 `next_offset` 继续读取。Agent 结束工作时提交 `finish` 及注册元数据，控制器检查归属和契约后写入注册表。
+```xml
+<finish><summary>实现和检查完成</summary>
+<components><item><id>Example</id>
+<class_path>modules.services.public.example.Example</class_path>
+<dependencies/><inputs/><outputs/><methods/></item></components>
+<pipelines/><interfaces/><remove/></finish>
+```
+
+每次响应一条指令。对象使用嵌套标签，列表成员使用 `<item>`；空列表、空对象可使用自闭合标签。支持 `list`、`read`、`search`、`create`、`update`、`delete`、`shell`、`request_change`、`finish`。
+
+读取长文件时通过 `offset` / `limit` 和返回的 `next_offset` 分页。`finish` 的注册信息由控制器验证归属和契约后写入注册表。解析器保留对已观察到的单个 DSML `tool_calls/invoke/parameter` 封装的兼容，但提示词只示范上面的文本指令格式。旧的 JSON 控制动作仅为兼容既有调用保留；注册文件和 HTTP 数据仍按各自的数据格式保存。
 
 ## Studio
 

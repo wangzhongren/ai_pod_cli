@@ -6,7 +6,7 @@ export interface SourceArtifact {
   content: string;
 }
 
-function validCharacters(value: string): void {
+export function validCharacters(value: string): void {
   for (const character of value) {
     const code = character.codePointAt(0)!;
     if (!(code === 9 || code === 10 || code === 13 ||
@@ -16,7 +16,7 @@ function validCharacters(value: string): void {
   }
 }
 
-function decodeEntities(value: string): string {
+export function decodeEntities(value: string): string {
   if (value.includes("]]>")) throw new Error("CDATA terminator must be inside split CDATA sections");
   return value.replace(/&([^;]*);|&/g, (match, entity: string | undefined) => {
     const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
@@ -60,7 +60,7 @@ export function decodeSourceArtifact(text: string, expectedPath?: string): Sourc
       if (marker) {
         const start = position + marker.length;
         const end = text.indexOf("]]>", start);
-        if (end < 0) throw new Error("Incomplete CDATA section");
+        if (end < 0) throw new Error("Incomplete CDATA section: close with ]]> (not ]]]), then </content>");
         value += text.slice(start, end);
         position = end + 3;
       } else if (text[position] === "<") {
