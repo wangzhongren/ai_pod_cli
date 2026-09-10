@@ -1,6 +1,6 @@
 {
   "name": "aipod-node",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Governed compositional runtime and construction agent for Node.js applications",
   "license": "MIT",
   "type": "module",
