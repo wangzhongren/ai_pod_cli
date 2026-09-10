@@ -6,8 +6,11 @@ import { fileURLToPath } from "node:url";
 import { STAGES, type ModelClient, type StageName, type ConversationMessage } from "./types.js";
 import { decodeAction } from "./action-codec.js";
 import { encodeSourceArtifact } from "./source-codec.js";
+import { INSTRUCTION_SET_PROMPT, parseErrorFeedback } from "./instruction-protocol.js";
 
 export type Owner = StageName | "pod";
+export const DEFAULT_AGENT_MAX_STEPS = 100;
+export const DEFAULT_POD_MAX_STEPS = 200;
 export type Action = Record<string, unknown> & { tool: string };
 export interface ShellCheck { command: string; exitCode: number | null; output: string; timedOut: boolean; revision: number }
 export const sharedPaths = ["package.json", "package-lock.json", "config.json", "README.md", "node_modules", "tests/pod", "docs/pod"];
@@ -171,7 +174,7 @@ export class WorkspaceTools {
   }
 }
 
-export const INSTRUCTION_PROMPT = `You develop a shared AIPod project by writing XML-like text instructions.
+export const INSTRUCTION_PROMPT = INSTRUCTION_SET_PROMPT + `You develop a shared AIPod project using this instruction set.
 Choose the next useful instruction yourself. The AIPod controller parses your response text,
 executes that instruction within your permissions, and returns the result as the next message.
 Deliver the current layer, then submit finish so the next owner can continue. Inspect only what
@@ -258,7 +261,7 @@ const roles: Record<Owner, string> = {
   pod: "Coordinate delivery against the original objective. For final review inspect artifacts and run acceptance commands; request corrections from their owning Agents. For assigned shared-file repairs make only the approved change. Never edit layer sources, runtime state, Git or credentials.",
 };
 export class WorkspaceAgent {
-  constructor(readonly client: ModelClient, readonly tools: WorkspaceTools, readonly cancelled = () => false, readonly maxSteps = 40,
+  constructor(readonly client: ModelClient, readonly tools: WorkspaceTools, readonly cancelled = () => false, readonly maxSteps = tools.owner === "pod" ? DEFAULT_POD_MAX_STEPS : DEFAULT_AGENT_MAX_STEPS,
     readonly onAction: (action: Action | undefined, result: Record<string, unknown>) => void | Promise<void> = () => undefined) {}
   async run(objective: string, project: unknown, requestChange: (owner: Owner, action: Action) => Promise<Record<string, unknown>>,
     finish: (action: Action, tools: WorkspaceTools) => Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
@@ -269,7 +272,7 @@ export class WorkspaceAgent {
       if (this.cancelled()) throw new Error("Pod Agent cancelled");
       const conversation: ConversationMessage[] = [{role: "user", content: "Current layer task and project context:\n" + JSON.stringify(task)}];
       for (const item of history) conversation.push({role: "assistant", content: item.assistant},
-        {role: "user", content: "Instruction execution result:\n" + JSON.stringify(item.observation) + "\nContinue from this result with the NEXT XML-like text instruction. Do not repeat completed work."});
+        {role: "user", content: (item.observation.parse_error ? "Instruction parsing failed; nothing was executed:\n" : "Instruction result:\n") + JSON.stringify(item.observation) + "\nUse the AIPod Instruction Set defined above. Correct any rejected instruction before continuing; do not repeat completed work."});
       conversation[conversation.length - 1]!.content += `\nInstructions remaining for this layer: ${this.maxSteps - step}. Finish with registrations after the required implementation and a successful check.`;
       const raw = await this.client.completeText(`WORKSPACE_AGENT:${this.tools.owner}\n${INSTRUCTION_PROMPT}\n${roles[this.tools.owner]}`, JSON.stringify({ task, history }), conversation);
       if (this.cancelled()) throw new Error("Pod Agent cancelled");
@@ -284,7 +287,7 @@ export class WorkspaceAgent {
         if (history.length >= 2 && raw === history.at(-1)!.assistant && raw === history.at(-2)!.assistant) result.progress_notice = "This exact instruction has already run repeatedly. Use its returned content to implement the assigned layer or finish; repeating it will not produce new information.";
       } catch (error) {
         result = { error: error instanceof Error ? error.message : String(error) };
-        if (!action) result.format_help = 'Write one XML-like instruction as ordinary response text with no prose, e.g. <list><path>.</path></list> or <read><path>src/models/item.ts</path></read>. Keep these exact tag names. Use CDATA for source and shell command text; use item tags for lists.';
+        if (!action) result = parseErrorFeedback(raw, error);
       }
       await this.onAction(action, result);
       history.push({ assistant: action?.tool === "write" && raw.length > 40000 ? encodeSourceArtifact({path: String(action.path), content: "[large source omitted; read the workspace file if needed]"}) : raw, observation: result });

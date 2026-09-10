@@ -1,5 +1,7 @@
 """Bounded Pod authorization and resumable workspace Agent work."""
 import tempfile
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import unittest
 from unittest.mock import Mock
@@ -12,6 +14,23 @@ from ai_pod_cli.source_codec import encode_source_artifact
 
 
 class RepairBudgetTests(unittest.TestCase):
+    def test_pod_and_layer_instruction_budgets_are_independent(self):
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, 'beans_config.json').write_text('{"beans":[]}')
+            state = load_and_upgrade_plan(None, 'Check instruction budgets')
+            llm = Mock(return_value='<unknown/>')
+            coordinator = PodCoordinator(root, state, llm, save=lambda _: None)
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'pod Agent reached 200 steps'):
+                coordinator.run_layer('pod')
+            self.assertEqual(llm.call_count, 200)
+            llm.reset_mock()
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'models Agent reached 100 steps'):
+                coordinator.run_layer('models')
+            self.assertEqual(llm.call_count, 100)
+            pod = WorkspaceTools(root, 'pod')
+            self.assertEqual(WorkspaceAgent(llm, pod).max_steps, 200)
+            self.assertEqual(WorkspaceAgent(llm, pod, max_steps=2).max_steps, 2)
+
     def test_ten_change_requests_are_allowed_but_not_an_eleventh_decision(self):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'beans_config.json').write_text('{"beans":[]}')

@@ -11,10 +11,7 @@ from ai_pod_cli.pod.state import (
     save_decision_plan as _save_decision_plan,
 )
 from ai_pod_cli.pod.revision import select_revision_stage
-
-
-# Tool actions per layer Agent invocation.
-DEFAULT_AGENT_MAX_STEPS = 40
+from ai_pod_cli.workspace_agent import DEFAULT_AGENT_MAX_STEPS, DEFAULT_POD_MAX_STEPS
 
 
 def _agent_project_observation(state: dict) -> dict:
@@ -113,7 +110,8 @@ def handle_pod(args):
     state["agent"]["current_request"] = desc
     coordinator = PodCoordinator(Path.cwd(), state, call_llm, save=_save_decision_plan,
                                  progress_callback=getattr(args, "progress_callback", None),
-                                 max_steps=int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS)))
+                                 max_steps=int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS)),
+                                 pod_max_steps=int(getattr(args, "_pod_max_steps", DEFAULT_POD_MAX_STEPS)))
     try:
         coordinator.build()
     except Exception:

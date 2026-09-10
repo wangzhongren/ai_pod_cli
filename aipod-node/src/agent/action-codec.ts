@@ -1,4 +1,5 @@
 import { decodeSourceArtifact, decodeEntities, validCharacters } from "./source-codec.js";
+import { InstructionSyntaxError } from "./instruction-protocol.js";
 
 const fields: Record<string, string[]> = {
   list: ["path"], read: ["path", "offset", "limit"], search: ["path", "text"], delete: ["path"],
@@ -17,8 +18,9 @@ function scalar(name: string, value: string): unknown {
   try { return JSON.parse(value); } catch { return value; }
 }
 function checked(tool: string, arguments_: unknown): Action {
-  if (!Object.hasOwn(fields, tool) || !arguments_ || typeof arguments_ !== "object" || Array.isArray(arguments_)) throw new Error("Unknown XML action or invalid operands");
-  if (Object.keys(arguments_).some((key) => !fields[tool]!.includes(key))) throw new Error(`Unknown operands for ${tool}`);
+  if (!Object.hasOwn(fields, tool) || !arguments_ || typeof arguments_ !== "object" || Array.isArray(arguments_)) throw new Error(`Unknown instruction <${tool}> or invalid operands; supported instructions: ${Object.keys(fields).filter(name => name !== "write").join(", ")}, create, update`);
+  const unknown = Object.keys(arguments_).filter(key => !fields[tool]!.includes(key));
+  if (unknown.length) throw new Error(`Unknown operands for ${tool}: ${unknown.join(", ")}`);
   return { tool, ...arguments_ };
 }
 function nativeCall(raw: string): Action {
@@ -58,45 +60,49 @@ export function decodeAction(raw: string): Action {
   const update = /^<(?:｜DSML｜)?update\s*>/.exec(raw), updateEnd = /<\/(?:｜DSML｜)?update\s*>$/.exec(raw);
   if (update && updateEnd) return {tool: "write", ...decodeSourceArtifact("<create>" + raw.slice(update[0].length, updateEnd.index) + "</create>")};
   if (/^<(?:｜DSML｜)?create\s*>/.test(raw)) return {tool: "write", ...decodeSourceArtifact(raw)};
-  interface Element {name: string; text: string; children: Element[]}
+  interface Element {name: string; text: string; children: Element[]; offset: number}
   let position = 0;
+  const fail = (reason: string, code = "invalid_instruction", at = position): never => { throw new InstructionSyntaxError(reason, at, code); };
   const element = (): Element => {
+    const start = position;
     const tag = /^<([A-Za-z_][A-Za-z0-9_.-]*)\s*(\/?)>/.exec(raw.slice(position));
-    if (!tag) throw new Error("Use plain XML action/operand tags without prose, attributes or declarations");
+    if (!tag) return fail("Use plain XML instruction/operand tags without prose, attributes or declarations", "unsupported_markup");
     position += tag[0].length;
-    const node: Element = {name: tag[1]!, text: "", children: []};
+    const node: Element = {name: tag[1]!, text: "", children: [], offset: start};
     if (tag[2]) return node;
     while (position < raw.length) {
       if (raw.startsWith("<![CDATA[", position)) {
         const end = raw.indexOf("]]>", position + 9);
-        if (end < 0) throw new Error("Incomplete CDATA operand: close with ]]> (not ]]]), then the closing operand tag");
+        if (end < 0) return fail(`Incomplete CDATA operand: close with ]]> (not ]]]), then </${node.name}>`, "missing_cdata_end");
         node.text += raw.slice(position + 9, end); position = end + 3;
       } else if (raw.startsWith("</", position)) {
         const close = /^<\/([A-Za-z_][A-Za-z0-9_.-]*)\s*>/.exec(raw.slice(position));
-        if (!close || close[1] !== node.name) throw new Error("Mismatched XML operand");
+        if (!close || close[1] !== node.name) return fail(`Mismatched XML operand: expected </${node.name}>, found ${close?.[0] ?? raw.slice(position, position + 60)}`, "mismatched_tag");
         position += close[0].length; return node;
       } else if (raw[position] === "<") node.children.push(element());
       else {
         const end = raw.indexOf("<", position);
-        if (end < 0) throw new Error("Incomplete XML action");
-        node.text += decodeEntities(raw.slice(position, end)); position = end;
+        if (end < 0) return fail(`Incomplete XML instruction: missing </${node.name}>`, "unclosed_tag");
+        try { node.text += decodeEntities(raw.slice(position, end)); }
+        catch (error) { return fail(error instanceof Error ? error.message : String(error), "invalid_entity"); }
+        position = end;
       }
     }
-    throw new Error("Incomplete XML action");
+    return fail(`Incomplete XML instruction: missing </${node.name}>`, "unclosed_tag");
   };
   const value = (node: Element): unknown => {
     if (!node.children.length) return scalar(node.name, node.text);
-    if (node.text.trim()) throw new Error("Do not mix text and nested XML operands");
+    if (node.text.trim()) return fail(`Do not mix text and nested XML operands inside <${node.name}>`, "invalid_instruction", node.offset);
     if (node.children.every((child) => child.name === "item")) return node.children.map(value);
     const entries: [string, unknown][] = [], names = new Set<string>();
     for (const child of node.children) {
-      if (names.has(child.name)) throw new Error("Duplicate XML operand; use <item> for arrays");
+      if (names.has(child.name)) return fail(`Duplicate XML operand <${child.name}>; use <item> for arrays`, "invalid_instruction", child.offset);
       names.add(child.name); entries.push([child.name, value(child)]);
     }
     return Object.fromEntries(entries);
   };
   const root = element();
-  if (raw.slice(position).trim()) throw new Error("Return exactly one XML-like action without trailing actions");
+  if (raw.slice(position).trim()) fail("Return exactly one XML-like instruction without trailing actions or text", "multiple_instructions", position + raw.slice(position).search(/\S/));
   if (root.name === "write") throw new Error("Source writes use <create> with content in CDATA");
   if (!root.children.length && root.text.trim()) throw new Error("Action arguments must use named XML operands");
   return checked(root.name, root.children.length ? value(root) : {});

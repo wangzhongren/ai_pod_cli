@@ -6,8 +6,12 @@ import json
 
 from ai_pod_cli.workspace import WorkspaceTools, parse_action
 from ai_pod_cli.source_codec import encode_source_artifact
+from ai_pod_cli.instruction_protocol import INSTRUCTION_SET_PROMPT, parse_error_feedback
 
-INSTRUCTION_PROMPT = '''You develop a shared AIPod project by writing XML-like text instructions.
+DEFAULT_AGENT_MAX_STEPS = 100
+DEFAULT_POD_MAX_STEPS = 200
+
+INSTRUCTION_PROMPT = INSTRUCTION_SET_PROMPT + '''You develop a shared AIPod project using this instruction set.
 Choose the next useful instruction yourself. The AIPod controller parses your response text,
 executes that instruction within your permissions, and returns the result as the next message.
 Deliver the current layer, then submit finish so the next owner can continue. Inspect only what
@@ -115,10 +119,12 @@ LAYER_PROMPTS = {
 
 
 class WorkspaceAgent:
-    def __init__(self, llm, tools: WorkspaceTools, *, progress_callback=None, max_steps=40):
+    def __init__(self, llm, tools: WorkspaceTools, *, progress_callback=None, max_steps=None):
         self.llm, self.tools = llm, tools
         self.progress = progress_callback
-        self.max_steps = max_steps
+        self.max_steps = max_steps if max_steps is not None else (
+            DEFAULT_POD_MAX_STEPS if tools.stage == "pod" else DEFAULT_AGENT_MAX_STEPS
+        )
 
     def run(self, objective: str, context: dict, *, request_change, finish) -> dict:
         system = INSTRUCTION_PROMPT + "\nLayer: " + self.tools.stage + "\n" + LAYER_PROMPTS[self.tools.stage]
@@ -130,8 +136,10 @@ class WorkspaceAgent:
             for item in history:
                 conversation.extend([
                     {"role": "assistant", "content": item["assistant"]},
-                    {"role": "user", "content": "Instruction execution result:\n" + json.dumps(item["observation"], ensure_ascii=False)
-                     + "\nContinue from this result with the NEXT XML-like text instruction. Do not repeat completed work."},
+                    {"role": "user", "content": (
+                        "Instruction parsing failed; nothing was executed:\n" if "parse_error" in item["observation"] else "Instruction result:\n"
+                    ) + json.dumps(item["observation"], ensure_ascii=False)
+                     + "\nUse the AIPod Instruction Set defined above. Correct any rejected instruction before continuing; do not repeat completed work."},
                 ])
             conversation[-1]["content"] += f"\nInstructions remaining for this layer: {self.max_steps - step}. Finish with registrations after the required implementation and a successful check."
             raw = self.llm(system, json.dumps({"task": initial, "history": history}, ensure_ascii=False),
@@ -157,7 +165,7 @@ class WorkspaceAgent:
             except Exception as error:
                 result = {"error": f"{type(error).__name__}: {error}"}
                 if action is None:
-                    result["format_help"] = 'Write one XML-like instruction as ordinary response text with no prose, e.g. <list><path>.</path></list> or <read><path>modules/models/item.py</path></read>. Keep these exact tag names. Use CDATA for source and shell command text; use item tags for lists.'
+                    result = parse_error_feedback(raw, error)
                 print(f"   [{self.tools.stage}] {result['error']}")
             # Keep ordinary writes visible so the Agent remembers what it just built.
             # Only very large responses need a file reference; older pairs are trimmed below.

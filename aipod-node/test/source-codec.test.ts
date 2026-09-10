@@ -108,10 +108,27 @@ test("invalid model XML never commits a candidate file or completes its stage", 
     await assert.rejects(new ConstructionAgent(root, {
       complete: async () => ({ summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {}, tests: testPlan }] }),
       completeText: async (system) => { const tests = userTests(system); if (tests) return tests; attempts += 1; return valid + valid; },
-    }).run("Generate User"), /40 steps/);
-    assert.equal(attempts, 40);
+    }).run("Generate User"), /100 steps/);
+    assert.equal(attempts, 100);
     assert.equal((await loadState(root, "Generate User")).stages.models.status, "failed");
     assert.deepEqual(JSON.parse(await readFile(join(root, "aipod.json"), "utf8")), manifest);
     await assert.rejects(readFile(join(root, "src/models/user.ts")), /ENOENT/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("final Pod has its own 200-instruction budget after the layers finish", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aipod-pod-budget-"));
+  const attempts: Record<string, number> = {};
+  try {
+    await writeFile(join(root, "aipod.json"), JSON.stringify({schemaVersion: 1, beans: [], routes: [], interfaces: []}));
+    await assert.rejects(new ConstructionAgent(root, {
+      complete: async () => { throw new Error("Unexpected model decision"); },
+      completeText: async (system) => {
+        const owner = system.split("\n")[0]!.split(":")[1]!;
+        attempts[owner] = (attempts[owner] ?? 0) + 1;
+        return owner === "pod" ? "<unknown/>" : "<finish><summary>No artifacts needed</summary></finish>";
+      },
+    }).run("Inspect an empty scaffold"), /pod Agent reached 200 steps/);
+    assert.deepEqual(attempts, {models: 1, providers: 1, services: 1, pipelines: 1, interfaces: 1, pod: 200});
+  } finally { await rm(root, {recursive: true, force: true}); }
 });

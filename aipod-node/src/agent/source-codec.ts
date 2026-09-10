@@ -1,3 +1,5 @@
+import { INSTRUCTION_SET_PROMPT, InstructionSyntaxError } from "./instruction-protocol.js";
+
 /** Strict ActUnit-compatible create/path/content subset, not a general XML parser.
  * Exactly one candidate artifact is decoded; no action is executed here.
  */
@@ -45,10 +47,11 @@ export function decodeSourceArtifact(text: string, expectedPath?: string): Sourc
   if (text.length > 2_000_000) throw new Error("Source artifact response exceeds 2,000,000 characters");
   validCharacters(text);
   let position = 0;
+  const fail = (reason: string, code = "invalid_instruction", at = position): never => { throw new InstructionSyntaxError(reason, at, code); };
   const whitespace = () => { while (/\s/.test(text[position] ?? "") && position < text.length) position += 1; };
   const tag = (): string => {
     const match = /^<(\/?)(?:｜DSML｜)?([A-Za-z_][A-Za-z0-9_.-]*)\s*>/.exec(text.slice(position));
-    if (!match) throw new Error("Expected a plain XML tag; attributes, declarations and nested content are not allowed");
+    if (!match) return fail("Expected a plain XML tag; attributes, declarations and nested content are not allowed");
     position += match[0].length;
     return `${match[1]}${match[2]}`;
   };
@@ -60,40 +63,42 @@ export function decodeSourceArtifact(text: string, expectedPath?: string): Sourc
       if (marker) {
         const start = position + marker.length;
         const end = text.indexOf("]]>", start);
-        if (end < 0) throw new Error("Incomplete CDATA section: close with ]]> (not ]]]), then </content>");
+        if (end < 0) return fail(`Incomplete CDATA section: close with ]]> (not ]]]), then </${name}>`, "missing_cdata_end");
         value += text.slice(start, end);
         position = end + 3;
       } else if (text[position] === "<") {
-        if (tag() !== `/${name}`) throw new Error(`Nested XML is not allowed inside '${name}'; use CDATA for source`);
+        const start = position, found = tag();
+        if (found !== `/${name}`) return fail(`Expected </${name}>, found <${found}>. Nested XML is not allowed inside '${name}'; use CDATA for source`, "mismatched_tag", start);
         return value;
       } else {
         const end = text.indexOf("<", position);
-        if (end < 0) throw new Error(`Incomplete XML operand '${name}'`);
+        if (end < 0) return fail(`Incomplete XML operand <${name}>: missing </${name}>`, "unclosed_tag");
         value += decodeEntities(text.slice(position, end));
         position = end;
       }
     }
-    throw new Error(`Incomplete XML operand '${name}'`);
+    return fail(`Incomplete XML operand <${name}>: missing </${name}>`, "unclosed_tag");
   };
   whitespace();
-  if (tag() !== "create") throw new Error("Expected exactly one create artifact action");
+  if (tag() !== "create") fail("Expected exactly one create artifact action", "invalid_instruction", 0);
   const fields = new Map<string, string>();
   while (true) {
     whitespace();
+    const start = position;
     const name = tag();
     if (name === "/create") break;
-    if (name !== "path" && name !== "content") throw new Error(`Unknown artifact operand '${name}'`);
-    if (fields.has(name)) throw new Error(`Duplicate artifact operand '${name}'`);
+    if (name !== "path" && name !== "content") fail(`Unknown artifact operand '${name}'; supply path and content exactly once`, "invalid_instruction", start);
+    if (fields.has(name)) fail(`Duplicate artifact operand '${name}'`, "invalid_instruction", start);
     fields.set(name, scalar(name));
   }
   whitespace();
-  if (position !== text.length) throw new Error("Expected exactly one artifact; trailing actions or text are not allowed");
-  if (!fields.has("path") || !fields.has("content")) throw new Error("Artifact requires path and content");
+  if (position !== text.length) fail("Expected exactly one artifact; trailing actions or text are not allowed", "multiple_instructions");
+  if (!fields.has("path") || !fields.has("content")) fail("Artifact requires path and content");
   const path = fields.get("path")!;
   if (expectedPath !== undefined && path !== expectedPath) throw new Error(`Artifact path must equal planned path '${expectedPath}'`);
   return { path, content: fields.get("content")! };
 }
 
 export function sourceArtifactInstruction(path: string): string {
-  return `Return exactly one XML-like <create> action with <path> and <content> operands. The path must be exactly ${JSON.stringify(path)}. Put the complete file text inside CDATA. No prose, Markdown fences, extra operands or additional actions. To include the literal CDATA terminator ]]> in source, split it as ]]]]><![CDATA[>. Example envelope:\n${encodeSourceArtifact({ path, content: "complete file text" })}`;
+  return INSTRUCTION_SET_PROMPT + `Return exactly one XML-like <create> instruction with <path> and <content> operands. The path must be exactly ${JSON.stringify(path)}. Put the complete file text inside CDATA. No prose, Markdown fences, extra operands or additional instructions. To include the literal CDATA terminator ]]> in source, split it as ]]]]><![CDATA[>. Example envelope:\n${encodeSourceArtifact({ path, content: "complete file text" })}`;
 }

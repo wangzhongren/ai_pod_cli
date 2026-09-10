@@ -7,7 +7,7 @@ import { loadCurrentState, loadState, newState, saveState } from "./state.js";
 import { validateArtifactContent } from "./artifacts.js";
 import { SourceGraph, validateLayout, area } from "./component-layout.js";
 import { typeCheckProject, formatSemanticDiagnostic } from "../semantic-check.js";
-import { WorkspaceAgent, WorkspaceTools, pathOwner, type Owner, type Action, type ShellCheck } from "./workspace.js";
+import { DEFAULT_AGENT_MAX_STEPS, DEFAULT_POD_MAX_STEPS, WorkspaceAgent, WorkspaceTools, pathOwner, type Owner, type Action, type ShellCheck } from "./workspace.js";
 import { revisionScope, stageEntries } from "./revision.js";
 
 export type ProgressHandler = (event: AgentEvent) => void;
@@ -144,7 +144,7 @@ export class ConstructionAgent {
       paths = [...stageEntries(this.project, stage).filter((entry) => this.state.revisionScope![stage].includes(entry.id)).flatMap((entry) => entry.files), `tests/${stage}`];
     }
     const tools = await WorkspaceTools.create(this.projectRoot, stage, paths);
-    const result = await new WorkspaceAgent(this.client, tools, this.isCancelled, 40, async (action, observation) => {
+    const result = await new WorkspaceAgent(this.client, tools, this.isCancelled, stage === "pod" ? DEFAULT_POD_MAX_STEPS : DEFAULT_AGENT_MAX_STEPS, async (action, observation) => {
       const layer = stage === "pod" ? "verification" : stage;
       this.state.currentStage = layer;
       const failed = Boolean(observation.error) || typeof observation.exitCode === "number" && observation.exitCode !== 0;

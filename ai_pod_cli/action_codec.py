@@ -6,6 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from ai_pod_cli.source_codec import decode_source_artifact, _valid_characters
+from ai_pod_cli.instruction_protocol import InstructionSyntaxError
 
 FIELDS = {
     "list": {"path"}, "read": {"path", "offset", "limit"},
@@ -34,7 +35,7 @@ def scalar(name, value):
 
 def checked(tool, arguments):
     if tool not in FIELDS or not isinstance(arguments, dict):
-        raise ValueError("Unknown XML action or invalid operands")
+        raise ValueError(f"Unknown instruction <{tool}> or invalid operands; supported instructions: {', '.join(name for name in FIELDS if name != 'write')}, create, update")
     if set(arguments) - FIELDS[tool]:
         raise ValueError(f"Unknown operands for {tool}: {sorted(set(arguments) - FIELDS[tool])}")
     return {"tool": tool, **arguments}
@@ -91,9 +92,14 @@ def decode_action(raw: str):
         return {"tool": "write", **decode_source_artifact("<create>" + raw[update.end():update_end.start()] + "</create>")}
     if re.match(r"<(?:｜DSML｜)?create\s*>", raw):
         return {"tool": "write", **decode_source_artifact(raw)}
-    without_cdata = re.sub(r"<!\[CDATA\[[\s\S]*?\]\]>", "", raw)
-    if re.search(r"<!|<\?", without_cdata):
-        raise ValueError("XML declarations, entities and comments are not action operands")
+    def mask_cdata(match):
+        if not match.group().endswith("]]>"):
+            raise InstructionSyntaxError("CDATA is not closed: insert ]]> before the closing field tag (for example </command>).", match.start(), "missing_cdata_end")
+        return " " * len(match.group())
+    without_cdata = re.sub(r"<!\[CDATA\[[\s\S]*?(?:\]\]>|$)", mask_cdata, raw)
+    forbidden = re.search(r"<!|<\?", without_cdata)
+    if forbidden:
+        raise InstructionSyntaxError("XML declarations, entities and comments are not instruction operands; remove the extra markup.", forbidden.start(), "unsupported_markup")
     try:
         root = ET.fromstring(raw)
     except ET.ParseError as error:
@@ -112,7 +118,7 @@ def decode_action(raw: str):
         result = {}
         for child in children:
             if child.tag in result:
-                raise ValueError("Duplicate XML operand; use <item> for arrays")
+                raise ValueError(f"Duplicate XML operand <{child.tag}>; use <item> for arrays")
             result[child.tag] = value(child)
         return result
 

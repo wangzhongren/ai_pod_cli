@@ -48,7 +48,9 @@ Model → Provider → Service → Pipeline → Interface
              Pod 调度、审批与验收
 ```
 
-所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。Agent 在普通响应正文中输出一条 XML-like 文本指令，由 AIPod 控制器解析执行并反馈结果。读写文件、shell、上游修改申请和 finish 都使用这一格式；源码和复杂命令放在 CDATA 中，对象使用嵌套标签，列表成员使用 `<item>`。
+所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。提示词将协议明确为 AIPod 原创的专用文本指令集（AIPod Instruction Set），采用 XML-like 表示语法。Agent 在普通响应正文中输出一条指令，由 AIPod 控制器解析执行并反馈结果。读写文件、shell、上游修改申请和 finish 都使用这一格式；源码和复杂命令放在 CDATA 中，对象使用嵌套标签，列表成员使用 `<item>`。
+
+解析失败返回 `executed: false`、具体 `parse_error`（类别、原因及可定位时的行列和片段）、`format_help` 与 `format_example`。模型会收到针对 DSML 外壳、标签不匹配、CDATA 未闭合等错误的修正说明；损坏的指令不会被猜测执行。执行阶段的错误与解析错误分别反馈。
 
 | Owner | 可写范围 |
 |---|---|
@@ -174,7 +176,7 @@ Agent shell：
 
 Linux 下新的共享根文件应先由文件工具创建，再交给 shell 修改。缺少权限后端时会报错，不会退回无约束执行。
 
-每次 Agent 调用默认最多 40 个动作，每次 Pod 运行最多 10 次修改申请。部分文件会在失败后保留以便恢复。检查成功不代表需求已被完整覆盖。
+Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 100 轮指令；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 200 轮。每轮一条指令，各自独立计数。每次 Pod 运行最多 10 次修改申请。部分文件会在失败后保留以便恢复。检查成功不代表需求已被完整覆盖。
 
 ## 配置与 Studio
 

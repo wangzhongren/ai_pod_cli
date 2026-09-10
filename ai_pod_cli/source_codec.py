@@ -1,6 +1,7 @@
 """Strict ActUnit-compatible create/path/content subset; decoding never writes files."""
 
 import re
+from ai_pod_cli.instruction_protocol import InstructionSyntaxError
 
 
 def _valid_characters(value: str) -> None:
@@ -49,6 +50,9 @@ def decode_source_artifact(text: str, expected_path: str | None = None) -> dict[
     _valid_characters(text)
     position = 0
 
+    def fail(reason, offset=None, code="invalid_instruction"):
+        raise InstructionSyntaxError(reason, position if offset is None else offset, code)
+
     def whitespace():
         nonlocal position
         while position < len(text) and text[position].isspace():
@@ -58,7 +62,7 @@ def decode_source_artifact(text: str, expected_path: str | None = None) -> dict[
         nonlocal position
         match = re.match(r"<(\/?)(?:｜DSML｜)?([A-Za-z_][A-Za-z0-9_.-]*)\s*>", text[position:])
         if match is None:
-            raise ValueError("Expected plain XML tag; attributes and declarations are not allowed")
+            fail("Expected plain XML tag; attributes and declarations are not allowed")
         position += match.end()
         return match[1] + match[2]
 
@@ -72,38 +76,41 @@ def decode_source_artifact(text: str, expected_path: str | None = None) -> dict[
                 start = position + len(marker)
                 end = text.find("]]>", start)
                 if end < 0:
-                    raise ValueError("Incomplete CDATA section: close with ]]> (not ]]]), then </content>")
+                    fail(f"Incomplete CDATA section: close with ]]> (not ]]]), then </{name}>", code="missing_cdata_end")
                 chunks.append(text[start:end])
                 position = end + 3
             elif text[position] == "<":
-                if tag() != f"/{name}":
-                    raise ValueError("Nested XML operands are not allowed; use CDATA for source")
+                start = position
+                found = tag()
+                if found != f"/{name}":
+                    fail(f"Expected </{name}>, found <{found}>. Nested XML operands are not allowed; use CDATA for source.", start, "mismatched_tag")
                 return "".join(chunks)
             else:
                 end = text.find("<", position)
                 if end < 0:
-                    raise ValueError("Incomplete XML operand")
+                    fail(f"Incomplete XML operand <{name}>: missing </{name}>", code="unclosed_tag")
                 chunks.append(_entities(text[position:end]))
                 position = end
-        raise ValueError("Incomplete XML operand")
+        fail(f"Incomplete XML operand <{name}>: missing </{name}>", code="unclosed_tag")
 
     whitespace()
     if tag() != "create":
-        raise ValueError("Expected exactly one create artifact action")
+        fail("Expected exactly one create artifact action", 0)
     fields = {}
     while True:
         whitespace()
+        start = position
         name = tag()
         if name == "/create":
             break
         if name not in ("path", "content") or name in fields:
-            raise ValueError("Unknown or duplicate artifact operand")
+            fail(f"Unknown or duplicate artifact operand <{name}>; supply <path> and <content> exactly once", start)
         fields[name] = scalar(name)
     whitespace()
     if position != len(text):
-        raise ValueError("Expected exactly one artifact; trailing actions or text are not allowed")
+        fail("Expected exactly one artifact; trailing actions or text are not allowed", code="multiple_instructions")
     if set(fields) != {"path", "content"}:
-        raise ValueError("Artifact requires path and content")
+        fail("Artifact requires path and content")
     if expected_path is not None and fields["path"] != expected_path:
         raise ValueError(f"Artifact path must equal planned path '{expected_path}'")
     return fields

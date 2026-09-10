@@ -6,6 +6,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from ai_pod_cli.client import DEFAULT_SOURCE_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
 from ai_pod_cli.source_codec import decode_source_artifact, encode_source_artifact
+from ai_pod_cli.instruction_protocol import INSTRUCTION_SET_PROMPT, parse_error_feedback
 
 
 def _progress_options(options: dict, phase: str, attempt: int = 1) -> dict:
@@ -52,11 +53,11 @@ def generate_source(
         raise ValueError(f"Metadata path must equal planned path '{path}'")
     # Source may not replace the frozen metadata or choose another output path.
     source_system = (
-        "Generate exactly one file using the frozen metadata and requirements below. "
+        INSTRUCTION_SET_PROMPT + "Generate exactly one file using the frozen metadata and requirements below. "
         "The requirements describe the completed metadata stage; their JSON output "
         "instructions do not apply to this source stage.\n"
         + system
-        + "\nSOURCE OUTPUT PROTOCOL: Return exactly one XML-like <create> action with "
+        + "\nSOURCE OUTPUT PROTOCOL: Return exactly one XML-like <create> instruction with "
         "one <path> and one <content>. Put all source inside CDATA. No prose, Markdown, "
         "attributes, extra operands or additional actions. The path must be exactly "
         + json.dumps(path)
@@ -80,5 +81,5 @@ def generate_source(
         except ValueError as error:
             if attempt == 2:
                 raise
-            evidence = "\nPrevious XML validation error: " + str(error)
+            evidence = "\nPrevious instruction validation error: " + json.dumps(parse_error_feedback(raw, error), ensure_ascii=False)
     raise AssertionError("unreachable")

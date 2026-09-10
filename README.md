@@ -222,7 +222,7 @@ Agent 修改文件或收到上游更新后，需要重新执行检查再交接�
 
 默认限制：
 
-- 每次 Agent 调用最多 **40 个动作**。
+- Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 **100 轮指令**；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 **200 轮**。每轮输出一条指令，各自独立计数。
 - 每次 Pod 运行最多 **10 次修改申请**。
 - shell 默认 **60 秒**，单次最多 **120 秒**，返回有限长度的输出。
 
@@ -243,7 +243,7 @@ aipod verify --json -- python -m unittest discover -s tests/services
 
 这一协议由框架与模型交互使用，日常使用 CLI 不需要手写。
 
-Agent 在普通响应正文中输出一条 XML-like 文本指令，AIPod 控制器解析执行并反馈结果。标签名称严格按下列格式书写，源码和复杂 shell 命令放在 CDATA 中：
+提示词明确将其定义为 **AIPod 原创的专用文本指令集（AIPod Instruction Set）**，XML-like 是它使用的表示语法。Agent 在普通响应正文中输出一条指令，AIPod 控制器解析执行并反馈结果。标签名称严格按下列格式书写，源码和复杂 shell 命令放在 CDATA 中：
 
 ```xml
 <read><path>modules/models/task.py</path></read>
@@ -278,7 +278,11 @@ class Example:
 
 每次响应一条指令。对象使用嵌套标签，列表成员使用 `<item>`；空列表、空对象可使用自闭合标签。支持 `list`、`read`、`search`、`create`、`update`、`delete`、`shell`、`request_change`、`finish`。
 
+CDATA 不改变返回值的字符串类型，它用于隔离内容中的 `<`、`&` 等符号。路径和普通参数无需 CDATA；不使用 CDATA 的文本须按 XML 规则转义。源码生成提示词使用 CDATA，以保留源码原文并减少转义。
+
 读取长文件时通过 `offset` / `limit` 和返回的 `next_offset` 分页。`finish` 的注册信息由控制器验证归属和契约后写入注册表。解析器保留对已观察到的单个 DSML `tool_calls/invoke/parameter` 封装的兼容，但提示词只示范上面的文本指令格式。旧的 JSON 控制动作仅为兼容既有调用保留；注册文件和 HTTP 数据仍按各自的数据格式保存。
+
+解析失败时，控制器返回 `executed: false`，以及 `parse_error` 中的错误类别、具体原因和可定位时的行列、附近片段；`format_help` 与 `format_example` 给出针对当前指令的修正说明和格式示例。混入 DSML 外壳时会明确指出外壳错误，避免误判为文件太大或中文编码问题。模型需要先重发正确指令，解析器不会猜测并执行损坏的回复。文件不存在、权限或执行错误仍按执行结果反馈。
 
 ## Studio
 
