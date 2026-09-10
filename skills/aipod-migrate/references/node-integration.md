@@ -11,6 +11,33 @@ dynamic import may avoid changing the whole application's module mode. Verify ac
 Electron Node compatibility and packaging. Do not require this layout for a project
 that already has a suitable TypeScript build.
 
+## Layout and public registration
+
+For a new storage Provider in the selected AIPod root, one valid organization is:
+
+```text
+src/providers/contracts/storage.ts
+src/providers/impl/storage/memory.ts
+src/providers/public/storage.ts
+```
+
+The public entry uses an explicit named export:
+
+```ts
+export { MemoryStore as Store } from '../impl/storage/memory.js';
+```
+
+Register ID `Store` with file `src/providers/public/storage.ts`. Services importing the
+capability use this public file; shared types come from contracts. Use the corresponding
+three areas under `src/services/` for Services. Stable public paths allow internal moves
+without rewriting consumers. A legacy adapter's infrastructure logic belongs in impl,
+not in the public export module. Do not use wildcard/dynamic exports for registrations.
+
+Inspect the installed version's schema and loader before updating the bootstrap manifest;
+preserve existing IDs, contracts and unrelated entries. Once Pod manages the module,
+registration changes come from owner finish metadata validated by the controller, not
+direct registry or plan edits by a layer Agent.
+
 ## Adapt rather than duplicate infrastructure
 
 Existing factory functions and singleton objects may need wrappers around the runtime's
@@ -57,6 +84,30 @@ outputs. For side effects, substitute recording Providers and compare the ordere
 and state transitions. Only one implementation owns real sends/writes at a time.
 
 ## Verification and trace
+
+For the current Node CLI, run `aipod-node inspect /absolute/aipod-root` and inspect
+`validation.valid` and its issues, not just the process exit code. This path invokes
+the framework layout validator. It must reject cross-layer impl imports and invalid
+public exports. Verify the installed implementation actually includes these checks;
+do not claim architecture validation from an older command that only lists components.
+
+Then use the project's actual non-interactive acceptance command, for example:
+
+```sh
+aipod-node verify /absolute/aipod-root -- node --test tests/migration/behavior.test.mjs
+```
+
+Replace the example test path with a real test. The command after `--` is an argument
+array executed in the AIPod root. When running from a source checkout, use its built
+`dist/src/cli.js` through Node instead of assuming a global executable. The current
+verify path checks structure, loads the Runner and runs the supplied command; loading
+can compile files and instantiate Providers. Use synthetic host adapters/test configuration
+before invoking it on a legacy integration with startup side effects.
+
+Without an acceptance command, `verify` returns `unverified` even when loading succeeds.
+Legacy flat registrations may pass layout validation, so separately check the batch's
+new Provider/Service entries use public/ and the intended contracts. A custom host loader
+needs its own startup, route and lifecycle checks; CLI success does not validate that path.
 
 Run original regression tests plus meaningful cases for the extracted boundary. Replace
 source-text-shape tests with equivalent behavior assertions when moving their implementation;

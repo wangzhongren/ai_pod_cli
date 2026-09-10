@@ -25,3 +25,9 @@ Submodules need their own explicit migration boundary; do not silently ignore th
 
 Do not interpret an unchanged file as correct, or a permitted file as permission to destroy
 user edits. A passing result must still be accompanied by behavioral verification.
+
+This helper does not know AIPod Owners, component registries or dependency rules. For
+example, adding an import of `src/providers/impl/...` inside an allowed Service file
+can return `scope_passed` while violating the architecture. Run the installed framework's
+layout/registry checks as described in node-integration.md as well as behavioral tests.
+Adding a file to the batch allowlist never expands a Pod Agent's actual write grants.
