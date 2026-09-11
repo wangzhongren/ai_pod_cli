@@ -16,29 +16,38 @@ from ai_pod_cli.workspace_agent import WorkspaceAgent
 
 
 class SDKReferenceTests(unittest.TestCase):
-    def test_role_reference_survives_conversation_trimming(self):
+    def test_role_reference_survives_ai_history_compaction(self):
         with tempfile.TemporaryDirectory() as directory:
             for role in ROLE_SECTIONS:
                 with self.subTest(role=role):
                     tools = WorkspaceTools(Path(directory), role)
-                    # Force old observations out of history without executing any SDK discovery.
+                    # Cross the compaction threshold without executing SDK discovery.
                     tools.execute = Mock(side_effect=[
                         {"content": f"observation-{i}:" + "x" * 41000} for i in range(4)
                     ])
-                    llm = Mock(side_effect=[
+                    replies = iter([
                         '<read><path>README.md</path></read>' for _ in range(4)
                     ] + ['<finish><summary>Checked</summary></finish>'])
+                    def respond(system, _user, **_kwargs):
+                        if system.startswith("CONTEXT_COMPACTION"):
+                            return {"summary": "Earlier file observations were read; no implementation or check occurred."}
+                        return next(replies)
+                    llm = Mock(side_effect=respond)
                     WorkspaceAgent(llm, tools, max_steps=5, instruction_mode="direct").run(
                         "Check example", {}, request_change=Mock(),
                         finish=lambda action, _tools: action,
                     )
                     for call in llm.call_args_list:
                         system = call.args[0]
+                        if system.startswith("CONTEXT_COMPACTION"):
+                            self.assertTrue(call.kwargs["json_mode"])
+                            continue
                         self.assertIn(sdk_reference(role), system)
                         self.assertIn("AIPod Instruction Set", system)
                         self.assertFalse(call.kwargs["json_mode"])
                     self.assertNotIn("observation-0:", llm.call_args_list[-1].args[1])
                     self.assertIn("observation-3:", llm.call_args_list[-1].args[1])
+                    self.assertIn("Earlier file observations", llm.call_args_list[-1].args[1])
         self.assertIn(SDK_EXAMPLES["model"], sdk_reference("models"))
         self.assertNotIn("INTERFACE SDK", sdk_reference("models"))
         self.assertNotIn("CONFIGURATION, DEPENDENCIES AND STORAGE", sdk_reference("interfaces"))

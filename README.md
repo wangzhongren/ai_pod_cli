@@ -21,6 +21,8 @@ SDK 用法随框架集中维护，并按层注入每个 Agent 的系统提示词
 
 Python 参考位于 [sdk_reference.py](ai_pod_cli/sdk_reference.py)，Node 参考位于 [sdk-reference.ts](aipod-node/src/agent/sdk-reference.ts)。两端分别维护准确的签名和示例，例如 Python 的 `load_manifest()` 返回 `(路径, manifest)`，Node 的 `runner.run()` 返回 `{result, context}`。回归测试直接编译、执行这些示例，覆盖依赖注入、存储、路由和 Interface，检查说明与当前 SDK 是否一致。
 
+两端工作历史达到 **160,000 字符**时，由当前配置的模型压缩成工作摘要，并保留最近几轮原始操作结果；**320,000 字符**是历史硬上限。字符数按历史与摘要的 JSON 序列化内容计算，不是 token 数，原始需求和 SDK 系统提示词始终单独保留。摘要记录约束、决策、文件与契约、实际检查和未完成事项，不能替代控制器的权限或验收记录。每次压缩前会在 Agent 临时目录保存原始历史；压缩失败时保留历史并在继续增长后重试，达到硬上限仍失败则明确停止，不再静默删除旧记录。
+
 > 本文描述 GitHub `main` 分支的新工作区 Agent 流程。本次重构尚未重新发布到 PyPI/npm；使用这一流程请按下面的源码安装方式运行。
 
 [Python 包](https://pypi.org/project/AIPodCli/) · [Node 包](https://www.npmjs.com/package/aipod-node) · [Node 使用说明](aipod-node/README.md) · [执行模型](docs/execution.md)

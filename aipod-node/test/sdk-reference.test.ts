@@ -13,7 +13,7 @@ import {
   loadContainer, loadRunner, ModelRepository, PipelineContext, sdkReference, validateContract,
 } from "../src/index.js";
 
-test("each role keeps its bundled SDK reference after conversation history is trimmed", async () => {
+test("each role keeps its bundled SDK reference after AI history compaction", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "aipod-sdk-prompt-"));
   try {
     for (const role of Object.keys(SDK_ROLE_SECTIONS) as Owner[]) {
@@ -22,7 +22,10 @@ test("each role keeps its bundled SDK reference after conversation history is tr
       tools.execute = async () => ({ content: `observation-${observation++}:` + "x".repeat(41000) });
       const calls: { system: string; prompt: string }[] = [];
       const client: ModelClient = {
-        async complete() { throw new Error("Text instructions expected"); },
+        async complete(system) {
+          assert.ok(system.startsWith("CONTEXT_COMPACTION"));
+          return {summary:"Earlier file observations were read; no implementation or check occurred."};
+        },
         async completeText(system, prompt) {
           calls.push({ system, prompt });
           return calls.length <= 4 ? "<read><path>README.md</path></read>"
@@ -40,6 +43,7 @@ test("each role keeps its bundled SDK reference after conversation history is tr
       }
       assert.ok(!calls.at(-1)!.prompt.includes("observation-0:"));
       assert.ok(calls.at(-1)!.prompt.includes("observation-3:"));
+      assert.ok(calls.at(-1)!.prompt.includes("Earlier file observations"));
     }
     assert.ok(sdkReference("models").includes(SDK_EXAMPLES.model));
     assert.ok(!sdkReference("models").includes("INTERFACE SDK"));

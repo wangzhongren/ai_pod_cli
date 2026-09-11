@@ -9,6 +9,7 @@ from ai_pod_cli.source_codec import encode_source_artifact
 from ai_pod_cli.instruction_protocol import INSTRUCTION_SET_PROMPT, parse_error_feedback, instruction_recovery_feedback
 from ai_pod_cli.sdk_reference import sdk_reference
 from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE, InstructionTranslator, NEED_PROMPT, parse_need, encode_need
+from ai_pod_cli.context_memory import ContextMemory
 
 DEFAULT_AGENT_MAX_STEPS = 100
 DEFAULT_POD_MAX_STEPS = 200
@@ -90,10 +91,19 @@ class WorkspaceAgent:
         system = (protocol + "\nLayer: " + self.tools.stage + "\n"
                   + LAYER_PROMPTS[self.tools.stage] + "\n\n" + sdk_reference(self.tools.stage))
         history = []
+        memory = ContextMemory(self.llm, self.tools.scratch, progress_callback=self.progress)
         initial = {"objective": objective, "writable_paths": self.tools.paths,
                    "temporary_directory": str(self.tools.scratch), "project": context}
         for step in range(self.max_steps):
+            current_state = {"revision": self.tools.revision, "changed_files": sorted(self.tools.changed),
+                             "checks": [{**check, "output": check.get("output", "")[-1500:]}
+                                        for check in self.tools.checks[-3:]]}
+            compaction = memory.compact_if_needed(history, initial, current_state)
+            if compaction:
+                print(f"   [{self.tools.stage}] context_compaction: " + json.dumps(compaction, ensure_ascii=False))
             conversation = [{"role": "user", "content": "Current layer task and project context:\n" + json.dumps(initial, ensure_ascii=False)}]
+            if memory.summary:
+                conversation[0]["content"] += "\n" + memory.message() + "\nCurrent controller tool state:\n" + json.dumps(current_state, ensure_ascii=False)
             for item in history:
                 observation = (
                         "Instruction parsing failed; nothing was executed:\n" if "parse_error" in item["observation"] else "Instruction result:\n"
@@ -109,7 +119,7 @@ class WorkspaceAgent:
                 f"\nRequests remaining for this layer: {self.max_steps - step}. Describe the next operation inside need_function_tool; request completion after implementation and checks."
                 if self.translator else
                 f"\nInstructions remaining for this layer: {self.max_steps - step}. Finish with registrations after the required implementation and a successful check.")
-            raw = self.llm(system, json.dumps({"task": initial, "history": history}, ensure_ascii=False),
+            raw = self.llm(system, json.dumps({"task": initial, "memory": memory.summary, "history": history}, ensure_ascii=False),
                            json_mode=False, temperature=0.1, progress_callback=self.progress,
                            progress_label=f"Working layer: {self.tools.stage}", conversation=conversation)
             action = None
@@ -147,6 +157,4 @@ class WorkspaceAgent:
                             if self.translator else encode_source_artifact(action["path"], "[large source omitted; read the workspace file if needed]"))
             history.append({"assistant": recorded, "observation": result} if action is not None else
                            {"assistant": None, "observation": result if self.translator else instruction_recovery_feedback(result)})
-            while len(json.dumps(history, ensure_ascii=False)) > 80000 and len(history) > 2:
-                history.pop(0)
         raise RuntimeError(f"{self.tools.stage} Agent reached {self.max_steps} steps; files are preserved for resume")

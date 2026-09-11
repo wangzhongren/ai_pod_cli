@@ -9,6 +9,7 @@ import { encodeSourceArtifact } from "./source-codec.js";
 import { INSTRUCTION_SET_PROMPT, parseErrorFeedback, instructionRecoveryFeedback } from "./instruction-protocol.js";
 import { sdkReference } from "./sdk-reference.js";
 import {InstructionTranslator, NEED_PROMPT, parseNeed, encodeNeed} from "./instruction-translator.js";
+import {ContextMemory, type HistoryExchange} from "./context-memory.js";
 
 export type Owner = StageName | "pod";
 export const DEFAULT_AGENT_MAX_STEPS = 100;
@@ -232,11 +233,18 @@ export class WorkspaceAgent {
     if (!this.client.completeText) throw new Error("completeText is required for workspace actions");
     const protocol = this.translator ? NEED_PROMPT + INSTRUCTION_PROMPT.slice(INSTRUCTION_SET_PROMPT.length) : INSTRUCTION_PROMPT;
     const system = `WORKSPACE_AGENT:${this.tools.owner}\n${protocol}\n${roles[this.tools.owner]}\n\n${sdkReference(this.tools.owner)}`;
-    const history: {assistant: string | null; observation: Record<string, unknown>}[] = [];
+    const history: HistoryExchange[] = [];
+    const memory = new ContextMemory(this.client, this.tools.scratch);
     const task = { objective, writablePaths: this.tools.paths, temporaryDirectory: this.tools.scratch, project };
     for (let step = 0; step < this.maxSteps; step += 1) {
       if (this.cancelled()) throw new Error("Pod Agent cancelled");
+      const currentState = {revision:this.tools.revision,changedFiles:[...this.tools.changed],
+        checks:this.tools.checks.slice(-3).map(check=>({...check,output:check.output.slice(-1500)}))};
+      const compaction = await memory.compactIfNeeded(history,task,currentState);
+      if (compaction) await this.onAction({tool:"context_compaction"},compaction); // Controller event, not an executable model instruction.
+      if (this.cancelled()) throw new Error("Pod Agent cancelled");
       const conversation: ConversationMessage[] = [{role: "user", content: "Current layer task and project context:\n" + JSON.stringify(task)}];
+      if (memory.summary) conversation[0]!.content += "\n" + memory.message() + "\nCurrent controller tool state:\n" + JSON.stringify(currentState);
       for (const item of history) {
         const observation = (item.observation.parse_error ? "Instruction parsing failed; nothing was executed:\n" : "Instruction result:\n") + JSON.stringify(item.observation);
         if (item.assistant === null) conversation[conversation.length - 1]!.content += "\n" + observation;
@@ -245,7 +253,7 @@ export class WorkspaceAgent {
       conversation[conversation.length - 1]!.content += this.translator
         ? `\nRequests remaining for this layer: ${this.maxSteps - step}. Describe the next operation inside need_function_tool; request completion after implementation and checks.`
         : `\nInstructions remaining for this layer: ${this.maxSteps - step}. Finish with registrations after the required implementation and a successful check.`;
-      const raw = await this.client.completeText(system, JSON.stringify({ task, history }), conversation);
+      const raw = await this.client.completeText(system, JSON.stringify({ task, memory:memory.summary, history }), conversation);
       if (this.cancelled()) throw new Error("Pod Agent cancelled");
       let action: Action | undefined, result: Record<string, unknown>;
       try {
@@ -274,7 +282,6 @@ export class WorkspaceAgent {
             ? this.translator ? encodeNeed(`Write ${String(action.path)}. [Large source omitted from history; read the workspace file if needed.]`)
               : encodeSourceArtifact({path: String(action.path), content: "[large source omitted; read the workspace file if needed]"})
             : raw, observation: result});
-      while (JSON.stringify(history).length > 80000 && history.length > 2) history.shift();
     }
     throw new Error(`${this.tools.owner} Agent reached ${this.maxSteps} steps; files are preserved for resume`);
   }
