@@ -19,6 +19,7 @@ from ai_pod_cli.commands.run import handle_run
 from ai_pod_cli.commands.studio import handle_studio
 from ai_pod_cli.commands.visualize import handle_visualize
 from ai_pod_cli.commands.verify import handle_verify
+from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE
 
 
 def main():
@@ -83,6 +84,10 @@ def main():
         "--stage", choices=("auto", "models", "providers", "services", "pipelines", "interfaces"),
         default="", help="Modify this existing layer and rebuild its downstream layers",
     )
+    for agent_parser in (pod_parser, create_parser, compose_parser):
+        agent_parser.add_argument("--instruction-mode", choices=("translated", "direct"),
+                                  default=DEFAULT_INSTRUCTION_MODE,
+                                  help="Agent protocol: translated requests (default) or direct instructions")
 
     # 6. config
     config_parser = subparsers.add_parser("config", help="Manage global configuration (~/.aipod/config.toml)")

@@ -144,7 +144,7 @@ class WorkspaceTests(unittest.TestCase):
     def test_named_create_cannot_register_a_different_component(self):
         state = load_and_upgrade_plan(None, "Create Requested")
         llm = Mock(return_value=response({"tool": "finish", "components": [{"id": "Other"}]}))
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None, max_steps=1)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, max_steps=1, instruction_mode="direct")
         with self.assertRaisesRegex(RuntimeError, "1 steps"):
             co.run_layer("models", expected_component="Requested")
         self.assertFalse(any(bean["id"] == "Other" for bean in json.loads((self.root / "beans_config.json").read_text())["beans"]))
@@ -159,7 +159,7 @@ class WorkspaceTests(unittest.TestCase):
             {"tool": "finish", "summary": "default validated", "components": [{"id": "Number", "class_path": "modules.models.number.Number"}]},
         ])
         llm = Mock(side_effect=lambda *_a, **kw: response(next(actions)))
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct")
         with patch("ai_pod_cli.test_generation.prepare_component_tests", side_effect=AssertionError("must not run")):
             co.run_layer("models")
         self.assertEqual(llm.call_count, 3)
@@ -189,7 +189,7 @@ class WorkspaceTests(unittest.TestCase):
             stage = system.split("\nLayer: ", 1)[1].splitlines()[0]
             calls.append(stage)
             return response(next(actions[stage]))
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct")
         co.run_layer("services")
         self.assertLess(calls.index("pod_approval"), calls.index("models"))
         self.assertIn("providers", calls)
@@ -200,7 +200,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_denied_request_preserves_source_and_invalid_scopes_never_reach_pod(self):
         state = self.state(); llm = Mock(return_value={"approved": False, "summary": "Keep the original rule"})
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct")
         request = {"target": "models", "paths": ["modules/models/number.py"], "reason": "test failed", "change": "change default"}
         self.assertFalse(co.request_change("services", request)["approved"])
         self.assertFalse((self.root / "modules/models/number.py").exists())
@@ -212,7 +212,7 @@ class WorkspaceTests(unittest.TestCase):
         state = self.state()
         def llm(*_args, **options):
             return {"approved": True} if options["json_mode"] else response({"tool": "read", "path": "missing.py"})
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None, max_steps=1)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, max_steps=1, instruction_mode="direct")
         with self.assertRaises(RuntimeError):
             co.request_change("services", {"target": "models", "paths": ["modules/models/item.py"], "reason": "broken model", "change": "fix model"})
         self.assertEqual(state["agent"]["change_requests"][0]["status"], "failed")
@@ -222,7 +222,7 @@ class WorkspaceTests(unittest.TestCase):
     def test_finish_needs_a_check_after_latest_edit(self):
         tools = self.protected("models")
         state = load_and_upgrade_plan(None, "test")
-        co = PodCoordinator(self.root, state, Mock(), save=lambda s: None)
+        co = PodCoordinator(self.root, state, Mock(), save=lambda s: None, instruction_mode="direct")
         tools.execute(run_python("assert 1 + 1 == 2"))
         tools.execute({"tool": "write", "path": "modules/models/note.txt", "content": "changed after check"})
         with self.assertRaisesRegex(ValueError, "successful shell check"):
@@ -235,7 +235,7 @@ class WorkspaceTests(unittest.TestCase):
             state["stages"][stage]["status"] = "complete"
         actions = iter([run_python("from pathlib import Path; assert Path('beans_config.json').is_file()"), {"tool": "finish", "summary": "project inspected"}])
         llm = Mock(side_effect=lambda *_a, **kw: response(next(actions)))
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct")
         co.build()
         self.assertEqual(state["agent"]["verification"]["status"], "passed")
         self.assertEqual(len(state["agent"]["verification"]["checks"]), 1)
@@ -264,7 +264,7 @@ class WorkspaceTests(unittest.TestCase):
             stage = system.split("\nLayer: ", 1)[1].splitlines()[0]
             queue = actions.get(stage, [])
             return response(queue.pop(0) if queue else {"tool": "finish", "summary": "No extra code required"})
-        co = PodCoordinator(self.root, state, llm, save=lambda s: None)
+        co = PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct")
         co.build()
         self.assertEqual(state["agent"]["status"], "complete")
         self.assertEqual([item["exit_code"] for item in state["agent"]["verification"]["checks"]], [1, 0])
@@ -283,7 +283,7 @@ class WorkspaceTests(unittest.TestCase):
             stage = system.split("\nLayer: ", 1)[1].splitlines()[0]
             queue = actions.get(stage, [])
             return response(queue.pop(0) if queue else {"tool": "finish", "summary": "compatible"})
-        PodCoordinator(self.root, state, llm, save=lambda s: None).build()
+        PodCoordinator(self.root, state, llm, save=lambda s: None, instruction_mode="direct").build()
         self.assertEqual(state["agent"]["change_requests"][0]["status"], "applied")
 
 

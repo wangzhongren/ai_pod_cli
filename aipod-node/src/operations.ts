@@ -1,16 +1,16 @@
-import { ConstructionAgent } from "./agent/agent.js";
+import { ConstructionAgent, type ConstructionOptions } from "./agent/agent.js";
 import type { ModelClient, StageName } from "./agent/types.js";
 import {
   loadProject, saveProject, type ProjectBean,
 } from "./agent/project.js";
 import { validateLayout } from "./agent/component-layout.js";
 
-export async function createComponents(projectRoot: string, client: ModelClient, category: "model" | "provider" | "service", description: string): Promise<string[]> {
-  return new ConstructionAgent(projectRoot, client).runStage(`${category}s` as StageName, description);
+export async function createComponents(projectRoot: string, client: ModelClient, category: "model" | "provider" | "service", description: string, options: ConstructionOptions = {}): Promise<string[]> {
+  return new ConstructionAgent(projectRoot, client, undefined, undefined, options).runStage(`${category}s` as StageName, description);
 }
 
-export async function composeRoutes(projectRoot: string, client: ModelClient, instruction: string): Promise<string[]> {
-  return new ConstructionAgent(projectRoot, client).runStage("pipelines", instruction);
+export async function composeRoutes(projectRoot: string, client: ModelClient, instruction: string, options: ConstructionOptions = {}): Promise<string[]> {
+  return new ConstructionAgent(projectRoot, client, undefined, undefined, options).runStage("pipelines", instruction);
 }
 
 export async function addBean(projectRoot: string, bean: ProjectBean): Promise<void> {

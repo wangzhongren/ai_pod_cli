@@ -29,7 +29,7 @@ test("each role keeps its bundled SDK reference after conversation history is tr
             : "<finish><summary>Checked</summary></finish>";
         },
       };
-      await new WorkspaceAgent(client, tools, () => false, 5).run(
+      await new WorkspaceAgent(client, tools, () => false, 5, undefined, null).run(
         "Check example", {}, async () => { throw new Error("No change request expected"); },
         async action => action,
       );

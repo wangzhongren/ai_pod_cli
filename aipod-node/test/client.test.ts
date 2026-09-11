@@ -28,6 +28,8 @@ test("text generation sends no JSON mode and preserves the complete XML response
   context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     assert.equal(Object.hasOwn(body, "response_format"), false);
+    for (const key of ["tools", "tool_choice", "functions", "function_call"]) assert.equal(Object.hasOwn(body, key), false);
+    assert.ok(body.messages.every((message: {role: string}) => ["system", "user", "assistant"].includes(message.role)));
     assert.equal(body.max_tokens, 65536);
     assert.equal(body.messages[0].content, system);
     return Response.json({ choices: [{ message: { content }, finish_reason: "stop" }] });

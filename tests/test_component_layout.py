@@ -147,7 +147,7 @@ class Second:
         if "sandbox_apply: Operation not permitted" in check["output"]:
             self.skipTest("Outer sandbox prevents nested shell; run with local shell permission")
         self.assertEqual(check["exit_code"], 0, check["output"])
-        coordinator = PodCoordinator(self.root, state, None, save=lambda _: None)
+        coordinator = PodCoordinator(self.root, state, None, save=lambda _: None, instruction_mode="direct")
         result = coordinator.accept("services", {"components": [self.beans[1]], "summary": "Nested helper repaired"}, tools)
         self.assertEqual(result["status"], "complete")
         registered = json.loads((self.root / "beans_config.json").read_text())["beans"][1]
@@ -174,7 +174,7 @@ class Second:
         state = load_and_upgrade_plan(None, "Remove unused Other provider")
         for stage in LAYERS:
             state["stages"][stage]["status"] = "complete"
-        coordinator = PodCoordinator(self.root, state, None, save=lambda _: None)
+        coordinator = PodCoordinator(self.root, state, None, save=lambda _: None, instruction_mode="direct")
         coordinator.accept("providers", {"remove": ["Other"]}, tools)
         registered = json.loads((self.root / "beans_config.json").read_text())["beans"]
         self.assertEqual([bean["id"] for bean in registered], ["Store", "Calculate"])

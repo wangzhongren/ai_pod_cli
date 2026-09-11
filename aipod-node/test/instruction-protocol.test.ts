@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {parseErrorFeedback} from '../src/agent/instruction-protocol.js';
+import {parseErrorFeedback,INSTRUCTION_EXAMPLES} from '../src/agent/instruction-protocol.js';
 import {parseAction,WorkspaceAgent,WorkspaceTools} from '../src/agent/workspace.js';
 import {encodeSourceArtifact} from '../src/agent/source-codec.js';
 import type {ConversationMessage} from '../src/agent/types.js';
@@ -12,6 +12,36 @@ function feedback(raw:string) {
   try {parseAction(raw);} catch(error) {return parseErrorFeedback(raw,error) as {executed:boolean;parse_error:{code:string;reason:string;line:number;column:number};format_help:string;format_example:string};}
   throw new Error('Malformed instruction was accepted');
 }
+test('each advertised instruction has a complete parseable example',()=>{
+  assert.deepEqual(Object.keys(INSTRUCTION_EXAMPLES),['list','read','search','create','update','delete','shell','request_change','finish']);
+  for(const [name,example] of Object.entries(INSTRUCTION_EXAMPLES))assert.equal(parseAction(example).tool,['create','update'].includes(name)?'write':name);
+});
+test('rejected syntax is not replayed, while valid source and full diagnostics are preserved',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'aipod-instruction-history-'));
+  try{
+    const tools=await WorkspaceTools.create(root,'models'),observations:Record<string,unknown>[]=[];
+    const content='export const label = "<｜｜DSML｜｜ calls>";\n';
+    const valid=encodeSourceArtifact({path:'src/models/value.ts',content});
+    const brokenSummary='<finish><summary>Check A && B</summary></finish>';
+    let calls=0;
+    const result=await new WorkspaceAgent({complete:async()=>({}),completeText:async(_system,user,conversation)=>{
+      calls++;
+      if(calls<=2){
+        if(calls===2){assert.doesNotMatch(JSON.stringify(conversation),/DSML/);assert.doesNotMatch(user,/DSML/);}
+        return '<｜｜DSML｜｜ calls><read><path>src/models/value.ts</path></read>';
+      }
+      if(calls===3){assert.doesNotMatch(JSON.stringify(conversation),/DSML/);return valid;}
+      assert.ok(conversation!.some(m=>m.role==='assistant'&&m.content===valid));
+      if(calls===4)return brokenSummary;
+      assert.ok(!conversation!.some(m=>m.content===brokenSummary));
+      assert.match(conversation!.at(-1)!.content,/CDATA/);
+      return '<finish><summary><![CDATA[Check A && B]]></summary></finish>';
+    }},tools,()=>false,5,(_action,observation)=>{observations.push(observation);}, null).run('Write a label',{},async()=>({}),async action=>action);
+    assert.equal(result.summary,'Check A && B');
+    assert.equal(await readFile(join(root,'src/models/value.ts'),'utf8'),content);
+    assert.match(JSON.stringify(observations[0]),/DSML/);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
 test('observed DSML hybrid identifies the wrapper rather than file size or language',()=>{
   const result=feedback('Checking the file.\n<｜｜DSML｜｜ calls>\n<｜｜DSML｜｜ invoke name="read"><path>app.py</path></read>');
   assert.equal(result.executed,false);
@@ -66,7 +96,7 @@ test('Agent receives diagnostics then corrects its response without partial exec
         return encodeSourceArtifact({path:'src/models/value.ts',content:'export const value = 42;\n'});
       }
       return '<finish><summary>done</summary></finish>';
-    }},tools,()=>false,3).run('Create a value',{},async()=>{throw new Error('unexpected owner request');},async action=>action);
+    }},tools,()=>false,3, undefined, null).run('Create a value',{},async()=>{throw new Error('unexpected owner request');},async action=>action);
     assert.equal(result.summary,'done');
     assert.equal(await readFile(path,'utf8'),'export const value = 42;\n');
   }finally{await rm(root,{recursive:true,force:true});}
@@ -78,7 +108,7 @@ test('execution errors are not reported as parsing errors',async()=>{
     await new WorkspaceAgent({complete:async()=>({}),completeText:async(_system,_user,conversation)=>{
       calls.push(conversation!);
       return calls.length===1?'<read><path>missing.ts</path></read>':'<finish><summary>observed</summary></finish>';
-    }},tools,()=>false,2).run('Inspect',{},async()=>({}),async action=>action);
+    }},tools,()=>false,2, undefined, null).run('Inspect',{},async()=>({}),async action=>action);
     assert.match(calls[1]!.at(-1)!.content,/ENOENT/);
     assert.doesNotMatch(calls[1]!.at(-1)!.content,/parse_error/);
   }finally{await rm(root,{recursive:true,force:true});}

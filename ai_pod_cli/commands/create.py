@@ -8,6 +8,7 @@ from ai_pod_cli.config import init_config_if_not_exists
 from ai_pod_cli.pod.coordinator import PodCoordinator
 from ai_pod_cli.pod.state import load_current_plan, load_and_upgrade_plan, save_decision_plan
 from ai_pod_cli.workspace import LAYERS
+from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE
 
 
 def handle_create(args):
@@ -25,7 +26,8 @@ def handle_create(args):
     for upstream in LAYERS[:LAYERS.index(stage)]:
         state["stages"][upstream]["status"] = "complete"
     coordinator = PodCoordinator(Path.cwd(), state, call_llm, save=save_decision_plan,
-                                 progress_callback=getattr(args, "progress_callback", None))
+                                 progress_callback=getattr(args, "progress_callback", None),
+                                 instruction_mode=getattr(args, "instruction_mode", DEFAULT_INSTRUCTION_MODE))
     try:
         coordinator.run_layer(stage, objective, expected_component=args.name)
     except Exception:

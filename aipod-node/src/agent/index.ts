@@ -7,4 +7,5 @@ export * from "./state.js";
 export * from "./types.js";
 export * from "./source-codec.js";
 export * from "./workspace.js";
+export * from "./instruction-translator.js";
 export { sdkReference } from "./sdk-reference.js";

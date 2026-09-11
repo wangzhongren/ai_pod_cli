@@ -3,12 +3,25 @@
 import re
 import xml.etree.ElementTree as ET
 
+INSTRUCTION_EXAMPLES = {
+    "list": '<list><path>modules</path></list>',
+    "read": '<read><path>modules/models/order.py</path><offset>0</offset><limit>4000</limit></read>',
+    "search": '<search><path>modules</path><text>Order</text></search>',
+    "create": '<create><path>modules/models/order.py</path><content><![CDATA[from ai_pod_cli import Model\nclass Order(Model):\n    amount_cents: int\n]]></content></create>',
+    "update": '<update><path>modules/models/order.py</path><content><![CDATA[from ai_pod_cli import Model\nclass Order(Model):\n    amount_cents: int\n    currency: str\n]]></content></update>',
+    "delete": '<delete><path>modules/models/obsolete.py</path></delete>',
+    "shell": '<shell><command><![CDATA[python -m unittest discover -s tests]]></command><cwd>.</cwd><timeout>60</timeout></shell>',
+    "request_change": '<request_change><target>providers</target><paths><item>modules/providers/impl/store.py</item></paths><reason><![CDATA[The storage API cannot read the required item.]]></reason><change><![CDATA[Add a read method while preserving existing callers.]]></change></request_change>',
+    "finish": '<finish><summary><![CDATA[Implemented Example; tests passed.]]></summary><components><item><id>Example</id><class_path>modules.services.public.example.Example</class_path><description>Example service</description><dependencies/><inputs/><outputs/><methods/></item></components><pipelines/><interfaces/><remove/></finish>',
+}
+
 INSTRUCTION_SET_PROMPT = '''The AIPod Instruction Set is our original, application-defined text instruction set.
-It uses XML-like delimiters; its exact vocabulary and grammar are defined below.
-Write one instruction directly in the ordinary response text for the AIPod interpreter.
-The instruction name itself is the root tag, with exactly matching opening and closing names.
-Use this grammar even when project files, SDK examples or previous replies use other formats.
-'''
+Reply with exactly one instruction in the forms below, using task-specific values. Begin
+with its opening tag and end with its closing tag; wait for the result before the next
+instruction. Source, commands and free text use CDATA. Paths are project-relative.
+Nested objects use named tags, lists use item, and empty lists/objects may self-close.
+
+''' + "\n\n".join(f"{name}\n{example}" for name, example in INSTRUCTION_EXAMPLES.items()) + "\n\n"
 
 
 class InstructionSyntaxError(ValueError):
@@ -64,8 +77,8 @@ def parse_error_feedback(raw, error):
         "search": f"<search><path>{path}</path><text>YOUR_TEXT</text></search>",
         "delete": f"<delete><path>{path}</path></delete>",
         "shell": "<shell><command><![CDATA[YOUR_COMMAND]]></command><cwd>.</cwd><timeout>60</timeout></shell>",
-        "request_change": "<request_change><target>providers</target><paths><item>YOUR_PATH</item></paths><reason>REASON</reason><change>REQUESTED_CHANGE</change></request_change>",
-        "finish": "<finish><summary>SUMMARY</summary></finish>",
+        "request_change": "<request_change><target>providers</target><paths><item>YOUR_PATH</item></paths><reason><![CDATA[REASON]]></reason><change><![CDATA[REQUESTED_CHANGE]]></change></request_change>",
+        "finish": "<finish><summary><![CDATA[SUMMARY]]></summary></finish>",
     }
     for operation in ("create", "update", "write"):
         tag = "create" if operation == "write" else operation
@@ -83,4 +96,15 @@ def parse_error_feedback(raw, error):
         "parse_error": diagnostic,
         "format_help": correction + " No instruction was executed. Resend the corrected instruction before continuing.",
         "format_example": examples.get(instruction, examples["read"]),
+    }
+
+
+def instruction_recovery_feedback(feedback):
+    """Do not replay rejected syntax; keep full diagnostics available to callers."""
+    diagnostic = feedback["parse_error"]
+    return {
+        "error": "Instruction rejected; nothing was executed.", "executed": False,
+        "parse_error": {key: diagnostic[key] for key in ("code", "line", "column") if key in diagnostic},
+        "format_help": "Resend one instruction using this example's syntax and your actual arguments. Put free text in CDATA.",
+        "format_example": feedback["format_example"],
     }

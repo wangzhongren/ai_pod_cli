@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 import { ConstructionAgent } from "./agent/agent.js";
+import {DEFAULT_INSTRUCTION_MODE, type InstructionMode} from "./agent/instruction-translator.js";
 import { OpenAICompatibleClient } from "./agent/client.js";
 import { loadProject, ensureProjectDirectories } from "./agent/project.js";
 import type { ProjectBean } from "./agent/project.js";
@@ -73,6 +74,12 @@ function option(name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function instructionMode(): InstructionMode {
+  const mode = option("--instruction-mode") ?? DEFAULT_INSTRUCTION_MODE;
+  if (mode !== "direct" && mode !== "translated") throw new Error("--instruction-mode must be direct or translated");
+  return mode;
+}
+
 function configuredClient(): OpenAICompatibleClient {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL ?? "deepseek-chat";
@@ -94,7 +101,7 @@ async function pod(): Promise<void> {
   const projectRoot = resolve(option("--project-root") ?? ".");
   const file = option("--file");
   const excluded = new Set<number>();
-  for (const flag of ["--project-root", "--file", "--stage"]) {
+  for (const flag of ["--project-root", "--file", "--stage", "--instruction-mode"]) {
     const index = args.indexOf(flag);
     if (index >= 0) {
       excluded.add(index);
@@ -104,10 +111,11 @@ async function pod(): Promise<void> {
   const objective = file
     ? await readFile(resolve(file), "utf8")
     : args.filter((_, index) => !excluded.has(index)).join(" ").trim();
+  const mode = instructionMode();
   const client = configuredClient();
   const agent = new ConstructionAgent(projectRoot, client, (event) => {
     console.log(`[${event.stage}] ${event.action}: ${event.message}`);
-  });
+  }, () => false, {instructionMode: mode});
   const stage = option("--stage");
   const state = stage
     ? await agent.revise(objective, stage as "auto" | "models" | "providers" | "services" | "pipelines" | "interfaces")
@@ -124,7 +132,7 @@ async function create(): Promise<void> {
   if (!description) throw new Error("--description is required");
   const root = resolve(option("--project-root") ?? ".");
   console.log(JSON.stringify({
-    artifacts: await createComponents(root, configuredClient(), category, description),
+    artifacts: await createComponents(root, configuredClient(), category, description, {instructionMode: instructionMode()}),
   }, null, 2));
 }
 
@@ -133,10 +141,12 @@ async function compose(): Promise<void> {
   const excluded = new Set<number>();
   const rootIndex = args.indexOf("--project-root");
   if (rootIndex >= 0) { excluded.add(rootIndex); excluded.add(rootIndex + 1); }
+  const modeIndex = args.indexOf("--instruction-mode");
+  if (modeIndex >= 0) { excluded.add(modeIndex); excluded.add(modeIndex + 1); }
   const instruction = args.filter((_, index) => !excluded.has(index)).join(" ").trim();
   if (!instruction) throw new Error("Pipeline instruction is required");
   console.log(JSON.stringify({
-    artifacts: await composeRoutes(root, configuredClient(), instruction),
+    artifacts: await composeRoutes(root, configuredClient(), instruction, {instructionMode: instructionMode()}),
   }, null, 2));
 }
 
@@ -398,6 +408,8 @@ Usage:
   aipod-node inspect [directory]
   aipod-node pod "application requirement" [--project-root directory]
   aipod-node pod "change request" --stage auto|models|providers|services|pipelines|interfaces
+  aipod-node pod "requirement" --instruction-mode direct --project-root ./demo
+  pod/create/compose use translated requests by default; --instruction-mode direct selects direct instructions
   aipod-node pod --file requirement.md [--project-root directory]
   aipod-node create --category model|provider|service --description "..."
   aipod-node add --id ID --category TYPE --file src/path.ts [--dependencies JSON]

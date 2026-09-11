@@ -80,7 +80,7 @@ class PipelineGenerationTests(unittest.TestCase):
         return SimpleNamespace(**{
             "cmd": "Convert the caller request into internal_count and run Consumer",
             "name": "demo", "list": False, "json": True,
-            "auto_repair": True, **overrides,
+            "auto_repair": True, "instruction_mode": "direct", **overrides,
         })
 
     def compose(self, llm, **args):

@@ -126,7 +126,7 @@ test("Agent can register public entries after writing and checking nested implem
     const actions = [encodeSourceArtifact({path: "src/services/impl/math/rules/arithmetic.ts", content: "export function double(value: number) {return value + value;}\n"}),
       JSON.stringify({tool: "shell", command: 'node "$AIPOD_NODE_CLI" verify --project-root .'}),
       JSON.stringify({tool: "finish", summary: "Nested implementation checked", components: [beans[1]]})];
-    await new ConstructionAgent(root, {async complete() {throw Error("unused");}, async completeText() {assert.ok(actions.length, "Agent should finish without repair"); return actions.shift()!;}}).runStage("services", "Expose Calculate via public");
+    await new ConstructionAgent(root, {async complete() {throw Error("unused");}, async completeText() {assert.ok(actions.length, "Agent should finish without repair"); return actions.shift()!;}}, undefined, undefined, {instructionMode: "direct"}).runStage("services", "Expose Calculate via public");
     assert.equal(JSON.parse(await readFile(resolve(root, "aipod.json"), "utf8")).beans[1].file, beans[1]!.file);
   } finally { await rm(root, {recursive: true, force: true}); }
 });
@@ -144,7 +144,7 @@ test("removing one component preserves the shared public file and other registra
     const actions = [encodeSourceArtifact({path: beans[0]!.file, content: exports}),
       JSON.stringify({tool: "shell", command: `node --input-type=module -e 'const {typeCheckProject} = await import(process.env.AIPOD_NODE_MODULE); const errors = await typeCheckProject(process.cwd()); if(errors.length) throw Error(JSON.stringify(errors));'`}),
       JSON.stringify({tool: "finish", summary: "Removed unused Other export", remove: ["Other"]})];
-    await new ConstructionAgent(root, {async complete() {throw Error("unused");}, async completeText() {assert.ok(actions.length); return actions.shift()!;}}).runStage("providers", "Remove unused Other provider");
+    await new ConstructionAgent(root, {async complete() {throw Error("unused");}, async completeText() {assert.ok(actions.length); return actions.shift()!;}}, undefined, undefined, {instructionMode: "direct"}).runStage("providers", "Remove unused Other provider");
     const current = JSON.parse(await readFile(resolve(root, "aipod.json"), "utf8")) as ProjectManifest;
     assert.deepEqual(current.beans.map((bean) => bean.id), ["Store", "Calculate"]);
     assert.equal(await readFile(resolve(root, beans[0]!.file), "utf8"), exports);

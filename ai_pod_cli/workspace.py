@@ -168,7 +168,7 @@ class WorkspaceTools:
             return {"path": path, "status": "written" if tool == "write" else "deleted"}
         if tool == "shell":
             return self.shell(action.get("command"), action.get("cwd", "."), action.get("timeout", 60))
-        raise ValueError(f"Unknown tool: {tool}")
+        raise ValueError(f"Unknown instruction: {tool}")
 
     def shell_command(self, command: str) -> list[str]:
         writable = [self.resolve(path, write=True) for path in self.paths] + [self.scratch]

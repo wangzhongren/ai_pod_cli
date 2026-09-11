@@ -99,7 +99,7 @@ class SourceGenerationTests(unittest.TestCase):
             try:
                 os.chdir(tmp)
                 with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch("ai_pod_cli.commands.compose.call_llm", side_effect=llm):
-                    self.assertTrue(handle_compose(SimpleNamespace(name="demo", cmd="Create a pipeline", json=True, list=False)))
+                    self.assertTrue(handle_compose(SimpleNamespace(name="demo", cmd="Create a pipeline", json=True, list=False, instruction_mode="direct")))
                 self.assertEqual(Path("pipelines/demo.py").read_text(), source)
                 self.assertEqual(modes, [False, False, False])
             finally:
@@ -143,7 +143,7 @@ class SourceGenerationTests(unittest.TestCase):
             try:
                 os.chdir(tmp)
                 with redirect_stdout(io.StringIO()), patch.dict(os.environ, {"OPENAI_API_KEY": "test"}), patch("ai_pod_cli.commands.create.call_llm", side_effect=llm):
-                    handle_create(SimpleNamespace(name="Sample", category="model", desc="Sample data", json=True))
+                    handle_create(SimpleNamespace(name="Sample", category="model", desc="Sample data", json=True, instruction_mode="direct"))
                 self.assertEqual(Path("modules/models/sample.py").read_text(), source)
                 self.assertEqual(modes, [False, False, False])
                 self.assertFalse(Path(".aipod/component-tests.json").exists())

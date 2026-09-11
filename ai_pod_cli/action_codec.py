@@ -41,6 +41,42 @@ def checked(tool, arguments):
     return {"tool": tool, **arguments}
 
 
+def decode_translated_action(value):
+    """Validate structured conversion before ordinary ownership and execution checks."""
+    if not isinstance(value, dict) or not isinstance(value.get("tool"), str):
+        raise ValueError("Translation must be one JSON object with an operation name")
+    tool = value["tool"]
+    action = checked(tool, {key: item for key, item in value.items() if key != "tool"})
+
+    def require_text(key, allow_empty=False):
+        item = action.get(key)
+        if not isinstance(item, str) or not allow_empty and not item.strip():
+            raise ValueError(f"Translation needs text {key}")
+
+    if tool in {"read", "search", "write", "delete"} or tool == "list" and "path" in action:
+        require_text("path")
+    if tool == "search":
+        require_text("text")
+    if tool == "write":
+        require_text("content", allow_empty=True)
+    if tool == "shell":
+        require_text("command")
+    if tool == "request_change":
+        for key in ("target", "reason", "change"):
+            require_text(key)
+        if not isinstance(action.get("paths"), list) or not action["paths"] or not all(isinstance(path, str) for path in action["paths"]):
+            raise ValueError("Translation needs a list of paths")
+    if tool == "finish":
+        require_text("summary")
+        for key in ("components", "pipelines", "routes", "interfaces", "remove"):
+            if key in action and not isinstance(action[key], list):
+                raise ValueError(f"Translation {key} must be a list")
+    for key in ("offset", "limit", "timeout"):
+        if key in action and (type(action[key]) is not int or action[key] < (0 if key == "offset" else 1)):
+            raise ValueError(f"Translation {key} must be a valid integer")
+    return action
+
+
 def _native_call(raw):
     # Some models emit their native XML-like envelope. Parameters are literal text,
     # so shell operators such as && must not be interpreted as XML entities.

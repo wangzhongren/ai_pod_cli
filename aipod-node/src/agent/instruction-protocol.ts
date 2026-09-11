@@ -1,9 +1,24 @@
 /** AIPod instruction vocabulary and model-facing parse diagnostics. */
+export const INSTRUCTION_EXAMPLES: Record<string, string> = {
+  list: '<list><path>src</path></list>',
+  read: '<read><path>src/models/order.ts</path><offset>0</offset><limit>4000</limit></read>',
+  search: '<search><path>src</path><text>Order</text></search>',
+  create: '<create><path>src/models/order.ts</path><content><![CDATA[export interface Order { amountCents: number }\n]]></content></create>',
+  update: '<update><path>src/models/order.ts</path><content><![CDATA[export interface Order { amountCents: number; currency: string }\n]]></content></update>',
+  delete: '<delete><path>src/models/obsolete.ts</path></delete>',
+  shell: '<shell><command><![CDATA[npm test]]></command><cwd>.</cwd><timeout>60</timeout></shell>',
+  request_change: '<request_change><target>providers</target><paths><item>src/providers/impl/store.ts</item></paths><reason><![CDATA[The storage API cannot read the required item.]]></reason><change><![CDATA[Add a read method while preserving existing callers.]]></change></request_change>',
+  finish: '<finish><summary><![CDATA[Implemented Example; npm test passed.]]></summary><components><item><id>Example</id><file>src/services/public/example.ts</file><description>Example service</description><dependencies/><inputs/><outputs/></item></components><routes/><interfaces/><remove/></finish>',
+};
+
 export const INSTRUCTION_SET_PROMPT = `The AIPod Instruction Set is our original, application-defined text instruction set.
-It uses XML-like delimiters; its exact vocabulary and grammar are defined below.
-Write one instruction directly in the ordinary response text for the AIPod interpreter.
-The instruction name itself is the root tag, with exactly matching opening and closing names.
-Use this grammar even when project files, SDK examples or previous replies use other formats.
+Reply with exactly one instruction in the forms below, using task-specific values. Begin
+with its opening tag and end with its closing tag; wait for the result before the next
+instruction. Source, commands and free text use CDATA. Paths are project-relative.
+Nested objects use named tags, lists use item, and empty lists/objects may self-close.
+
+${Object.entries(INSTRUCTION_EXAMPLES).map(([name, example]) => `${name}\n${example}`).join('\n\n')}
+
 `;
 
 export class InstructionSyntaxError extends Error {
@@ -38,8 +53,8 @@ export function parseErrorFeedback(raw: unknown, error: unknown): Record<string,
     list: "<list><path>.</path></list>", read: `<read><path>${path}</path></read>`,
     search: `<search><path>${path}</path><text>YOUR_TEXT</text></search>`, delete: `<delete><path>${path}</path></delete>`,
     shell: "<shell><command><![CDATA[YOUR_COMMAND]]></command><cwd>.</cwd><timeout>60</timeout></shell>",
-    request_change: "<request_change><target>providers</target><paths><item>YOUR_PATH</item></paths><reason>REASON</reason><change>REQUESTED_CHANGE</change></request_change>",
-    finish: "<finish><summary>SUMMARY</summary></finish>",
+    request_change: "<request_change><target>providers</target><paths><item>YOUR_PATH</item></paths><reason><![CDATA[REASON]]></reason><change><![CDATA[REQUESTED_CHANGE]]></change></request_change>",
+    finish: "<finish><summary><![CDATA[SUMMARY]]></summary></finish>",
   };
   for (const operation of ["create", "update", "write"]) {
     const tag = operation === "write" ? "create" : operation;
@@ -57,5 +72,16 @@ export function parseErrorFeedback(raw: unknown, error: unknown): Record<string,
     error: `AIPod instruction parse error [${code}]${location}: ${reason}`, executed: false, parse_error: diagnostic,
     format_help: correction + " No instruction was executed. Resend the corrected instruction before continuing.",
     format_example: examples[instruction] ?? examples.read,
+  };
+}
+
+/** Keep rejected syntax out of the next model prompt; preserve full diagnostics for callers. */
+export function instructionRecoveryFeedback(feedback: Record<string, unknown>): Record<string, unknown> {
+  const diagnostic = feedback.parse_error as {code: string; line?: number; column?: number};
+  return {
+    error: "Instruction rejected; nothing was executed.", executed: false,
+    parse_error: {code: diagnostic.code, line: diagnostic.line, column: diagnostic.column},
+    format_help: "Resend one instruction using this example's syntax and your actual arguments. Put free text in CDATA.",
+    format_example: feedback.format_example,
   };
 }

@@ -12,6 +12,7 @@ from ai_pod_cli.pod.state import (
 )
 from ai_pod_cli.pod.revision import select_revision_stage
 from ai_pod_cli.workspace_agent import DEFAULT_AGENT_MAX_STEPS, DEFAULT_POD_MAX_STEPS
+from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE
 
 
 def _agent_project_observation(state: dict) -> dict:
@@ -111,7 +112,8 @@ def handle_pod(args):
     coordinator = PodCoordinator(Path.cwd(), state, call_llm, save=_save_decision_plan,
                                  progress_callback=getattr(args, "progress_callback", None),
                                  max_steps=int(getattr(args, "_pod_agent_max_steps", DEFAULT_AGENT_MAX_STEPS)),
-                                 pod_max_steps=int(getattr(args, "_pod_max_steps", DEFAULT_POD_MAX_STEPS)))
+                                 pod_max_steps=int(getattr(args, "_pod_max_steps", DEFAULT_POD_MAX_STEPS)),
+                                 instruction_mode=getattr(args, "instruction_mode", DEFAULT_INSTRUCTION_MODE))
     try:
         coordinator.build()
     except Exception:

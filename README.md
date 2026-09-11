@@ -226,7 +226,7 @@ Agent 修改文件或收到上游更新后，需要重新执行检查再交接�
 
 默认限制：
 
-- Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 **100 轮指令**；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 **200 轮**。每轮输出一条指令，各自独立计数。
+- Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 **100 轮需求**；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 **200 轮**。每轮输出一条需求，各自独立计数；转换请求和模型内部重试不等于新的工作轮次。
 - 每次 Pod 运行最多 **10 次修改申请**。
 - shell 默认 **60 秒**，单次最多 **120 秒**，返回有限长度的输出。
 
@@ -247,7 +247,26 @@ aipod verify --json -- python -m unittest discover -s tests/services
 
 这一协议由框架与模型交互使用，日常使用 CLI 不需要手写。
 
-提示词明确将其定义为 **AIPod 原创的专用文本指令集（AIPod Instruction Set）**，XML-like 是它使用的表示语法。Agent 在普通响应正文中输出一条指令，AIPod 控制器解析执行并反馈结果。标签名称严格按下列格式书写，源码和复杂 shell 命令放在 CDATA 中：
+Python 和 Node 的工作 Agent 默认使用 `translated` 需求转换模式。工作 Agent 每次只描述一个操作：
+
+```xml
+<need_function_tool>读取 modules/models/task.py 的内容。</need_function_tool>
+```
+
+专门的转换 Agent 将需求转换为现有本地操作的结构化参数，再由控制器检查文件归属、权限及注册信息并执行。
+读取、搜索、文件修改、shell、跨层修改申请和完成交接均通过这一路径。源码由工作 Agent 完整提供，转换结果必须逐字匹配；缺少参数、复合需求或转换失败会反馈给工作 Agent，不执行猜测出的操作。
+需求正文是普通文本，也可用 CDATA 包含源码。转换 Agent 使用同一份已配置模型，但没有额外文件权限。
+
+`pod`、`create`、`compose` 和 Studio 的工作流程均默认使用此模式，无需新增参数。
+需要直接输出指令时，显式指定 `--instruction-mode direct`（Python/Node 的这三个 CLI 命令均支持），例如：
+
+```bash
+aipod pod "调整任务完成规则。" --stage services --instruction-mode direct --yes
+```
+
+### 直接指令模式
+
+直接模式使用 **AIPod 原创的专用文本指令集（AIPod Instruction Set）**。工作 Agent 在普通响应正文中输出一条指令，由控制器解析执行。源码、命令及自由文本字段使用 CDATA，示例如下：
 
 ```xml
 <read><path>modules/models/task.py</path></read>
@@ -284,9 +303,9 @@ class Example:
 
 CDATA 不改变返回值的字符串类型，它用于隔离内容中的 `<`、`&` 等符号。路径和普通参数无需 CDATA；不使用 CDATA 的文本须按 XML 规则转义。源码生成提示词使用 CDATA，以保留源码原文并减少转义。
 
-读取长文件时通过 `offset` / `limit` 和返回的 `next_offset` 分页。`finish` 的注册信息由控制器验证归属和契约后写入注册表。解析器保留对已观察到的单个 DSML `tool_calls/invoke/parameter` 封装的兼容，但提示词只示范上面的文本指令格式。旧的 JSON 控制动作仅为兼容既有调用保留；注册文件和 HTTP 数据仍按各自的数据格式保存。
+读取长文件时通过 `offset` / `limit` 和返回的 `next_offset` 分页。`finish` 的注册信息由控制器验证归属和契约后写入注册表。直接模式解析器保留对已观察到的单个 DSML 封装及旧 JSON 控制动作的兼容；默认转换模式通过专用结构化参数校验入口执行。
 
-解析失败时，控制器返回 `executed: false`，以及 `parse_error` 中的错误类别、具体原因和可定位时的行列、附近片段；`format_help` 与 `format_example` 给出针对当前指令的修正说明和格式示例。混入 DSML 外壳时会明确指出外壳错误，避免误判为文件太大或中文编码问题。模型需要先重发正确指令，解析器不会猜测并执行损坏的回复。文件不存在、权限或执行错误仍按执行结果反馈。
+直接模式解析失败时，完整诊断保留给调用方；工作 Agent 只收到错误类别、位置和合法示例，错误回复原文不再回放到模型历史中。需求转换失败同样返回 `executed: false`，由工作 Agent 修正后重试。文件不存在、权限或执行错误仍按执行结果反馈。
 
 ## Studio
 

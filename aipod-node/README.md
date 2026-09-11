@@ -48,11 +48,11 @@ Model → Provider → Service → Pipeline → Interface
              Pod 调度、审批与验收
 ```
 
-所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`，可选择列出、读取、搜索、增删改文件以及运行 shell。提示词将协议明确为 AIPod 原创的专用文本指令集（AIPod Instruction Set），采用 XML-like 表示语法。Agent 在普通响应正文中输出一条指令，由 AIPod 控制器解析执行并反馈结果。读写文件、shell、上游修改申请和 finish 都使用这一格式；源码和复杂命令放在 CDATA 中，对象使用嵌套标签，列表成员使用 `<item>`。
+所有层共用 `WorkspaceAgent` 和 `WorkspaceTools`。默认 `translated` 模式中，工作 Agent 在 `<need_function_tool>需求</need_function_tool>` 内描述一个操作，转换 Agent 将需求转成现有本地操作的结构化参数，控制器校验后执行。列出、读取、搜索、增删改文件、shell、上游修改申请和完成交接均走这一路径。转换 Agent 不获得额外文件权限，源码必须由工作 Agent 完整提供并逐字保留。Python 端使用相同默认流程。
 
 SDK 参考集中在 [sdk-reference.ts](src/agent/sdk-reference.ts)，随包发布，并按当前层注入系统提示词。它包含准确的依赖注入方式、契约、调用签名、返回结构及最小示例；Interface/Pod 还会收到长驻入口的启动检查说明。历史对话裁剪后参考仍然保留，Agent 优先使用它，缺少具体细节时再查源码。其他章节也可通过 `import { sdkReference } from "aipod-node"` 后调用 `sdkReference("interfaces")` 等方式取得。回归测试会把提示词中的原样示例组成临时项目，完成 TypeScript 检查及真实 SDK 执行。
 
-解析失败返回 `executed: false`、具体 `parse_error`（类别、原因及可定位时的行列和片段）、`format_help` 与 `format_example`。模型会收到针对 DSML 外壳、标签不匹配、CDATA 未闭合等错误的修正说明；损坏的指令不会被猜测执行。执行阶段的错误与解析错误分别反馈。
+需求格式或转换失败会返回 `executed: false`，工作 Agent 修正后重试。显式 `direct` 模式仍支持直接输出 AIPod 指令；完整解析诊断保留给调用方，模型历史只接收错误类别、位置与合法示例，不回放错误回复原文。执行阶段的错误与格式错误分别反馈。
 
 | Owner | 可写范围 |
 |---|---|
@@ -66,10 +66,7 @@ SDK 参考集中在 [sdk-reference.ts](src/agent/sdk-reference.ts)，随包发�
 其他层的文件保持只读，注册表与 Pod 状态由控制器管理。发现上游问题时，Agent 发出申请：
 
 ```xml
-<request_change><target>providers</target>
-<paths><item>src/providers/impl/storage/store.ts</item></paths>
-<reason>已观察到的接口问题</reason><change>必要的修改及兼容要求</change>
-</request_change>
+<need_function_tool>申请由 providers 修改 src/providers/impl/storage/store.ts：现有存储接口不能读取指定条目，需要补充读取方法并保留已有调用兼容性。</need_function_tool>
 ```
 
 Pod 批准后交给原 Owner 修改，重新检查受影响的中间层，再让申请者继续。申请者不会获得上游写权限。决定与结果保存在 `.aipod/plan.json`，已批准但中断的工作可以续接。
@@ -142,6 +139,21 @@ npx aipod-node create --category service --description "格式化问候内容" -
 npx aipod-node compose "先验证输入，再生成问候" --project-root ./demo
 ```
 
+需求转换已是默认模式，目前需使用源码版本：
+
+```bash
+npx aipod-node pod "调整定价规则，保留其他行为。" --stage auto --project-root ./demo
+```
+
+默认 `translated` 模式中，工作 Agent
+只输出一条 `<need_function_tool>具体需求</need_function_tool>`；专门的转换 Agent 使用
+独立模型请求将它转换为本地操作参数，原控制器再执行文件归属、权限和注册校验。
+转换 Agent 不执行命令、不拥有额外写权限；源码必须由工作 Agent 完整提供，转换结果须逐字匹配。
+缺失参数或转换失败会反馈给工作 Agent，不能静默执行猜测出的源码。
+
+两阶段使用同一个已配置模型。`pod`、`create`、`compose` 和 Studio 均默认启用，无需参数。
+如需旧的直接指令方式，三个 CLI 命令均可显式指定 `--instruction-mode direct`；恢复时继续传入该参数。
+
 使用实际生成的路由与 Interface 名称运行：
 
 ```bash
@@ -178,7 +190,7 @@ Agent shell：
 
 Linux 下新的共享根文件应先由文件工具创建，再交给 shell 修改。缺少权限后端时会报错，不会退回无约束执行。
 
-Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 100 轮指令；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 200 轮。每轮一条指令，各自独立计数。每次 Pod 运行最多 10 次修改申请。部分文件会在失败后保留以便恢复。检查成功不代表需求已被完整覆盖。
+Model、Provider、Service、Pipeline、Interface Agent 每次执行默认最多 100 轮需求；Pod Agent（含最终验收与共享文件修正）每次执行默认最多 200 轮。每轮一条需求，各自独立计数；转换请求及内部重试不等于新工作轮次。每次 Pod 运行最多 10 次修改申请。部分文件会在失败后保留以便恢复。检查成功不代表需求已被完整覆盖。
 
 ## 配置与 Studio
 

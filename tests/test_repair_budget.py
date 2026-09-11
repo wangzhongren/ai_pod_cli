@@ -19,7 +19,7 @@ class RepairBudgetTests(unittest.TestCase):
             Path(root, 'beans_config.json').write_text('{"beans":[]}')
             state = load_and_upgrade_plan(None, 'Check instruction budgets')
             llm = Mock(return_value='<unknown/>')
-            coordinator = PodCoordinator(root, state, llm, save=lambda _: None)
+            coordinator = PodCoordinator(root, state, llm, save=lambda _: None, instruction_mode="direct")
             with redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'pod Agent reached 200 steps'):
                 coordinator.run_layer('pod')
             self.assertEqual(llm.call_count, 200)
@@ -28,15 +28,15 @@ class RepairBudgetTests(unittest.TestCase):
                 coordinator.run_layer('models')
             self.assertEqual(llm.call_count, 100)
             pod = WorkspaceTools(root, 'pod')
-            self.assertEqual(WorkspaceAgent(llm, pod).max_steps, 200)
-            self.assertEqual(WorkspaceAgent(llm, pod, max_steps=2).max_steps, 2)
+            self.assertEqual(WorkspaceAgent(llm, pod, instruction_mode="direct").max_steps, 200)
+            self.assertEqual(WorkspaceAgent(llm, pod, max_steps=2, instruction_mode="direct").max_steps, 2)
 
     def test_ten_change_requests_are_allowed_but_not_an_eleventh_decision(self):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'beans_config.json').write_text('{"beans":[]}')
             state = load_and_upgrade_plan(None, 'Keep original contracts')
             llm = Mock(return_value={'approved': False, 'summary': 'Not required'})
-            co = PodCoordinator(root, state, llm, save=lambda _: None)
+            co = PodCoordinator(root, state, llm, save=lambda _: None, instruction_mode="direct")
             request = {'target': 'models', 'paths': ['modules/models/item.py'], 'reason': 'proposed change', 'change': 'adjust field'}
             for _ in range(10):
                 self.assertFalse(co.request_change('services', request)['approved'])
@@ -50,7 +50,7 @@ class RepairBudgetTests(unittest.TestCase):
             tools = WorkspaceTools(root, 'models')
             llm = Mock(side_effect=[encode_source_artifact('modules/models/note.txt', 'partial work'), '{"tool":"list","path":"modules/models"}'])
             with self.assertRaisesRegex(RuntimeError, '2 steps'):
-                WorkspaceAgent(llm, tools, max_steps=2).run('Build model', {}, request_change=Mock(), finish=Mock())
+                WorkspaceAgent(llm, tools, max_steps=2, instruction_mode="direct").run('Build model', {}, request_change=Mock(), finish=Mock())
             self.assertEqual(Path(root, 'modules/models/note.txt').read_text(), 'partial work')
             self.assertEqual(llm.call_count, 2)
 
@@ -58,7 +58,7 @@ class RepairBudgetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'beans_config.json').write_text('{"beans":[]}')
             state = load_and_upgrade_plan(None, 'Repair model')
-            co = PodCoordinator(root, state, Mock(return_value={'approved': True}), save=lambda _: None)
+            co = PodCoordinator(root, state, Mock(return_value={'approved': True}), save=lambda _: None, instruction_mode="direct")
             co.run_layer = Mock(side_effect=RuntimeError('owner stopped'))
             with self.assertRaisesRegex(RuntimeError, 'owner stopped'):
                 co.request_change('services', {'target': 'models', 'paths': ['modules/models/item.py'], 'reason': 'contract mismatch', 'change': 'correct field'})

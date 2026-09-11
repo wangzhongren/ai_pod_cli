@@ -55,6 +55,7 @@ def handle_compose(args):
     from ai_pod_cli.pod.coordinator import PodCoordinator
     from ai_pod_cli.pod.state import load_current_plan, load_and_upgrade_plan, save_decision_plan
     from ai_pod_cli.workspace import LAYERS
+    from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE
     init_config_if_not_exists()
     objective = f"Compose route {getattr(args, 'name', '')}: {args.cmd}"
     state = load_current_plan() or load_and_upgrade_plan(None, objective)
@@ -62,7 +63,8 @@ def handle_compose(args):
     for stage in LAYERS[:3]:
         state["stages"][stage]["status"] = "complete"
     coordinator = PodCoordinator(Path.cwd(), state, call_llm, save=save_decision_plan,
-                                 progress_callback=getattr(args, "progress_callback", None))
+                                 progress_callback=getattr(args, "progress_callback", None),
+                                 instruction_mode=getattr(args, "instruction_mode", DEFAULT_INSTRUCTION_MODE))
     try:
         coordinator.run_layer("pipelines", objective)
     except Exception as error:

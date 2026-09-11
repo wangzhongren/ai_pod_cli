@@ -61,7 +61,7 @@ class XmlActionTests(unittest.TestCase):
             def llm(system, user, **options):
                 calls.append(options['conversation'])
                 return '<read><path>modules/models/value.py</path></read>' if len(calls) == 1 else '<finish><summary>observed</summary></finish>'
-            result = WorkspaceAgent(llm, tools).run('Inspect existing value', {}, request_change=lambda *_: {}, finish=lambda action, _: action)
+            result = WorkspaceAgent(llm, tools, instruction_mode="direct").run('Inspect existing value', {}, request_change=lambda *_: {}, finish=lambda action, _: action)
             self.assertEqual(result['summary'], 'observed')
             self.assertEqual([message['role'] for message in calls[1]], ['user', 'assistant', 'user'])
             self.assertIn('VALUE = 42', calls[1][-1]['content'])
@@ -92,7 +92,7 @@ class XmlActionTests(unittest.TestCase):
             def llm(system, user, **options):
                 calls.append(options['conversation'])
                 return source if len(calls) == 1 else '<finish><summary>written</summary></finish>'
-            WorkspaceAgent(llm, tools).run('Write a value', {}, request_change=lambda *_: {}, finish=lambda action, _: action)
+            WorkspaceAgent(llm, tools, instruction_mode="direct").run('Write a value', {}, request_change=lambda *_: {}, finish=lambda action, _: action)
             self.assertEqual(calls[1][1], {'role':'assistant','content':source})
 
 

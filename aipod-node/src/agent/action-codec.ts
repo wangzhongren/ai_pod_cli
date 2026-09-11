@@ -23,6 +23,31 @@ function checked(tool: string, arguments_: unknown): Action {
   if (unknown.length) throw new Error(`Unknown operands for ${tool}: ${unknown.join(", ")}`);
   return { tool, ...arguments_ };
 }
+
+/** Validate a translator's structured operands before the existing controller executes them. */
+export function decodeTranslatedAction(value: Record<string, unknown>): Action {
+  const {tool, ...operands} = value;
+  if (typeof tool !== "string") throw new Error("Translation needs one operation name");
+  const action = checked(tool, operands);
+  const requireText = (key: string, allowEmpty = false) => {
+    if (typeof action[key] !== "string" || !allowEmpty && !(action[key] as string).trim()) throw new Error(`Translation needs text ${key}`);
+  };
+  if (["read", "search", "write", "delete"].includes(tool)) requireText("path");
+  if (tool === "list" && action.path !== undefined) requireText("path");
+  if (tool === "search") requireText("text");
+  if (tool === "write") requireText("content", true);
+  if (tool === "shell") requireText("command");
+  if (tool === "request_change") {
+    for (const key of ["target", "reason", "change"]) requireText(key);
+    if (!Array.isArray(action.paths) || !action.paths.length || !action.paths.every(p => typeof p === "string")) throw new Error("Translation needs a list of paths");
+  }
+  if (tool === "finish") {
+    requireText("summary");
+    for (const key of ["components", "routes", "pipelines", "interfaces", "remove"]) if (action[key] !== undefined && !Array.isArray(action[key])) throw new Error(`Translation ${key} must be a list`);
+  }
+  for (const key of ["offset", "limit", "timeout"]) if (action[key] !== undefined && (!Number.isInteger(action[key]) || Number(action[key]) < (key === "offset" ? 0 : 1))) throw new Error(`Translation ${key} must be a valid integer`);
+  return action;
+}
 function nativeCall(raw: string): Action {
   const marker = "(?:｜+DSML｜+)?";
   const outer = new RegExp(`^<${marker}tool_calls>\\s*<${marker}invoke\\s+name="([a-z_]+)">([\\s\\S]*)</${marker}invoke>\\s*</${marker}tool_calls>$`).exec(raw);

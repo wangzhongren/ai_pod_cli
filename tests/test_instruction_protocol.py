@@ -5,13 +5,46 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
-from ai_pod_cli.instruction_protocol import parse_error_feedback
+from ai_pod_cli.instruction_protocol import parse_error_feedback, INSTRUCTION_EXAMPLES
 from ai_pod_cli.source_codec import encode_source_artifact
 from ai_pod_cli.workspace import WorkspaceTools, parse_action
 from ai_pod_cli.workspace_agent import WorkspaceAgent
 
 
 class InstructionProtocolTests(unittest.TestCase):
+    def test_each_instruction_has_a_complete_parseable_example(self):
+        self.assertEqual(list(INSTRUCTION_EXAMPLES), ['list', 'read', 'search', 'create', 'update', 'delete', 'shell', 'request_change', 'finish'])
+        for name, example in INSTRUCTION_EXAMPLES.items():
+            self.assertEqual(parse_action(example)['tool'], 'write' if name in {'create', 'update'} else name)
+
+    def test_rejected_syntax_is_not_replayed_but_valid_source_is_preserved(self):
+        with tempfile.TemporaryDirectory() as root:
+            tools = WorkspaceTools(root, 'models')
+            source = 'label = "<｜｜DSML｜｜ calls>"\n'
+            valid = encode_source_artifact('modules/models/value.py', source)
+            broken_summary = '<finish><summary>Check A && B</summary></finish>'
+            calls = []
+            def llm(system, user, **options):
+                conversation = options['conversation']
+                calls.append(conversation)
+                if len(calls) <= 2:
+                    if len(calls) == 2:
+                        self.assertNotIn('DSML', json.dumps(conversation))
+                        self.assertNotIn('DSML', user)
+                    return '<｜｜DSML｜｜ calls><read><path>modules/models/value.py</path></read>'
+                if len(calls) == 3:
+                    self.assertNotIn('DSML', json.dumps(conversation))
+                    return valid
+                self.assertTrue(any(m['role'] == 'assistant' and m['content'] == valid for m in conversation))
+                if len(calls) == 4:
+                    return broken_summary
+                self.assertFalse(any(m['content'] == broken_summary for m in conversation))
+                self.assertIn('CDATA', conversation[-1]['content'])
+                return '<finish><summary><![CDATA[Check A && B]]></summary></finish>'
+            result = WorkspaceAgent(llm, tools, max_steps=5, instruction_mode="direct").run('Write a label', {}, request_change=Mock(), finish=lambda action, _: action)
+            self.assertEqual(result['summary'], 'Check A && B')
+            self.assertEqual(Path(root, 'modules/models/value.py').read_text(), source)
+
     def feedback(self, raw):
         try:
             parse_action(raw)
@@ -78,7 +111,7 @@ class InstructionProtocolTests(unittest.TestCase):
                     return encode_source_artifact('modules/models/value.py', 'VALUE = 42\n')
                 return '<finish><summary>done</summary></finish>'
             changed = Mock()
-            result = WorkspaceAgent(llm, tools, max_steps=3).run('Create a value', {}, request_change=changed, finish=lambda action, _: action)
+            result = WorkspaceAgent(llm, tools, max_steps=3, instruction_mode="direct").run('Create a value', {}, request_change=changed, finish=lambda action, _: action)
             self.assertEqual(result['summary'], 'done')
             self.assertEqual(path.read_text(), 'VALUE = 42\n')
             changed.assert_not_called()
@@ -90,6 +123,6 @@ class InstructionProtocolTests(unittest.TestCase):
             def llm(system, user, **options):
                 calls.append(options['conversation'])
                 return '<read><path>missing.py</path></read>' if len(calls) == 1 else '<finish><summary>observed</summary></finish>'
-            WorkspaceAgent(llm, tools, max_steps=2).run('Inspect', {}, request_change=Mock(), finish=lambda action, _: action)
+            WorkspaceAgent(llm, tools, max_steps=2, instruction_mode="direct").run('Inspect', {}, request_change=Mock(), finish=lambda action, _: action)
             self.assertIn('FileNotFoundError', calls[1][-1]['content'])
             self.assertNotIn('parse_error', calls[1][-1]['content'])

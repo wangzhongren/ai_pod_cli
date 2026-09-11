@@ -9,6 +9,9 @@ import { SourceGraph, validateLayout, area } from "./component-layout.js";
 import { typeCheckProject, formatSemanticDiagnostic } from "../semantic-check.js";
 import { DEFAULT_AGENT_MAX_STEPS, DEFAULT_POD_MAX_STEPS, WorkspaceAgent, WorkspaceTools, pathOwner, type Owner, type Action, type ShellCheck } from "./workspace.js";
 import { revisionScope, stageEntries } from "./revision.js";
+import {InstructionTranslator, DEFAULT_INSTRUCTION_MODE, type InstructionMode} from "./instruction-translator.js";
+
+export interface ConstructionOptions {instructionMode?: InstructionMode}
 
 export type ProgressHandler = (event: AgentEvent) => void;
 export class AgentCancelledError extends Error {
@@ -45,7 +48,8 @@ export class ConstructionAgent {
   private project!: ProjectManifest;
   private requests = 0;
   constructor(readonly projectRoot: string, readonly client: ModelClient,
-    readonly onProgress: ProgressHandler = () => undefined, readonly isCancelled: () => boolean = () => false) {}
+    readonly onProgress: ProgressHandler = () => undefined, readonly isCancelled: () => boolean = () => false,
+    readonly options: ConstructionOptions = {}) {}
   private checkCancelled(): void { if (this.isCancelled()) throw new AgentCancelledError(); }
   private async persist(): Promise<void> { await saveState(this.projectRoot, this.state); }
   private context(): unknown { return { project: this.project, currentRequest: (this.state as WorkspaceState & {instruction?:string}).instruction,
@@ -153,7 +157,7 @@ export class ConstructionAgent {
       this.state.history = this.state.history.slice(-100);
       await this.persist();
       this.onProgress({ stage: layer, action: action?.tool === "shell" ? "validating" : "generating", message, ...(typeof action?.path === "string" ? {artifact: action.path} : {}) });
-    }).run(
+    }, (this.options.instructionMode ?? DEFAULT_INSTRUCTION_MODE) === "translated" ? new InstructionTranslator(this.client) : null).run(
       `${this.state.objective}\nAssigned work: ${instruction}`, this.context(),
       (owner, action) => this.requestChange(owner, action), (action, current) => this.accept(stage, action, current, finalReview, allowedIds));
     if (stage !== "pod") this.onProgress({ stage, action: "complete", message: `${stage} complete` });

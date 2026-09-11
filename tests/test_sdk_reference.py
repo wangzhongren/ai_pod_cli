@@ -28,7 +28,7 @@ class SDKReferenceTests(unittest.TestCase):
                     llm = Mock(side_effect=[
                         '<read><path>README.md</path></read>' for _ in range(4)
                     ] + ['<finish><summary>Checked</summary></finish>'])
-                    WorkspaceAgent(llm, tools, max_steps=5).run(
+                    WorkspaceAgent(llm, tools, max_steps=5, instruction_mode="direct").run(
                         "Check example", {}, request_change=Mock(),
                         finish=lambda action, _tools: action,
                     )

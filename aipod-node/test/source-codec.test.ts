@@ -108,7 +108,7 @@ test("invalid model XML never commits a candidate file or completes its stage", 
     await assert.rejects(new ConstructionAgent(root, {
       complete: async () => ({ summary: "", components: [{ id: "User", file: "user.ts", description: "", dependencies: [], inputs: {}, outputs: {}, tests: testPlan }] }),
       completeText: async (system) => { const tests = userTests(system); if (tests) return tests; attempts += 1; return valid + valid; },
-    }).run("Generate User"), /100 steps/);
+    }, undefined, undefined, {instructionMode: "direct"}).run("Generate User"), /100 steps/);
     assert.equal(attempts, 100);
     assert.equal((await loadState(root, "Generate User")).stages.models.status, "failed");
     assert.deepEqual(JSON.parse(await readFile(join(root, "aipod.json"), "utf8")), manifest);
@@ -128,7 +128,7 @@ test("final Pod has its own 200-instruction budget after the layers finish", asy
         attempts[owner] = (attempts[owner] ?? 0) + 1;
         return owner === "pod" ? "<unknown/>" : "<finish><summary>No artifacts needed</summary></finish>";
       },
-    }).run("Inspect an empty scaffold"), /pod Agent reached 200 steps/);
+    }, undefined, undefined, {instructionMode: "direct"}).run("Inspect an empty scaffold"), /pod Agent reached 200 steps/);
     assert.deepEqual(attempts, {models: 1, providers: 1, services: 1, pipelines: 1, interfaces: 1, pod: 200});
   } finally { await rm(root, {recursive: true, force: true}); }
 });

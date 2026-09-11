@@ -15,14 +15,19 @@ from ai_pod_cli.component_layout import SourceGraph, validate_layout, area
 from ai_pod_cli.validation import validate_component_contract, validate_pipeline_contract
 from ai_pod_cli.workspace import LAYERS, WorkspaceTools, path_owner, owned_paths
 from ai_pod_cli.workspace_agent import DEFAULT_AGENT_MAX_STEPS, DEFAULT_POD_MAX_STEPS, WorkspaceAgent
+from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE
 
 
 class PodCoordinator:
     def __init__(self, root, state: dict, llm, *, save, progress_callback=None,
-                 max_steps=DEFAULT_AGENT_MAX_STEPS, pod_max_steps=DEFAULT_POD_MAX_STEPS):
+                 max_steps=DEFAULT_AGENT_MAX_STEPS, pod_max_steps=DEFAULT_POD_MAX_STEPS,
+                 instruction_mode=DEFAULT_INSTRUCTION_MODE):
+        if instruction_mode not in {"direct", "translated"}:
+            raise ValueError("instruction_mode must be direct or translated")
         self.root, self.state, self.llm = Path(root).resolve(), state, llm
         self.save, self.progress, self.max_steps = save, progress_callback, max_steps
         self.pod_max_steps = pod_max_steps
+        self.instruction_mode = instruction_mode
         self.request_count = 0
         self.state["agent"]["mode"] = "workspace"
 
@@ -208,7 +213,8 @@ class PodCoordinator:
             return self.accept(stage, action, current, final_review=final_review)
         print(f"🧠 [Pod · {stage}] Agent 开始工作")
         return WorkspaceAgent(self.llm, tools, progress_callback=self.progress,
-                              max_steps=self.pod_max_steps if stage == "pod" else self.max_steps).run(
+                              max_steps=self.pod_max_steps if stage == "pod" else self.max_steps,
+                              instruction_mode=self.instruction_mode).run(
             self.state["objective"] + "\nAssigned work: " + instruction,
             self.context(), request_change=self.request_change,
             finish=finish,
