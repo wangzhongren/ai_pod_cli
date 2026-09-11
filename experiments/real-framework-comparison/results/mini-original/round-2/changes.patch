@@ -1,0 +1,282 @@
+--- a/flaskbb/auth/services/__init__.py
++++ b/flaskbb/auth/services/__init__.py
+@@ -29,6 +29,7 @@
+ from .password import ResetPasswordService
+ from .registration import (
+     EmailUniquenessValidator,
++    PrimaryGroupValidator,
+     UsernameRequirements,
+     UsernameUniquenessValidator,
+     UsernameValidator,
+@@ -45,6 +46,7 @@
+     "FailedLoginConfiguration",
+     "MarkFailedLogin",
+     "PluginAuthenticationManager",
++    "PrimaryGroupValidator",
+     "reauthentication_manager_factory",
+     "registration_service_factory",
+     "ResetPasswordService",
+--- a/flaskbb/auth/services/registration.py
++++ b/flaskbb/auth/services/registration.py
+@@ -38,12 +38,13 @@
+ )
+ from ...extensions import db
+ from ...settings.proxy import FlaskBBConfigProxy
+-from ...user.models import User
++from ...user.models import Group, User
+ 
+ __all__ = (
+     "AutoActivateUserPostProcessor",
+     "AutologinPostProcessor",
+     "EmailUniquenessValidator",
++    "PrimaryGroupValidator",
+     "RegistrationService",
+     "SendActivationPostProcessor",
+     "UsernameRequirements",
+@@ -140,6 +141,37 @@
+             raise ValidationError(
+                 "email",
+                 _("%(email)s is already registered", email=user_info.email),
++            )
++
++
++class PrimaryGroupValidator(UserValidator):
++    """Validates that the requested primary group may be self-registered.
++
++    A group is acceptable when it exists in the database and none of its
++    ``admin``, ``super_mod``, ``mod``, ``guest`` or ``banned`` flags are set.
++    Any other existing group, including newly created ordinary groups, is
++    accepted; the group is looked up dynamically so no identifiers are
++    hardcoded.
++    """
++
++    restricted_flags = ("admin", "super_mod", "mod", "guest", "banned")
++
++    def __init__(self, groups: type[Group]):
++        self.groups = groups
++
++    @t.override
++    def validate(self, user_info: UserRegistrationInfo):
++        group_id = user_info.group
++        group = None
++        if isinstance(group_id, int) and not isinstance(group_id, bool):
++            group = db.session.get(self.groups, group_id)
++
++        if group is None or any(
++            getattr(group, flag) for flag in self.restricted_flags
++        ):
++            raise ValidationError(
++                "group",
++                _("The selected group is not allowed for registration"),
+             )
+ 
+ 
+@@ -231,9 +263,13 @@
+ 
+     def _validate_registration(self, user_info: UserRegistrationInfo):
+         failures: list[tuple[str, str]] = []
+-        validators = self.plugins.hook.flaskbb_gather_registration_validators()
+-
+-        for v in chain.from_iterable(validators):
++
++        # ``PrimaryGroupValidator`` is a core guard and is always run, even
++        # when no plugin registers any validators.
++        core_validators: list[UserValidator] = [PrimaryGroupValidator(Group)]
++        plugin_validators = self.plugins.hook.flaskbb_gather_registration_validators()
++
++        for v in chain(core_validators, chain.from_iterable(plugin_validators)):
+             try:
+                 v(user_info)
+             except ValidationError as e:
+--- a/tests/unit/auth/test_registration_group_guard.py
++++ b/tests/unit/auth/test_registration_group_guard.py
+@@ -0,0 +1,189 @@
++import pytest
++from pluggy import HookimplMarker
++
++from flaskbb.auth.services.registration import (
++    PrimaryGroupValidator,
++    RegistrationService,
++)
++from flaskbb.core.auth.registration import (
++    RegistrationFailureHandler,
++    RegistrationPostProcessor,
++    UserRegistrationInfo,
++)
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import Group, User
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++
++def make_info(**overrides):
++    values = {
++        "username": "NewUser",
++        "password": "secret",
++        "email": "newuser@example.com",
++        "language": "en",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++def get_service(plugin_manager, db):
++    return RegistrationService(plugins=plugin_manager, users=User, db=db)
++
++
++class TestPrimaryGroupValidator:
++    def test_rejects_none(self, database, default_groups):
++        with pytest.raises(ValidationError) as excinfo:
++            PrimaryGroupValidator(Group).validate(make_info(group=None))
++
++        assert excinfo.value.attribute == "group"
++
++    def test_rejects_missing_group(self, database, default_groups):
++        with pytest.raises(ValidationError) as excinfo:
++            PrimaryGroupValidator(Group).validate(make_info(group=999))
++
++        assert excinfo.value.attribute == "group"
++
++    @pytest.mark.parametrize("group", ["4", "abc", 4.0, object()])
++    def test_rejects_non_integer_group_values(self, database, default_groups, group):
++        with pytest.raises(ValidationError) as excinfo:
++            PrimaryGroupValidator(Group).validate(make_info(group=group))
++
++        assert excinfo.value.attribute == "group"
++
++    @pytest.mark.parametrize("index", [0, 1, 2, 4, 5])
++    def test_rejects_flagged_groups(self, database, default_groups, index):
++        group = default_groups[index]
++
++        with pytest.raises(ValidationError) as excinfo:
++            PrimaryGroupValidator(Group).validate(make_info(group=group.id))
++
++        assert excinfo.value.attribute == "group"
++
++    def test_accepts_ordinary_member_group(self, database, default_groups):
++        PrimaryGroupValidator(Group).validate(make_info(group=default_groups[3].id))
++
++    def test_accepts_newly_created_ordinary_group(self, database, default_groups):
++        ordinary = Group(name="Ordinary", description="ordinary")
++        ordinary.save()
++
++        PrimaryGroupValidator(Group).validate(make_info(group=ordinary.id))
++
++    def test_rejects_group_after_flags_change(self, database, default_groups):
++        group = default_groups[3]
++        group.admin = True
++        group.save()
++
++        with pytest.raises(ValidationError):
++            PrimaryGroupValidator(Group).validate(make_info(group=group.id))
++
++
++class TestRegistrationServiceGroupGuard:
++    def test_rejects_invalid_group_without_plugin_validators(
++        self, database, plugin_manager, default_groups
++    ):
++        service = get_service(plugin_manager, database)
++
++        with pytest.raises(StopValidation) as excinfo:
++            service.register(make_info(group=None))
++
++        assert any(attribute == "group" for attribute, _ in excinfo.value.reasons)
++        assert User.query.count() == 0
++
++    def test_rejects_each_flagged_default_group(
++        self, database, plugin_manager, default_groups
++    ):
++        service = get_service(plugin_manager, database)
++
++        for group in default_groups:
++            if any(
++                getattr(group, flag)
++                for flag in ("admin", "super_mod", "mod", "guest", "banned")
++            ):
++                with pytest.raises(StopValidation) as excinfo:
++                    service.register(make_info(username=f"u{group.id}", group=group.id))
++                assert ("group" in [a for a, _ in excinfo.value.reasons])
++
++        assert User.query.count() == 0
++
++    def test_accepts_ordinary_new_group(
++        self, database, plugin_manager, default_groups
++    ):
++        ordinary = Group(name="Ordinary", description="ordinary")
++        ordinary.save()
++        service = get_service(plugin_manager, database)
++
++        user = service.register(make_info(group=ordinary.id))
++
++        assert user.primary_group_id == ordinary.id
++
++    def test_failure_hook_called_once_and_no_post_processing(
++        self, database, plugin_manager, default_groups, mocker
++    ):
++        service = get_service(plugin_manager, database)
++        failure = mocker.MagicMock(spec=RegistrationFailureHandler)
++        post_process = mocker.MagicMock(spec=RegistrationPostProcessor)
++        impl = HookimplMarker("flaskbb")
++
++        class Impls:
++            @impl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure.handle_failure(user_info, failures)
++
++            @impl
++            def flaskbb_registration_post_processor(self, user):
++                post_process(user)
++
++        plugin_manager.register(Impls())
++
++        with pytest.raises(StopValidation):
++            service.register(make_info(group=None))
++
++        failure.handle_failure.assert_called_once()
++        post_process.assert_not_called()
++        assert User.query.count() == 0
++
++    def test_group_failure_aggregates_with_plugin_validator(
++        self, database, plugin_manager, default_groups
++    ):
++        from flaskbb.core.auth.registration import UserValidator
++
++        class RaisingValidator(UserValidator):
++            def validate(self, user_info):
++                raise ValidationError("username", "nope")
++
++        service = get_service(plugin_manager, database)
++        impl = HookimplMarker("flaskbb")
++
++        class Impls:
++            @impl
++            def flaskbb_gather_registration_validators(self):
++                return [RaisingValidator()]
++
++        plugin_manager.register(Impls())
++
++        with pytest.raises(StopValidation) as excinfo:
++            service.register(make_info(group=None))
++
++        attributes = [attribute for attribute, _ in excinfo.value.reasons]
++        assert "group" in attributes
++        assert "username" in attributes
++
++    def test_guard_runs_when_plugin_returns_no_validators(
++        self, database, plugin_manager, default_groups
++    ):
++        service = get_service(plugin_manager, database)
++        impl = HookimplMarker("flaskbb")
++
++        class Impls:
++            @impl
++            def flaskbb_gather_registration_validators(self):
++                return []
++
++        plugin_manager.register(Impls())
++
++        with pytest.raises(StopValidation) as excinfo:
++            service.register(make_info(group=None))
++
++        assert any(attribute == "group" for attribute, _ in excinfo.value.reasons)

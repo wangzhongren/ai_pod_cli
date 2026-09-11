@@ -1,0 +1,2541 @@
+{
+  "regression": {
+    "exit_code": 0,
+    "seconds": 26.737,
+    "counts": {
+      "passed": 476,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "cases": [
+      {
+        "name": "test_overview_not_authorized",
+        "classname": "tests.endtoend.test_auth_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_overview_with_authorized",
+        "classname": "tests.endtoend.test_auth_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_overview_with_supermod",
+        "classname": "tests.endtoend.test_auth_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_overview_with_mod",
+        "classname": "tests.endtoend.test_auth_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_serves_image_attachment_inline",
+        "classname": "tests.endtoend.test_upload_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_serves_non_image_attachment_as_download",
+        "classname": "tests.endtoend.test_upload_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_display_name_segment_does_not_identify_the_attachment",
+        "classname": "tests.endtoend.test_upload_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_unknown_attachment_404s",
+        "classname": "tests.endtoend.test_upload_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_too_large_request_flashes_the_limit",
+        "classname": "tests.endtoend.test_upload_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_manifest_and_smoke_report_passes",
+        "classname": "tests.interfaces.test_registration_adapter",
+        "status": "passed"
+      },
+      {
+        "name": "test_start_runs_registered_route_without_standalone_service",
+        "classname": "tests.interfaces.test_registration_adapter",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_persists_normalized_identity",
+        "classname": "tests.interfaces.test_registration_adapter",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_does_not_mutate_frozen_info",
+        "classname": "tests.interfaces.test_registration_adapter",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_failure_hook_sees_normalized_identity",
+        "classname": "tests.interfaces.test_registration_adapter",
+        "status": "passed"
+      },
+      {
+        "name": "test_pipeline_persists_normalized_identity",
+        "classname": "tests.pipelines.test_registration_pipeline",
+        "status": "passed"
+      },
+      {
+        "name": "test_pipeline_stops_and_reports_failures",
+        "classname": "tests.pipelines.test_registration_pipeline",
+        "status": "passed"
+      },
+      {
+        "name": "test_pipeline_preserves_identity_without_normalization",
+        "classname": "tests.pipelines.test_registration_pipeline",
+        "status": "passed"
+      },
+      {
+        "name": "test_pipeline_does_not_mutate_frozen_info",
+        "classname": "tests.pipelines.test_registration_pipeline",
+        "status": "passed"
+      },
+      {
+        "name": "test_pipeline_propagates_unexpected_errors",
+        "classname": "tests.pipelines.test_registration_pipeline",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_username_trims_and_preserves_case",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_email_trims_and_lowercases",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_identity_preserves_identity_when_unchanged",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_identity_replaces_only_when_needed",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_identity_keeps_other_fields_unchanged",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalize_identity_does_not_mutate_frozen_input",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_lookup_key_is_case_and_whitespace_insensitive",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_username_uniqueness_rejects_case_and_whitespace_variants",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_email_uniqueness_rejects_case_and_whitespace_variants",
+        "classname": "tests.services.test_identity_normalization",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_persists_normalized_identity",
+        "classname": "tests.services.test_registration_normalization_integration",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_keeps_password_language_and_group",
+        "classname": "tests.services.test_registration_normalization_integration",
+        "status": "passed"
+      },
+      {
+        "name": "test_adapter_failure_hook_sees_normalized_identity",
+        "classname": "tests.services.test_registration_normalization_integration",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_user_doesnt_exist",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationInitiateActivation",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_user_is_already_active",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationInitiateActivation",
+        "status": "passed"
+      },
+      {
+        "name": "test_calls_send_activation_token_successfully_if_user_exists",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationInitiateActivation",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_token_operation_isnt_activate",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationActivateAccount",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_user_is_already_active",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationActivateAccount",
+        "status": "passed"
+      },
+      {
+        "name": "test_activates_user_successfully",
+        "classname": "tests.unit.auth.test_activation.TestAccountActivationActivateAccount",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_StopAuthentication_if_user_is_at_limit_and_inside_window",
+        "classname": "tests.unit.auth.test_authentication.TestBlockTooManyFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_user_is_at_limit_but_outside_window",
+        "classname": "tests.unit.auth.test_authentication.TestBlockTooManyFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_user_is_below_limit_but_inside_window",
+        "classname": "tests.unit.auth.test_authentication.TestBlockTooManyFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_handles_if_user_has_no_failed_login_attempts",
+        "classname": "tests.unit.auth.test_authentication.TestBlockTooManyFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_handles_if_user_doesnt_exist",
+        "classname": "tests.unit.auth.test_authentication.TestBlockTooManyFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_returns_None_if_user_doesnt_exist",
+        "classname": "tests.unit.auth.test_authentication.TestDefaultFlaskBBAuthProvider",
+        "status": "passed"
+      },
+      {
+        "name": "test_returns_None_if_password_doesnt_match",
+        "classname": "tests.unit.auth.test_authentication.TestDefaultFlaskBBAuthProvider",
+        "status": "passed"
+      },
+      {
+        "name": "test_returns_user_if_identifer_and_password_match",
+        "classname": "tests.unit.auth.test_authentication.TestDefaultFlaskBBAuthProvider",
+        "status": "passed"
+      },
+      {
+        "name": "test_increments_users_failed_logins_and_sets_last_fail_date",
+        "classname": "tests.unit.auth.test_authentication.TestMarkFailedLoginAttempt",
+        "status": "passed"
+      },
+      {
+        "name": "test_handles_if_user_doesnt_exist",
+        "classname": "tests.unit.auth.test_authentication.TestMarkFailedLoginAttempt",
+        "status": "passed"
+      },
+      {
+        "name": "test_clears_failed_logins_attempts",
+        "classname": "tests.unit.auth.test_authentication.TestClearFailedLogins",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_StopAuthentication_if_user_is_unactivated",
+        "classname": "tests.unit.auth.test_authentication.TestBlockUnactivatedUser",
+        "status": "passed"
+      },
+      {
+        "name": "test_runs_failed_hooks_when_stopauthentication_is_raised",
+        "classname": "tests.unit.auth.test_authentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_runs_post_auth_handler_if_user_authenticates",
+        "classname": "tests.unit.auth.test_authentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_reraises_if_session_commit_fails",
+        "classname": "tests.unit.auth.test_authentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_token_error_if_not_a_password_reset",
+        "classname": "tests.unit.auth.test_password.TestPasswordReset",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_StopValidation_if_verifiers_fail",
+        "classname": "tests.unit.auth.test_password.TestPasswordReset",
+        "status": "passed"
+      },
+      {
+        "name": "test_sets_user_password_to_provided_if_verifiers_pass",
+        "classname": "tests.unit.auth.test_password.TestPasswordReset",
+        "status": "passed"
+      },
+      {
+        "name": "test_initiate_raises_if_user_doesnt_exist",
+        "classname": "tests.unit.auth.test_password.TestPasswordReset",
+        "status": "passed"
+      },
+      {
+        "name": "test_calls_send_reset_token_successfully_if_user_exists",
+        "classname": "tests.unit.auth.test_password.TestPasswordReset",
+        "status": "passed"
+      },
+      {
+        "name": "test_login_rate_limit_uses_the_configured_settings",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_login_rate_limit_message_without_a_current_limit",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_login_rate_limit_message_uses_the_current_limits_reset_time",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_rate_limit_exceeded_gets_a_timeout_description",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_rate_limited_login_returns_429_with_a_timeout",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_without_a_current_limit",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_counts_the_requests_in_the_current_window[20-False]",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_counts_the_requests_in_the_current_window[18-False]",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_counts_the_requests_in_the_current_window[17-True]",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_counts_the_requests_in_the_current_window[0-True]",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_enforce_recaptcha_after_repeated_logins",
+        "classname": "tests.unit.auth.test_rate_limit",
+        "status": "passed"
+      },
+      {
+        "name": "test_default_reauth_returns_true_if_secret_matches_user",
+        "classname": "tests.unit.auth.test_reauthentication",
+        "status": "passed"
+      },
+      {
+        "name": "test_clears_failed_logins_attempts",
+        "classname": "tests.unit.auth.test_reauthentication",
+        "status": "passed"
+      },
+      {
+        "name": "test_marks_failed_login_attempt",
+        "classname": "tests.unit.auth.test_reauthentication",
+        "status": "passed"
+      },
+      {
+        "name": "test_runs_failed_hooks_when_stopauthentication_is_raised",
+        "classname": "tests.unit.auth.test_reauthentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_runs_post_reauth_handler_if_user_authenticates",
+        "classname": "tests.unit.auth.test_reauthentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_reraises_if_session_commit_fails",
+        "classname": "tests.unit.auth.test_reauthentication.TestPluginAuthenticationManager",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_stop_validation_if_validators_fail",
+        "classname": "tests.unit.auth.test_registration.TestRegistrationService",
+        "status": "passed"
+      },
+      {
+        "name": "test_calls_failure_handlers_if_validation_fails",
+        "classname": "tests.unit.auth.test_registration.TestRegistrationService",
+        "status": "passed"
+      },
+      {
+        "name": "test_registers_user_if_everything_is_good",
+        "classname": "tests.unit.auth.test_registration.TestRegistrationService",
+        "status": "passed"
+      },
+      {
+        "name": "test_calls_post_processors_if_user_registration_works",
+        "classname": "tests.unit.auth.test_registration.TestRegistrationService",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_persistenceerror_if_saving_user_goes_wrong",
+        "classname": "tests.unit.auth.test_registration.TestRegistrationService",
+        "status": "passed"
+      },
+      {
+        "name": "test_activates_when_user_activation_isnt_required",
+        "classname": "tests.unit.auth.test_registration_processors.TestAutoActivateUserPostProcessor",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_activate_when_user_activation_is_required",
+        "classname": "tests.unit.auth.test_registration_processors.TestAutoActivateUserPostProcessor",
+        "status": "passed"
+      },
+      {
+        "name": "test_sets_user_as_current_user",
+        "classname": "tests.unit.auth.test_registration_processors.TestAutologinPostProcessor",
+        "status": "passed"
+      },
+      {
+        "name": "test_sends_activation_notice",
+        "classname": "tests.unit.auth.test_registration_processors.TestSendActivationPostProcessor",
+        "status": "passed"
+      },
+      {
+        "name": "test_forgot_password_rejects_untrusted_host_header",
+        "classname": "tests.unit.auth.test_trusted_hosts",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_username_too_short",
+        "classname": "tests.unit.auth.test_validators",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_username_too_long",
+        "classname": "tests.unit.auth.test_validators",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_username_in_blacklist",
+        "classname": "tests.unit.auth.test_validators",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_user_already_registered",
+        "classname": "tests.unit.auth.test_validators",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_user_email_already_registered",
+        "classname": "tests.unit.auth.test_validators",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_groups",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_groups_counts_the_members",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_show_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group_with_type",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group_with_taken_name",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group_with_unknown_permission",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group_granting_and_revoking_the_same_permission",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_new_group_with_a_second_guest_type",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_group_type",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_group_leaves_omitted_options_alone",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_unknown_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_group_asks_for_confirmation",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_standard_group",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_group_with_members",
+        "classname": "tests.unit.cli.test_groups",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_permissions",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_permissions_of_a_single_group",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_show_permissions",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_permission",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_unknown_permission",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_permission_of_unknown_group",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_permission_invalidates_the_cached_permissions",
+        "classname": "tests.unit.cli.test_permissions",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_users",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_users_filtered_by_group",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_users_filtered_by_banned",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_users_filtered_by_unactivated",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_list_users_without_matches",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_show_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_show_unknown_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_ban_and_unban_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_ban_banned_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_unban_unbanned_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_activate_and_deactivate_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_activate_activated_user",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_primary_group",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_primary_group_moves_it_out_of_the_secondary_groups",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_primary_group_to_the_current_one",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_add_and_remove_group",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_add_group_twice",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_add_primary_group_as_secondary_group",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_remove_group_the_user_is_not_in",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_group_membership_survives_a_reload",
+        "classname": "tests.unit.cli.test_users",
+        "status": "passed"
+      },
+      {
+        "name": "test_parse_attachment_types",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_saves_attachment",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_rejects_bad_extension",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_rejects_too_large",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_rejects_when_disabled",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_rejects_too_many",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_reply_form_rejects_without_permission",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_edit_form_deletes_attachment",
+        "classname": "tests.unit.forum.test_attachments",
+        "status": "passed"
+      },
+      {
+        "name": "test_would_not_force_login_for_authed_user",
+        "classname": "tests.unit.forum.test_forum_utils.TestForceLoginHelpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_would_not_force_login_for_anon_in_guest_allowed",
+        "classname": "tests.unit.forum.test_forum_utils.TestForceLoginHelpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_would_force_login_for_anon_in_guest_unallowed",
+        "classname": "tests.unit.forum.test_forum_utils.TestForceLoginHelpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_redirects_to_login_with_anon",
+        "classname": "tests.unit.forum.test_forum_utils.TestForceLoginHelpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_memberlist_is_reachable_when_enabled",
+        "classname": "tests.unit.forum.test_memberlist",
+        "status": "passed"
+      },
+      {
+        "name": "test_memberlist_returns_404_when_disabled",
+        "classname": "tests.unit.forum.test_memberlist",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_can_move_topic_from_unmoderated_forum",
+        "classname": "tests.unit.forum.test_move_topics_cross_forum",
+        "status": "passed"
+      },
+      {
+        "name": "test_non_moderator_cannot_move_topics_control",
+        "classname": "tests.unit.forum.test_move_topics_cross_forum",
+        "status": "passed"
+      },
+      {
+        "name": "test_user_search_form_get_results",
+        "classname": "tests.unit.forum.test_search_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_user_search_form_does_not_match_email",
+        "classname": "tests.unit.forum.test_search_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_memberlist_search_finds_user",
+        "classname": "tests.unit.forum.test_search_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_banned_users_search_is_not_filtered_by_ban_status",
+        "classname": "tests.unit.forum.test_search_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_attachment_removes_row_and_file",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_bulk_delete_attachments",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_cleanup_or_purge",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_cleanup_removes_row_with_missing_file",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_cleanup_removes_orphan_file",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_cleanup_keeps_recent_files_and_rows",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_cleanup_leaves_nested_directories_alone",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_purge_removes_everything",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachments_list_renders_for_moderator",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachments_list_renders_admin_actions",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachments_list_flags_missing_file",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachments_search_matches_filename_and_uploader",
+        "classname": "tests.unit.management.test_attachment_management",
+        "status": "passed"
+      },
+      {
+        "name": "test_add_forum_form_restricts_to_selected_groups",
+        "classname": "tests.unit.management.test_management_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_add_forum_form_with_no_groups_selected_grants_no_access",
+        "classname": "tests.unit.management.test_management_forms",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_edit_other_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_open_other_moderators_edit_page",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_edit_admin",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_edit_super_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_reset_admin_password",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_can_still_edit_a_member",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_member_edit_page_hides_credential_fields_from_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_edit_page_shows_credential_fields",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_editing_member_cannot_change_credentials_or_groups",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_can_still_change_a_moderators_password",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_ban_super_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_unban_user_holding_admin_via_secondary_group",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_users_list_renders_for_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_users_list_renders_for_admin",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_banned_users_list_renders_for_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_profile_page_renders_for_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_page_renders_admin_actions",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_secondary_groups_exclude_the_targets_primary_group",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_form_hides_credentials_but_keeps_groups",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_can_promote_a_member_to_moderator",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_cannot_assign_the_administrator_group",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_cannot_assign_the_super_moderator_group",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_cannot_smuggle_admin_in_as_a_secondary_group",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_cannot_change_a_password",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_editing_self_keeps_every_field",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_editing_self_gets_the_confirm_dialog",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_editing_someone_else_gets_no_confirm_dialog",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_self_edit_gets_no_confirm_dialog",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_can_still_ban_themselves_after_confirming",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_can_still_change_their_own_password",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_can_edit_themselves_without_groups",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_self_edit_applies_profile_changes",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_can_edit_themselves",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_the_self_restriction_does_not_apply_to_other_admins",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_can_delete_all_of_a_users_posts",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_deleting_a_users_posts_cascades_a_topic_they_started",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_cannot_delete_a_users_posts",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_deleting_posts_for_a_user_with_none_is_a_no_op",
+        "classname": "tests.unit.management.test_management_views",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_form_forum_type_defaults_to_topics_only",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_form_forum_type_can_be_narrowed_to_posts",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_form_user_type_returns_users",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_form_forum_choices_are_permission_scoped",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_excludes_inaccessible_forum_even_if_forced",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_filters_by_author",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_filters_by_date_range",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_excludes_topics_outside_date_range",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_filters_by_locked_state",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_locked_state_applies_to_posts_too",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forums_hidden_state_requires_viewhidden",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_view_finds_topic",
+        "classname": "tests.unit.search.test_global_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_emits_default_deprecation_warning",
+        "classname": "tests.unit.test_deprecation.TestDeprecation",
+        "status": "passed"
+      },
+      {
+        "name": "tests_emits_specialized_message",
+        "classname": "tests.unit.test_deprecation.TestDeprecation",
+        "status": "passed"
+      },
+      {
+        "name": "tests_only_accepts_FlaskBBDeprecationWarnings",
+        "classname": "tests.unit.test_deprecation.TestDeprecation",
+        "status": "passed"
+      },
+      {
+        "name": "tests_deprecated_decorator_work_with_method",
+        "classname": "tests.unit.test_deprecation.TestDeprecation",
+        "status": "passed"
+      },
+      {
+        "name": "test_adds_to_existing_docstring",
+        "classname": "tests.unit.test_deprecation.TestDeprecation",
+        "status": "passed"
+      },
+      {
+        "name": "test_cheatsheet_renders_without_plugins",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_cheatsheet_renders_plugin_entry",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_toolbar_renders_without_plugins",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_toolbar_renders_plugin_button",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_toolbar_hook_is_markup",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_layout_renders_plugin_script",
+        "classname": "tests.unit.test_editor_hooks",
+        "status": "passed"
+      },
+      {
+        "name": "test_send_reset_token_to_user",
+        "classname": "tests.unit.test_email",
+        "status": "passed"
+      },
+      {
+        "name": "test_send_activation_token_to_user",
+        "classname": "tests.unit.test_email",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_save",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_delete",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_delete_with_user",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_delete_with_forum",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_get_forums",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_category_get_categories",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_save",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_delete",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_delete_with_user_and_topic",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_update_last_post",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_update_read",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_update_read_two_topics",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_url",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_slugify",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_get_forum",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_get_topics",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_get_accessible",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_save",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_delete",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_move",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_move_same_forum",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_tracker_needs_update",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_untracking_topic_does_not_delete_it",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_tracker_needs_update_cleared",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_update_read",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_url",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_slug",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_post_save",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_post_delete",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_report",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_forumsread",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topicsread",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_hiding_post_updates_counts",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_hiding_topic_updates_counts",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_hiding_first_post_hides_topic",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_retrieving_hidden_posts",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_retrieving_hidden_topics",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachment_is_image_and_url",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_post_delete_removes_attachment_files",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_delete_removes_attachment_files",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_attachment_rollback_keeps_file",
+        "classname": "tests.unit.test_forum_models",
+        "status": "passed"
+      },
+      {
+        "name": "test_guest_user_cannot_see_hidden_posts",
+        "classname": "tests.unit.test_hideable_query",
+        "status": "passed"
+      },
+      {
+        "name": "test_regular_user_cannot_see_hidden_posts",
+        "classname": "tests.unit.test_hideable_query",
+        "status": "passed"
+      },
+      {
+        "name": "test_moderator_user_can_see_hidden_posts",
+        "classname": "tests.unit.test_hideable_query",
+        "status": "passed"
+      },
+      {
+        "name": "test_super_moderator_user_can_see_hidden_posts",
+        "classname": "tests.unit.test_hideable_query",
+        "status": "passed"
+      },
+      {
+        "name": "test_admin_user_can_see_hidden_posts",
+        "classname": "tests.unit.test_hideable_query",
+        "status": "passed"
+      },
+      {
+        "name": "test_pluginmanager",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_register_internal",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_blocked",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_set_blocked_internal",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_internal_plugin",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_internal_name",
+        "classname": "tests.unit.test_pluginmanager",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_IsNotAdmin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsAdmin_with_admin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsAtleastModerator_with_mod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsAtleastModerator_with_supermod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsAtleastModerator_with_admin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsAtleastSuperModerator_with_not_smod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanBanUser_with_admin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanBanUser_with_smod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanBanUser_with_mod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_CannotBanUser",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTopic_with_member",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_cannot_edit_other_members_post",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_CannotEditLockedTopic",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Moderator_in_Forum_CanEditLockedTopic",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_FredIsAMod_but_still_cant_edit_topic_in_locked_forum",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_cannot_reply_to_locked_topic",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Fred_cannot_delete_others_post",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_Mod_can_delete_others_post",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanPostAttachment_with_member",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanPostAttachment_with_mod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_guest_cannot_post_attachment",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsMorePrivilegedThan_ranks_admin_over_mod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_member_can_post_topic_in_unlocked_forum",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_member_cannot_post_topic_in_locked_forum",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsMorePrivilegedThan_ranks_mod_over_member",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsMorePrivilegedThan_is_strict_between_equals",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsMorePrivilegedThan_is_false_for_self",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_IsMorePrivilegedThan_counts_secondary_groups",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_mod_can_edit_member",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_mod_cannot_edit_other_mod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_mod_cannot_edit_supermod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_mod_cannot_edit_admin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_admin_can_edit_admin",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanEditTargetUser_still_requires_the_permission",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanBanTargetUser_mod_cannot_ban_supermod",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_CanBanTargetUser_mod_can_ban_member",
+        "classname": "tests.unit.test_requirements",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_post",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_post_case_insensitive",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_topic_by_title",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_topic_by_first_post_content",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_forum",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_user",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_user_does_not_match_email",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_result_supports_pagination",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_escapes_like_wildcards",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_unknown_model_raises",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_lifecycle_methods_are_noops",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_search_multi_returns_only_requested_keys",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_search_proxy_defaults_to_sql",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_search_proxy_rejects_unknown_backend",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_search_proxy_requires_init_app",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_plugin_can_register_search_backend",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_plugin_backend_colliding_with_builtin_raises",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_unknown_backend_error_lists_plugin_names",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_wraps_match_in_mark",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_is_case_insensitive",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_escapes_html",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_no_match_returns_cropped_unhighlighted",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_zero_length_shows_full_content",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_snippet_windows_around_match_with_ellipses",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_post_by_content",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_is_case_insensitive",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_topic_by_title",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_topic_by_first_post_content",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_forum",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_user",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_user_does_not_match_email",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_empty_query_returns_nothing",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_reflects_updates_via_triggers",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_reindex_backfills",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_search_unknown_model_raises",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_lifecycle_write_methods_are_noops",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_all_builds_sqlite_fts_schema",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_all_skips_fts_schema_for_other_backends",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_search_proxy_resolves_sqlite",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_search_proxy_resolves_postgresql",
+        "classname": "tests.unit.test_search",
+        "status": "passed"
+      },
+      {
+        "name": "test_can_round_trip_token",
+        "classname": "tests.unit.tokens.test_serializer",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_token_error_with_bad_data",
+        "classname": "tests.unit.tokens.test_serializer",
+        "status": "passed"
+      },
+      {
+        "name": "test_expired_token_raises",
+        "classname": "tests.unit.tokens.test_serializer",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_typeerror_expiry_args",
+        "classname": "tests.unit.tokens.test_serializer",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_email_doesnt_match_token_user",
+        "classname": "tests.unit.tokens.test_verifiers",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_email_matches_token_user",
+        "classname": "tests.unit.tokens.test_verifiers",
+        "status": "passed"
+      },
+      {
+        "name": "test_renders_get_okay",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_successfully",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_open_links_in_new_tab[inherit-None]",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_open_links_in_new_tab[yes-True]",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_open_links_in_new_tab[no-False]",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_fail_with_not_valid",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_fail_with_stopvalidation_error",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_settings_fails_with_persistence_error",
+        "classname": "tests.unit.user.test_controllers.TestUserSettingsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_renders_get_okay",
+        "classname": "tests.unit.user.test_controllers.TestChangePasswordView",
+        "status": "passed"
+      },
+      {
+        "name": "test_updates_user_password_okay",
+        "classname": "tests.unit.user.test_controllers.TestChangePasswordView",
+        "status": "passed"
+      },
+      {
+        "name": "test_updates_user_password_fails_with_invalid_input",
+        "classname": "tests.unit.user.test_controllers.TestChangePasswordView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_password_fails_with_stopvalidation_error",
+        "classname": "tests.unit.user.test_controllers.TestChangePasswordView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_password_fails_with_persistence_error",
+        "classname": "tests.unit.user.test_controllers.TestChangePasswordView",
+        "status": "passed"
+      },
+      {
+        "name": "test_renders_get_okay",
+        "classname": "tests.unit.user.test_controllers.TestChangeEmailView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_email_successfully",
+        "classname": "tests.unit.user.test_controllers.TestChangeEmailView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_email_fails_with_invalid_input",
+        "classname": "tests.unit.user.test_controllers.TestChangeEmailView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_email_fails_with_stopvalidation",
+        "classname": "tests.unit.user.test_controllers.TestChangeEmailView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_email_fails_with_persistence_error",
+        "classname": "tests.unit.user.test_controllers.TestChangeEmailView",
+        "status": "passed"
+      },
+      {
+        "name": "test_renders_get_okay",
+        "classname": "tests.unit.user.test_controllers.TestChangeUserDetailsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_details_successfully_updates",
+        "classname": "tests.unit.user.test_controllers.TestChangeUserDetailsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_fails_with_invalid_input",
+        "classname": "tests.unit.user.test_controllers.TestChangeUserDetailsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_fails_with_stopvalidation",
+        "classname": "tests.unit.user.test_controllers.TestChangeUserDetailsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_update_user_fails_with_persistence_error",
+        "classname": "tests.unit.user.test_controllers.TestChangeUserDetailsView",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_user_without_tracked_topics",
+        "classname": "tests.unit.user.test_delete",
+        "status": "passed"
+      },
+      {
+        "name": "test_delete_user_leaves_no_orphans",
+        "classname": "tests.unit.user.test_delete",
+        "status": "passed"
+      },
+      {
+        "name": "test_transforms_to_expected_change_object",
+        "classname": "tests.unit.user.test_forms.TestGeneralSettingsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_transforms_to_expected_change_object",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_valid_inputs",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata0]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata1]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata2]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata3]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata4]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata5]",
+        "classname": "tests.unit.user.test_forms.TestChangeEmailForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_transforms_to_expected_change_object",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_valid_inputs",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata0]",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata1]",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata2]",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata3]",
+        "classname": "tests.unit.user.test_forms.TestChangePasswordForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_transforms_to_expected_change_object",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_valid_inputs[formdata0]",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_valid_inputs[formdata1]",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata0]",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata1]",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_invalid_inputs[formdata2]",
+        "classname": "tests.unit.user.test_forms.TestChangeUserDetailsForm",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_stop_validation_if_errors_occur",
+        "classname": "tests.unit.user.test_update_details_handler.TestDefaultDetailsUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_persistence_error_if_save_fails",
+        "classname": "tests.unit.user.test_update_details_handler.TestDefaultDetailsUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_actually_updates_users_details",
+        "classname": "tests.unit.user.test_update_details_handler.TestDefaultDetailsUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_stop_validation_if_errors_occur",
+        "classname": "tests.unit.user.test_update_email_handler.TestDefaultEmailUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_persistence_error_if_save_fails",
+        "classname": "tests.unit.user.test_update_email_handler.TestDefaultEmailUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_actually_updates_email",
+        "classname": "tests.unit.user.test_update_email_handler.TestDefaultEmailUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_stop_validation_if_errors_occur",
+        "classname": "tests.unit.user.test_update_password_handler.TestDefaultPasswordUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_persistence_error_if_save_fails",
+        "classname": "tests.unit.user.test_update_password_handler.TestDefaultPasswordUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_actually_updates_password",
+        "classname": "tests.unit.user.test_update_password_handler.TestDefaultPasswordUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_persistence_error_if_save_fails",
+        "classname": "tests.unit.user.test_update_settings.TestDefaultSettingsUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_actually_updates_password",
+        "classname": "tests.unit.user.test_update_settings.TestDefaultSettingsUpdateHandler",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_emails_match",
+        "classname": "tests.unit.user.test_update_validator.TestEmailsMustBeDifferent",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_emails_are_different",
+        "classname": "tests.unit.user.test_update_validator.TestEmailsMustBeDifferent",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_passwords_are_the_same",
+        "classname": "tests.unit.user.test_update_validator.TestPasswordsMustBeDifferent",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_passwords_dont_match",
+        "classname": "tests.unit.user.test_update_validator.TestPasswordsMustBeDifferent",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_email_is_already_registered",
+        "classname": "tests.unit.user.test_update_validator.TestCantShareEmailValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_email_isnt_registered",
+        "classname": "tests.unit.user.test_update_validator.TestCantShareEmailValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_old_email_doesnt_match",
+        "classname": "tests.unit.user.test_update_validator.TestOldEmailMustMatchValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_old_email_matches",
+        "classname": "tests.unit.user.test_update_validator.TestOldEmailMustMatchValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_raises_if_old_password_doesnt_match",
+        "classname": "tests.unit.user.test_update_validator.TestOldPasswordMustMatchValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_doesnt_raise_if_old_passwords_match",
+        "classname": "tests.unit.user.test_update_validator.TestOldPasswordMustMatchValidator",
+        "status": "passed"
+      },
+      {
+        "name": "test_sqlite_enforces_foreign_keys",
+        "classname": "tests.unit.utils.test_database",
+        "status": "passed"
+      },
+      {
+        "name": "test_drop_all_leaves_foreign_keys_enforced",
+        "classname": "tests.unit.utils.test_database",
+        "status": "passed"
+      },
+      {
+        "name": "test_slugify",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_forum_is_unread",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_topic_is_unread",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_crop_title",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_is_online",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_format_quote",
+        "classname": "tests.unit.utils.test_helpers",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_safe_redirect_url_falls_back_to_default_for_tab_payload",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_first_safe_redirect_url_skips_tab_payload_and_uses_next_candidate",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_strips_embedded_tab",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_strips_leading_control_character",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_strips_embedded_carriage_return_and_newline",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_leaves_ordinary_urls_untouched",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_does_not_decode_percent_encoded_control_characters",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_empty_string_after_stripping_returns_empty",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_safe_redirect_url_passes_through_allowed_url",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_get_first_safe_redirect_url_prefers_first_valid_candidate",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_urls",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_good_urls",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_basic_auth",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_no_allowed_hosts",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_allowed_hosts_str",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_secure_param_https_urls",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_secure_param_non_https_urls",
+        "classname": "tests.unit.utils.test_http",
+        "status": "passed"
+      },
+      {
+        "name": "test_userify",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_highlighting",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_external_link_new_tab_on[[external](http://example.com/page)]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_external_link_new_tab_on[http://example.com/page]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_external_link_new_tab_off[[external](http://example.com/page)]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_external_link_new_tab_off[http://example.com/page]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_internal_link_is_never_rewritten[True-[internal](http://localhost:5000/topic/1)]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_internal_link_is_never_rewritten[True-http://localhost:5000/topic/1]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_internal_link_is_never_rewritten[False-[internal](http://localhost:5000/topic/1)]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_internal_link_is_never_rewritten[False-http://localhost:5000/topic/1]",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_user_override_true_wins_over_system_default_off",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_user_override_false_wins_over_system_default_on",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_user_inherits_system_default_when_override_unset",
+        "classname": "tests.unit.utils.test_markup",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_user",
+        "classname": "tests.unit.utils.test_populate",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_welcome_forum",
+        "classname": "tests.unit.utils.test_populate",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_test_data",
+        "classname": "tests.unit.utils.test_populate",
+        "status": "passed"
+      },
+      {
+        "name": "test_insert_bulk_data",
+        "classname": "tests.unit.utils.test_populate",
+        "status": "passed"
+      },
+      {
+        "name": "test_create_default_groups",
+        "classname": "tests.unit.utils.test_populate",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbb_config",
+        "classname": "tests.unit.utils.test_settings",
+        "status": "passed"
+      },
+      {
+        "name": "test_flaskbbdomain_translations",
+        "classname": "tests.unit.utils.test_translations",
+        "status": "passed"
+      }
+    ]
+  },
+  "acceptance": {
+    "exit_code": 1,
+    "seconds": 1.173,
+    "counts": {
+      "passed": 7,
+      "failed": 1,
+      "error": 0,
+      "skipped": 18
+    },
+    "cases": [
+      {
+        "name": "test_normalized_persistence[ NewMember - NEW@Example.Org ]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalized_persistence[\\tNewMember\\n-\\tNEW@EXAMPLE.ORG\\n]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_unchanged_identity_compatibility",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_normalized_failure_hook",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "failed"
+      },
+      {
+        "name": "test_username_uniqueness_direct[FRED]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_username_uniqueness_direct[ FrEd ]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_email_uniqueness_direct[FRED@FRED.FRED]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_email_uniqueness_direct[ Fred@Fred.Fred ]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "passed"
+      },
+      {
+        "name": "test_group_rejection[1]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[2]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[3]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[5]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[6]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[999]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection[None]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_guard_without_plugins",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_custom_ordinary_group_accepted",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_flags_not_ids",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_original_validation_survives_broken_handler[True-failure_error0]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_original_validation_survives_broken_handler[True-failure_error1]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_original_validation_survives_broken_handler[False-failure_error0]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_original_validation_survives_broken_handler[False-failure_error1]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_control_exceptions_propagate[failure_error0]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_control_exceptions_propagate[failure_error1]",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_group_rejection_survives_broken_handler",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      },
+      {
+        "name": "test_postprocessor_error_unchanged",
+        "classname": "experiments.real-framework-comparison.test_acceptance",
+        "status": "skipped"
+      }
+    ]
+  },
+  "layout": {
+    "exit_code": 0,
+    "output": "[]\n",
+    "stderr": ""
+  }
+}

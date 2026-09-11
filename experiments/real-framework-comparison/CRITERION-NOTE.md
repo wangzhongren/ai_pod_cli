@@ -1,0 +1,7 @@
+# Object identity criterion audit
+
+The frozen acceptance suite requires the failure hook to receive the exact same Python object (`is`) as the validator, including when normalization creates a new UserRegistrationInfo. The updated AIPod run produces equal normalized values in separate immutable objects and fails this assertion.
+
+The written requirement explicitly requires retaining the original object when no normalization is needed. For changed values, “the same normalized identity” is less precise: it could mean equal username/email values or one shared Python object. The legacy service did pass one object through validation and failure handling, so preserving that behavior is a useful compatibility check, but the new-copy identity requirement was not stated clearly enough to use this one failure as definitive proof of unmet business requirements.
+
+Keep the original test, its hashes and every strict result unchanged. After the final run, perform a separately labelled supplemental check in which only that ambiguous `is` assertion is replaced by equality of the five registration field values. Keep all other requirements, original-object preservation checks, DB effects and error behavior checks unchanged. Do not provide either test's feedback to the agents or repair their business code. Report both scores; the supplemental result does not replace the preregistered result and cannot support a stronger superiority claim.

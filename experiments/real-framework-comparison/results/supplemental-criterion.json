@@ -1,0 +1,6 @@
+{
+  "original_sha256": "65ef914bc542e6445beb8accc414829d6add8d41c9bb184fc9bc270f93d9685d",
+  "supplemental_sha256": "f3eb55396153c6f91ecbd9470813ec9d4ca0524788c707cd2fe525514834da92",
+  "single_changed_assertion": "assert failed_info is hooks.validated[0]",
+  "timing": "Prepared after the ambiguity was identified; run only after agent completion; never fed back to agents."
+}

@@ -1,0 +1,183 @@
+{
+  "changes": [
+    {
+      "path": "MIGRATION.md",
+      "added": 11,
+      "deleted": 0
+    },
+    {
+      "path": "aipod_plan.json",
+      "added": 37,
+      "deleted": 0
+    },
+    {
+      "path": "beans_config.json",
+      "added": 84,
+      "deleted": 0
+    },
+    {
+      "path": "config.toml",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "flaskbb/auth/services/registration.py",
+      "added": 3,
+      "deleted": 148
+    },
+    {
+      "path": "interfaces/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "interfaces/registration/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "interfaces/registration/adapter.py",
+      "added": 25,
+      "deleted": 0
+    },
+    {
+      "path": "interfaces/registration/interface.json",
+      "added": 14,
+      "deleted": 0
+    },
+    {
+      "path": "modules/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/models/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/models/registration.py",
+      "added": 17,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/contracts/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/impl/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/impl/registration.py",
+      "added": 48,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/public/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/providers/public/registration.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/contracts/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/failure.py",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/persist.py",
+      "added": 15,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/postprocess.py",
+      "added": 16,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/validate.py",
+      "added": 21,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/impl/validators.py",
+      "added": 75,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/failure.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/persist.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/postprocess.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/validate.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "modules/services/public/validators.py",
+      "added": 1,
+      "deleted": 0
+    },
+    {
+      "path": "pipelines/__init__.py",
+      "added": 0,
+      "deleted": 0
+    },
+    {
+      "path": "pipelines/registration.py",
+      "added": 29,
+      "deleted": 0
+    },
+    {
+      "path": "routes.toml",
+      "added": 2,
+      "deleted": 0
+    }
+  ],
+  "files": 35,
+  "added": 420,
+  "deleted": 148,
+  "note": "Theme symlink materialization is identical in all trial copies and excluded. Empty package initializers count as files."
+}

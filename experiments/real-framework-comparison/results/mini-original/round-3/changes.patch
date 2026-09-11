@@ -1,0 +1,191 @@
+--- a/flaskbb/auth/services/registration.py
++++ b/flaskbb/auth/services/registration.py
+@@ -254,7 +254,16 @@
+         try:
+             self._validate_registration(user_info)
+         except StopValidation as e:
+-            self._handle_failure(user_info, e.reasons)
++            try:
++                self._handle_failure(user_info, e.reasons)
++            except Exception:
++                # A broken failure hook must not mask the original validation
++                # failure. Ordinary hook errors are swallowed so the caller
++                # still receives the original ``StopValidation`` (including the
++                # exact instance raised directly by a validator). BaseException
++                # subclasses such as KeyboardInterrupt and SystemExit are
++                # intentionally allowed to propagate.
++                pass
+             raise
+ 
+         user = self._store_user(user_info)
+--- a/tests/unit/auth/test_registration_failure_hook.py
++++ b/tests/unit/auth/test_registration_failure_hook.py
+@@ -0,0 +1,168 @@
++"""Focused tests for failure-hook behaviour during registration validation.
++
++When registration validation fails the failure hook must be attempted exactly
++once. An ordinary exception raised by that hook must not mask the original
++``StopValidation`` (or replace the exact instance raised directly by a
++validator), while ``BaseException`` subclasses such as ``KeyboardInterrupt``
++and ``SystemExit`` must still propagate.
++"""
++
++import pytest
++from pluggy import HookimplMarker
++
++from flaskbb.auth.services.registration import RegistrationService
++from flaskbb.core.auth.registration import (
++    RegistrationPostProcessor,
++    UserRegistrationInfo,
++    UserValidator,
++)
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import User
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++impl = HookimplMarker("flaskbb")
++
++
++def make_info(**overrides):
++    values = {
++        "username": "NewUser",
++        "password": "secret",
++        "email": "newuser@example.com",
++        "language": "en",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++def get_service(plugin_manager, db):
++    return RegistrationService(plugins=plugin_manager, users=User, db=db)
++
++
++class RaisingValidator(UserValidator):
++    def validate(self, user_info):
++        raise ValidationError("username", "nope")
++
++
++class DirectStopValidator(UserValidator):
++    def __init__(self, error):
++        self.error = error
++
++    def validate(self, user_info):
++        raise self.error
++
++
++def register_impls(plugin_manager, validator=None, failure=None, post_process=None):
++    class Impls:
++        if validator is not None:
++
++            @impl
++            def flaskbb_gather_registration_validators(self):
++                return [validator]
++
++        if failure is not None:
++
++            @impl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure(user_info, failures)
++
++        if post_process is not None:
++
++            @impl
++            def flaskbb_registration_post_processor(self, user):
++                post_process(user)
++
++    plugin_manager.register(Impls())
++
++
++class TestFailureHookOrdinaryException:
++    def test_original_stop_validation_is_reraised_with_original_reasons(
++        self, database, plugin_manager, default_groups
++    ):
++        calls = []
++
++        def failing_failure_hook(user_info, failures):
++            calls.append((user_info, list(failures)))
++            raise RuntimeError("failure hook exploded")
++
++        register_impls(
++            plugin_manager,
++            validator=RaisingValidator(),
++            failure=failing_failure_hook,
++        )
++        service = get_service(plugin_manager, database)
++
++        with pytest.raises(StopValidation) as excinfo:
++            service.register(make_info())
++
++        assert excinfo.value.reasons == [("username", "nope")]
++        assert len(calls) == 1
++        assert User.query.count() == 0
++
++    def test_exact_stop_validation_instance_raised_directly_is_preserved(
++        self, database, plugin_manager, default_groups
++    ):
++        direct_error = StopValidation([("username", "direct")])
++        calls = []
++
++        def failing_failure_hook(user_info, failures):
++            calls.append(failures)
++            raise ValueError("failure hook exploded")
++
++        register_impls(
++            plugin_manager,
++            validator=DirectStopValidator(direct_error),
++            failure=failing_failure_hook,
++        )
++        service = get_service(plugin_manager, database)
++
++        with pytest.raises(StopValidation) as excinfo:
++            service.register(make_info())
++
++        assert excinfo.value is direct_error
++        assert len(calls) == 1
++        assert User.query.count() == 0
++
++    def test_post_processors_are_not_called_when_failure_hook_raises(
++        self, database, plugin_manager, default_groups, mocker
++    ):
++        post_process = mocker.MagicMock(spec=RegistrationPostProcessor)
++
++        def failing_failure_hook(user_info, failures):
++            raise RuntimeError("failure hook exploded")
++
++        register_impls(
++            plugin_manager,
++            validator=RaisingValidator(),
++            failure=failing_failure_hook,
++            post_process=post_process,
++        )
++        service = get_service(plugin_manager, database)
++
++        with pytest.raises(StopValidation):
++            service.register(make_info())
++
++        post_process.assert_not_called()
++        assert User.query.count() == 0
++
++
++class TestFailureHookBaseExceptions:
++    @pytest.mark.parametrize("error_type", [KeyboardInterrupt, SystemExit])
++    def test_base_exceptions_are_not_swallowed(
++        self, database, plugin_manager, default_groups, error_type
++    ):
++        def failing_failure_hook(user_info, failures):
++            raise error_type()
++
++        register_impls(
++            plugin_manager,
++            validator=RaisingValidator(),
++            failure=failing_failure_hook,
++        )
++        service = get_service(plugin_manager, database)
++
++        with pytest.raises(error_type):
++            service.register(make_info())
++
++        assert User.query.count() == 0

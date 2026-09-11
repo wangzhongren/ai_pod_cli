@@ -1,0 +1,816 @@
+--- a/aipod_plan.json
++++ b/aipod_plan.json
+@@ -237,90 +237,97 @@
+       "status": "complete",
+       "plan": {
+         "components": [],
+-        "pipelines": [],
++        "pipelines": [
++          {
++            "name": "register_user",
++            "file": "pipelines/registration.py",
++            "inputs": {
++              "envelope": {
++                "type": "any",
++                "required": true
++              }
++            }
++          }
++        ],
+         "interfaces": []
+       },
+       "result": {
+-        "summary": "Pipelines layer complete; no source or route changes were needed. `pipelines/registration.py` already composes the four Services via `Pod(build_container(load_beans()))` and owns the ordering (Validate → optional ReportFailure when failures/StopValidation present → Persist → Postprocess) plus native exception propagation, without duplicating Service logic. The new group-guard behavior is enforced entirely inside the services layer (ValidateRegistration returns a `('group', reason)` failure); the pipeline already turns any failures into a single `StopValidation`, invokes `ReportRegistrationFailure` exactly once, then stops before Persist/Postprocess, so no user is persisted and no post-processor runs. Verified through the registered route by the layer-owned tests in `tests/pipelines/test_registration_pipeline.py` (5 passed) and the services group-guard tests that drive the same pipeline (`tests/services/test_registration_group_guard.py` + `_adapter.py`). Full suite: `python -m pytest -o addopts='' tests -q` → 489 passed, 1 pre-existing warning, exit 0. Registration metadata unchanged: existing `register_user` pipeline entry (name `register_user`, file `pipelines/registration.py`, input contract `pipelines/registration.contract.json`) and all component lists left intact; no remove lists for this layer's IDs. No new components are added by this layer; the internal helper is not registered.",
+-        "artifacts": [],
++        "summary": "Pipelines layer complete. `pipelines/registration.py` failure path now attempts the registration failure hook exactly once and then always re-raises the original `StopValidation`; ordinary `Exception`s from the hook are ignored (caller still gets the original reasons), while `BaseException` subclasses (KeyboardInterrupt/SystemExit) propagate. A `StopValidation` raised directly by a validator is preserved as the exact instance (reasons copied to `failures` for the hook, original object re-raised). No user is persisted and no post-processor runs on this path; successful registration and post-processor exception behavior unchanged. Ordering owned by the pipeline: Validate -> (on failure) ReportFailure once -> raise original; else Persist -> Postprocess. No Service logic duplicated. Tests added: `tests/pipelines/test_registration_failure_path.py` (6 tests). Checks run: `python -m pytest -o addopts='' tests/pipelines -q` -> 11 passed; `python -m pytest -o addopts='' tests -q` -> 504 passed, 1 pre-existing warning, exit 0. Pipelines registration unchanged (re-listed to keep intact). No components added/removed by this layer. No remove lists.",
++        "artifacts": [
++          "pipelines/registration.py",
++          "tests/pipelines/test_registration_failure_path.py"
++        ],
+         "checks": [
+           {
+-            "command": "sed -n '75,140p' flaskbb/utils/populate.py",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "                db.session.delete(row)\n\n    db.session.commit()\n    Setting.invalidate_cache()\n\n\ndef create_default_groups():\n    \"\"\"This will create the 5 default groups.\"\"\"\n    from flaskbb.fixtures.groups import fixture\n\n    result: list[Group] = []\n    for key, value in fixture.items():\n        group = Group(name=key)\n\n        for k, v in value.items():\n            setattr(group, k, v)\n\n        group.save()\n        result.append(group)\n    return result\n\n\ndef create_user(username: str, password: str, email: str, groupname: str):\n    \"\"\"Creates a user.\n    Returns the created user.\n\n    :param username: The username of the user.\n    :param password: The password of the user.\n    :param email: The email address of the user.\n    :param groupname: The name of the group to which the user\n                      should belong to.\n    \"\"\"\n    if groupname == \"member\":\n        group = Group.get_member_group()\n    else:\n        group = db.session.execute(\n            sa.select(Group)\n            .filter(getattr(Group, groupname).is_(True))\n            .order_by(Group.id.asc())\n            .limit(1)\n        ).scalar_one()\n\n    user = User.create(\n        username=username,\n        password=password,\n        email=email,\n        primary_group_id=group.id,\n        activated=True,\n    )\n    return user\n\n\ndef update_user(\n    username: str,\n    password: str | None,\n    email: str | None,\n    groupname: str | None,\n):\n    \"\"\"Update an existing user. Only the fields that are not ``None`` are\n    updated.\n    Returns the updated user.\n\n    :param username: The username of the user.\n    :param password: The password of the user.\n    :param email: The email address of the user.\n    :param groupname: The name of the group to which the user\n",
+-            "seconds": 0.023,
++            "command": "python -c \"import ai_pod_cli, os; print(os.path.dirname(ai_pod_cli.__file__))\"",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli\n",
++            "seconds": 0.304,
+             "revision": 1
+           },
+           {
+-            "command": "cat flaskbb/fixtures/groups.py",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "\"\"\"\nflaskbb.fixtures.groups\n~~~~~~~~~~~~~~~~~~~~~~~\n\nThe fixtures module for our groups.\n\n:copyright: (c) 2014 by the FlaskBB Team.\n:license: BSD, see LICENSE for more details.\n\"\"\"\n\nfrom collections import OrderedDict\n\nfixture = OrderedDict(\n    (\n        (\n            \"Administrator\",\n            {\n                \"description\": \"The Administrator Group\",\n                \"admin\": True,\n                \"super_mod\": False,\n                \"mod\": False,\n                \"banned\": False,\n                \"guest\": False,\n                \"editpost\": True,\n                \"deletepost\": True,\n                \"deletetopic\": True,\n                \"posttopic\": True,\n                \"postreply\": True,\n                \"postattachment\": True,\n                \"mod_edituser\": True,\n                \"mod_banuser\": True,\n                \"viewhidden\": True,\n                \"makehidden\": True,\n            },\n        ),\n        (\n            \"Super Moderator\",\n            {\n                \"description\": \"The Super Moderator Group\",\n                \"admin\": False,\n                \"super_mod\": True,\n                \"mod\": False,\n                \"banned\": False,\n                \"guest\": False,\n                \"editpost\": True,\n                \"deletepost\": True,\n                \"deletetopic\": True,\n                \"posttopic\": True,\n                \"postreply\": True,\n                \"postattachment\": True,\n                \"mod_edituser\": True,\n                \"mod_banuser\": True,\n                \"viewhidden\": True,\n                \"makehidden\": True,\n            },\n        ),\n        (\n            \"Moderator\",\n            {\n                \"description\": \"The Moderator Group\",\n                \"admin\": False,\n                \"super_mod\": False,\n                \"mod\": True,\n                \"banned\": False,\n                \"guest\": False,\n                \"editpost\": True,\n                \"deletepost\": True,\n                \"deletetopic\": True,\n                \"posttopic\": True,\n                \"postreply\": True,\n                \"postattachment\": True,\n                \"mod_edituser\": True,\n                \"mod_banuser\": True,\n                \"viewhidden\": True,\n                \"makehidden\": False,\n            },\n        ),\n        (\n            \"Member\",\n            {\n                \"description\": \"The Member Group\",\n                \"admin\": False,\n                \"super_mod\": False,\n                \"mod\": False,\n                \"banned\": False,\n                \"guest\": False,\n                \"editpost\": True,\n                \"deletepost\": False,\n                \"deletetopic\": False,\n                \"posttopic\": True,\n                \"postreply\": True,\n                \"postattachment\": True,\n                \"mod_edituser\": False,\n                \"mod_banuser\": False,\n                \"viewhidden\": False,\n                \"makehidden\": False,\n            },\n        ),\n        (\n            \"Banned\",\n            {\n                \"description\": \"The Banned Group\",\n                \"admin\": False,\n                \"super_mod\": False,\n                \"mod\": False,\n                \"banned\": True,\n                \"guest\": False,\n                \"editpost\": False,\n                \"deletepost\": False,\n                \"deletetopic\": False,\n                \"posttopic\": False,\n                \"postreply\": False,\n                \"postattachment\": False,\n                \"mod_edituser\": False,\n                \"mod_banuser\": False,\n                \"viewhidden\": False,\n                \"makehidden\": False,\n            },\n        ),\n        (\n            \"Guest\",\n            {\n                \"description\": \"The Guest Group\",\n                \"admin\": False,\n                \"super_mod\": False,\n                \"mod\": False,\n                \"banned\": False,\n                \"guest\": True,\n                \"editpost\": False,\n                \"deletepost\": False,\n                \"deletetopic\": False,\n                \"posttopic\": False,\n                \"postreply\": False,\n                \"postattachment\": False,\n                \"mod_edituser\": False,\n                \"mod_banuser\": False,\n                \"viewhidden\": False,\n                \"makehidden\": False,\n            },\n        ),\n    )\n)\n",
+-            "seconds": 0.047,
++            "command": "grep -rn \"flaskbb_registration_failure_handler\\|flaskbb_registration_post_processor\\|failure_handler\\|ReportRegistrationFailure\" tests pipelines interfaces docs",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "tests/unit/auth/test_registration.py:43:    def test_calls_failure_handlers_if_validation_fails(self, plugin_manager, database, mocker):\ntests/unit/auth/test_registration.py:99:                def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/unit/auth/test_registration.py:105:                def flaskbb_registration_post_processor(self, user):\ntests/pipelines/test_registration_pipeline.py:50:def plugin_with_validators(validators, failure_handler=None):\ntests/pipelines/test_registration_pipeline.py:56:        if failure_handler is not None:\ntests/pipelines/test_registration_pipeline.py:59:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/pipelines/test_registration_pipeline.py:60:                failure_handler(user_info, failures)\ntests/services/test_registration_normalization_integration.py:69:        def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/services/test_registration_group_guard.py:72:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/services/test_registration_group_guard.py:76:            def flaskbb_registration_post_processor(self, user):\ntests/interfaces/test_registration_adapter_group_guard.py:77:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/interfaces/test_registration_adapter_group_guard.py:81:            def flaskbb_registration_post_processor(self, user):\ntests/interfaces/test_registration_adapter.py:115:        def flaskbb_registration_failure_handler(self, user_info, failures):\npipelines/registration.py:7:from modules.services.public.failure import ReportRegistrationFailure\npipelines/registration.py:19:        S(ReportRegistrationFailure).execute_all(ctx)\ndocs/development/hooks/event.rst:26:.. autofunction:: flaskbb_registration_post_processor\ndocs/development/hooks/event.rst:27:.. autofunction:: flaskbb_registration_failure_handler\n",
++            "seconds": 0.138,
+             "revision": 2
+           },
+           {
+-            "command": "sed -n '/^class Group/,/^class /p' flaskbb/user/models.py | head -120",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "class Group(BaseModel):\n    __tablename__: str = \"groups\"\n\n    id: Mapped[int] = mapped_column(primary_key=True)\n    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)\n    description: Mapped[str | None] = mapped_column(Text, nullable=True)\n\n    # Group types\n    admin: Mapped[bool] = mapped_column(default=False, nullable=False)\n    super_mod: Mapped[bool] = mapped_column(default=False, nullable=False)\n    mod: Mapped[bool] = mapped_column(default=False, nullable=False)\n    guest: Mapped[bool] = mapped_column(default=False, nullable=False)\n    banned: Mapped[bool] = mapped_column(default=False, nullable=False)\n\n    # Moderator permissions (only available when the user a moderator)\n    mod_edituser: Mapped[bool] = mapped_column(default=False, nullable=False)\n    mod_banuser: Mapped[bool] = mapped_column(default=False, nullable=False)\n\n    # User permissions\n    editpost: Mapped[bool] = mapped_column(default=True, nullable=False)\n    deletepost: Mapped[bool] = mapped_column(default=False, nullable=False)\n    deletetopic: Mapped[bool] = mapped_column(default=False, nullable=False)\n    posttopic: Mapped[bool] = mapped_column(default=True, nullable=False)\n    postreply: Mapped[bool] = mapped_column(default=True, nullable=False)\n    postattachment: Mapped[bool] = mapped_column(default=True, nullable=False)\n    viewhidden: Mapped[bool] = mapped_column(default=False, nullable=False)\n    makehidden: Mapped[bool] = mapped_column(default=False, nullable=False)\n\n    @override\n    def __repr__(self):\n        \"\"\"Set to a unique key specific to the object in the database.\n        Required for cache.memoize() to work across requests.\n        \"\"\"\n        return f\"<{self.__class__.__name__} {self.id} {self.name}>\"\n\n    @classmethod\n    def selectable_groups_choices(cls):\n        return db.session.execute(sa.select(cls.id, cls.name).order_by(cls.name.asc())).all()\n\n    @classmethod\n    def get_guest_group(cls) -> \"Group\":\n        return db.session.execute(sa.select(cls).filter(cls.guest.is_(True))).scalar_one()\n\n    @classmethod\n    def get_member_group(cls) -> \"Group\":\n        \"\"\"Returns the first member group.\"\"\"\n        return db.session.execute(\n            sa.select(cls)\n            .filter(\n                cls.admin.is_(False),\n                cls.super_mod.is_(False),\n                cls.mod.is_(False),\n                cls.guest.is_(False),\n                cls.banned.is_(False),\n            )\n            .order_by(cls.id.asc())\n            .limit(1)\n        ).scalar_one()\n\n\nclass User(BaseModel, UserMixin):\n",
+-            "seconds": 0.047,
++            "command": "python -c \"import ai_pod_cli.container as c, inspect; print(inspect.getsource(c))\"",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "f fallback_ref is not None:\n            fallback_id = fallback_ref._id\n            raw_result, normalized = (await fallback_ref._execute_with_policy_async(ctx))[:2]\n\n        duration_ms = (perf_counter() - started) * 1000\n        return raw_result, normalized, {\n            \"status\": \"success\" if isinstance(normalized, Success) else \"failure\",\n            \"attempts\": attempts,\n            **({\"last_error\": last_error} if last_error else {}),\n            **({\"fallback\": fallback_id} if fallback_id else {}),\n            \"duration_ms\": duration_ms,\n        }\n\n    def execute_all(self, ctx: PipelineContext) -> dict:\n        \"\"\"Execute this single component and record the step (same API as _PipeChain).\"\"\"\n        result, normalized, metadata = self._execute_with_policy(ctx)\n        if isinstance(normalized, Success):\n            for key, value in normalized.output.items():\n                ctx.set(key, value)\n        ctx.record_step(\n            self._id,\n            serialize_result(result),\n            metadata.pop(\"duration_ms\"),\n            **metadata,\n        )\n        return result\n\n    async def execute_all_async(self, ctx: PipelineContext):\n        \"\"\"Asynchronously execute this component and record its trace step.\"\"\"\n        result, normalized, metadata = await self._execute_with_policy_async(ctx)\n        if isinstance(normalized, Success):\n            for key, value in normalized.output.items():\n                ctx.set(key, value)\n        ctx.record_step(\n            self._id,\n            serialize_result(result),\n            metadata.pop(\"duration_ms\"),\n            **metadata,\n        )\n        return result\n\n\nclass _PipeChain:\n    \"\"\"A chain of components built via the | operator.\"\"\"\n\n    __slots__ = (\"_refs\",)\n\n    def __init__(self, refs: list):\n        self._refs = list(refs)\n\n    def __or__(self, other):\n        if isinstance(other, (_ComponentRef, _ParallelGroup, _RepeatNode)):\n            self._refs.append(other)\n        elif isinstance(other, _PipeChain):\n            self._refs.extend(other._refs)\n        else:\n            return NotImplemented\n        return self\n\n    def execute_all(self, ctx: PipelineContext) -> dict:\n        \"\"\"Execute all components in order, recording each step.\"\"\"\n        result = None\n        for ref in self._refs:\n            if isinstance(ref, (_ParallelGroup, _RepeatNode)):\n                result = ref.execute_all(ctx)\n                normalized = normalize_result(result)\n            else:\n                result, normalized, metadata = ref._execute_with_policy(ctx)\n                if isinstance(normalized, Success):\n                    for key, value in normalized.output.items():\n                        ctx.set(key, value)\n                ctx.record_step(\n                    ref._id,\n                    serialize_result(result),\n                    metadata.pop(\"duration_ms\"),\n                    **metadata,\n                )\n            if isinstance(normalized, Failure):\n                break\n        return result\n\n    async def execute_all_async(self, ctx: PipelineContext):\n        \"\"\"Execute sequential nodes asynchronously, preserving ``|`` semantics.\"\"\"\n        result = None\n        for ref in self._refs:\n            if isinstance(ref, (_ParallelGroup, _RepeatNode)):\n                result = await ref.execute_all_async(ctx)\n            else:\n                result = await ref.execute_all_async(ctx)\n            if isinstance(normalize_result(result), Failure):\n                break\n        return result\n\n\nclass _ParallelGroup:\n    \"\"\"Explicit set of isolated branches executed concurrently.\"\"\"\n\n    __slots__ = (\"_branches\", \"_merge\", \"_failure_policy\", \"_concurrency\")\n\n    def __init__(\n        self, branches, *, merge=\"strict\", failure_policy=\"fail_fast\",\n        concurrency: int | None = None,\n    ):\n        if len(branches) < 2:\n            raise ValueError(\"parallel() requires at least two branches\")\n        if failure_policy not in {\"fail_fast\", \"collect_all\", \"ignore\"}:\n            raise ValueError(\"failure_policy must be fail_fast, collect_all, or ignore\")\n        if concurrency is not None and concurrency < 1:\n            raise ValueError(\"parallel concurrency must be at least 1\")\n        if not all(isinstance(item, (_ComponentRef, _PipeChain)) for item in branches):\n            raise TypeError(\"parallel branches must be S(Component) refs or pipe chains\")\n        self._branches = tuple(branches)\n        self._merge = merge\n        self._failure_policy = failure_policy\n        self._concurrency = concurrency or len(branches)\n\n    def __or__(self, other):\n        return _PipeChain([self]) | other\n\n    async def _run_branch(self, index: int, branch, parent: PipelineContext, semaphore):\n        branch_ctx = parent.fork(f\"branch-{index + 1}\")\n        try:\n            async with semaphore:\n                result = await branch.execute_all_async(branch_ctx)\n            return index, branch_ctx, result, normalize_result(result)\n        except asyncio.CancelledError:\n            raise\n        except Exception as error:\n            failure = Failure(str(error), code=type(error).__name__)\n            return index, branch_ctx, failure, failure\n\n    async def execute_all_async(self, ctx: PipelineContext):\n        started = perf_counter()\n        semaphore = asyncio.Semaphore(self._concurrency)\n        tasks = [\n            asyncio.create_task(self._run_branch(index, branch, ctx, semaphore))\n            for index, branch in enumerate(self._branches)\n        ]\n        completed = []\n        if self._failure_policy == \"fail_fast\":\n            pending = set(tasks)\n            while pending:\n                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)\n                batch = [task.result() for task in done]\n                completed.extend(batch)\n                if any(isinstance(item[3], Failure) for item in batch):\n                    for task in pending:\n                        task.cancel()\n                    await asyncio.gather(*pending, return_exceptions=True)\n                    break\n        else:\n            completed = list(await asyncio.gather(*tasks))\n\n        completed.sort(key=lambda item: item[0])\n        failures = [item for item in completed if isinstance(item[3], Failure)]\n        successful = [item for item in completed if isinstance(item[3], Success)]\n        merged = {}\n        merge_error = None\n        try:\n            merged = ctx.merge([item[1] for item in successful], strategy=self._merge)\n        except Exception as error:\n            merge_error = Failure(str(error), code=\"parallel_merge_conflict\")\n\n        if merge_error is not None:\n            result = merge_error\n        elif failures and self._failure_policy != \"ignore\":\n            result = Failure(\n                f\"{len(failures)} parallel branch(es) failed\",\n                code=\"parallel_branch_failure\",\n                details={\n                    \"branches\": [\n                        {\"index\": item[0], \"error\": item[3].to_dict()[\"error\"]}\n                        for item in failures\n                    ],\n                },\n            )\n        else:\n            result = Success(merged)\n\n        branch_traces = [\n            {\n                \"id\": item[1].branch_id,\n                \"status\": \"failure\" if isinstance(item[3], Failure) else \"success\",\n                \"steps\": item[1].summary()[\"steps\"],\n            }\n            for item in completed\n        ]\n        ctx.record_step(\n            \"parallel\", result.to_dict(), (perf_counter() - started) * 1000,\n            status=\"failure\" if isinstance(result, Failure) else \"success\",\n            mode=\"parallel\", branch_count=len(self._branches),\n            failure_policy=self._failure_policy,\n            merge=self._merge if isinstance(self._merge, str) else \"custom\",\n            branches=branch_traces,\n        )\n        return result\n\n    def execute_all(self, ctx: PipelineContext):\n        \"\"\"Run parallel branches from synchronous pipeline code.\"\"\"\n        try:\n            asyncio.get_running_loop()\n        except RuntimeError:\n            return asyncio.run(self.execute_all_async(ctx))\n        raise RuntimeError(\n            \"execute_all() cannot start parallel work inside an active event loop; \"\n            \"use 'await execute_all_async(ctx)'\"\n        )\n\n\ndef parallel(*branches, merge=\"strict\", failure_policy=\"fail_fast\", concurrency=None):\n    \"\"\"Declare branches that may run concurrently with deterministic merging.\"\"\"\n    return _ParallelGroup(\n        branches, merge=merge, failure_policy=failure_policy, concurrency=concurrency,\n    )\n\n\nclass _RepeatNode:\n    \"\"\"Deterministically repeat a governed Pipeline body until state says stop.\"\"\"\n\n    __slots__ = (\n        \"_body\", \"_until_field\", \"_max_iterations\", \"_max_iterations_field\",\n        \"_output_field\", \"_trace_limit\",\n    )\n\n    def __init__(\n        self, body, *, until_field: str | None = None,\n        max_iterations: int | None = None,\n        max_iterations_field: str | None = None,\n        output_field: str = \"iterations\", trace_limit: int = 20,\n    ):\n        if not isinstance(body, (_ComponentRef, _PipeChain, _ParallelGroup)):\n            raise TypeError(\"repeat body must be an S(Component), pipe chain, or parallel group\")\n        if not until_field and max_iterations is None and not max_iterations_field:\n            raise ValueError(\"repeat requires until_field or an iteration limit\")\n        if max_iterations is not None and max_iterations < 1:\n            raise ValueError(\"max_iterations must be at least 1\")\n        if trace_limit < 1:\n            raise ValueError(\"repeat trace_limit must be at least 1\")\n        self._body = body\n        self._until_field = str(until_field) if until_field else None\n        self._max_iterations = max_iterations\n        self._max_iterations_field = (\n            str(max_iterations_field) if max_iterations_field else None\n        )\n        self._output_field = str(output_field)\n        self._trace_limit = trace_limit\n\n    def __or__(self, other):\n        return _PipeChain([self]) | other\n\n    def _limit(self, ctx: PipelineContext) -> int | None:\n        value = self._max_iterations\n        if value is None and self._max_iterations_field:\n            value = ctx.get(self._max_iterations_field)\n        if value is None:\n            if self._until_field:\n                return None\n            raise ValueError(\"repeat iteration limit is missing\")\n        if not isinstance(value, int) or isinstance(value, bool) or value < 1:\n            raise ValueError(\"repeat iteration limit must be a positive integer\")\n        return value\n\n    def _done(self, ctx: PipelineContext) -> bool:\n        return bool(self._until_field and ctx.get(self._until_field, False))\n\n    def _finish(self, ctx, started, iterations, traces, result, stop_reason):\n        normalized = normalize_result(result)\n        if isinstance(normalized, Failure):\n            final = normalized\n            status = \"failure\"\n        else:\n            final = Success({self._output_field: iterations})\n            ctx.set(self._output_field, iterations)\n            status = \"success\"\n        ctx.record_step(\n            \"repeat\", final.to_dict(), (perf_counter() - started) * 1000,\n            status=status, mode=\"repeat\", iterations=iterations,\n            stop_reason=stop_reason, until_field=self._until_field,\n            trace_limit=self._trace_limit, iteration_traces=traces,\n        )\n        return final\n\n    def execute_all(self, ctx: PipelineContext):\n        started = perf_counter()\n        limit = self._limit(ctx)\n        traces = []\n        iterations = 0\n        result = Success()\n        stop_reason = \"until\"\n        while True:\n            iteration_ctx = ctx.fork(f\"iteration-{iterations + 1}\")\n            result = self._body.execute_all(iteration_ctx)\n            normalized = normalize_result(result)\n            if isinstance(normalized, Success):\n                ctx.merge([iteration_ctx], strategy=\"overwrite\")\n            iterations += 1\n            traces.append({\n                \"iteration\": iterations,\n                \"status\": \"failure\" if isinstance(normalized, Failure) else \"success\",\n                \"steps\": iteration_ctx.summary()[\"steps\"],\n            })\n            traces = traces[-self._trace_limit:]\n            if isinstance(normalized, Failure):\n                stop_reason = \"failure\"\n                break\n            if self._done(ctx):\n                stop_reason = \"until\"\n                break\n            if limit is not None and iterations >= limit:\n                stop_reason = \"limit\"\n                break\n        return self._finish(ctx, started, iterations, traces, result, stop_reason)\n\n    async def execute_all_async(self, ctx: PipelineContext):\n        started = perf_counter()\n        limit = self._limit(ctx)\n        traces = []\n        iterations = 0\n        result = Success()\n        stop_reason = \"until\"\n        while True:\n            iteration_ctx = ctx.fork(f\"iteration-{iterations + 1}\")\n            result = await self._body.execute_all_async(iteration_ctx)\n            normalized = normalize_result(result)\n            if isinstance(normalized, Success):\n                ctx.merge([iteration_ctx], strategy=\"overwrite\")\n            iterations += 1\n            traces.append({\n                \"iteration\": iterations,\n                \"status\": \"failure\" if isinstance(normalized, Failure) else \"success\",\n                \"steps\": iteration_ctx.summary()[\"steps\"],\n            })\n            traces = traces[-self._trace_limit:]\n            if isinstance(normalized, Failure):\n                stop_reason = \"failure\"\n                break\n            if self._done(ctx):\n                stop_reason = \"until\"\n                break\n            if limit is not None and iterations >= limit:\n                stop_reason = \"limit\"\n                break\n        return self._finish(ctx, started, iterations, traces, result, stop_reason)\n\n\ndef repeat(\n    body, *, until_field=None, max_iterations=None, max_iterations_field=None,\n    output_field=\"iterations\", trace_limit=20,\n):\n    \"\"\"Declare a governed loop without exposing one Service to another.\"\"\"\n    return _RepeatNode(\n        body, until_field=until_field, max_iterations=max_iterations,\n        max_iterations_field=max_iterations_field, output_field=output_field,\n        trace_limit=trace_limit,\n    )\n\n\nclass Pod:\n    \"\"\"Pipeline-friendly container wrapper. Use `S(Class)` to get pipe-able components.\n\n    Usage in generated pipelines:\n\n        beans = load_beans()\n        container = build_container(beans)\n        S = Pod(container)\n\n        # Pipe syntax: execute StockChecker, then StockNotifier in sequence\n        (S(StockChecker) | S(StockNotifier)).execute_all(ctx)\n    \"\"\"\n\n    def __init__(self, container: Injector):\n        self._container = container\n\n    def __call__(self, cls) -> _ComponentRef:\n        \"\"\"Resolve a component from the container and wrap it for pipe chaining.\"\"\"\n        instance = self._container.get(cls)\n        config = getattr(self._container, \"_aipod_config\", {})\n        classes = getattr(self._container, \"_aipod_classes\", {})\n        matches = [item for item in config.get(\"beans\", []) if classes.get(item.get(\"id\")) is cls]\n        named = next((item for item in matches if item.get(\"id\") == cls.__name__), None)\n        if len(matches) > 1 and named is None:\n            raise ValueError(f\"Multiple registered IDs export {cls.__name__}; use distinct implementation classes\")\n        bean = named or (matches[0] if matches else next(\n            (item for item in config.get(\"beans\", []) if item.get(\"id\") == cls.__name__), {}))\n        return _ComponentRef(\n            bean.get(\"id\", cls.__name__), instance, self._container,\n            inputs=bean.get(\"inputs\"), outputs=bean.get(\"outputs\"),\n        )\n\n    def get(self, cls):\n        \"\"\"Direct access (same as container.get) for non-pipe usage.\"\"\"\n        return self._container.get(cls)\n\n",
++            "seconds": 0.252,
+             "revision": 3
+           },
+           {
+-            "command": "cat routes.toml 2>/dev/null; echo \"---\"; ls pipelines",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "[register_user]\npipeline = \"pipelines/registration.py\"\ndescription = \"\"\ninput_contract = \"pipelines/registration.contract.json\"\n---\n__init__.py\nregistration.contract.json\nregistration.py\n",
+-            "seconds": 0.049,
++            "command": "python -c \"import ai_pod_cli.container as c, inspect; print(inspect.getsource(c._ComponentRef))\"",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "class _ComponentRef:\n    \"\"\"Wraps a DI-resolved component instance for pipe chaining.\"\"\"\n\n    __slots__ = (\"_id\", \"_instance\", \"_container\", \"_policy\", \"_inputs\", \"_outputs\")\n\n    def __init__(\n        self, component_id: str, instance, container: Injector | None = None,\n        policy=None, inputs=None, outputs=None,\n    ):\n        self._id = component_id\n        self._instance = instance\n        self._container = container\n        self._policy = policy or _ExecutionPolicy()\n        self._inputs = inputs or {}\n        self._outputs = outputs or {}\n\n    def __or__(self, other):\n        \"\"\"Chain to the next component via |.\"\"\"\n        return _PipeChain([self]) | other\n\n    def execute(self, ctx: PipelineContext) -> dict:\n        return self._instance.execute(ctx)\n\n    async def execute_async(self, ctx: PipelineContext):\n        \"\"\"Execute either an async or legacy synchronous component.\"\"\"\n        execute = self._instance.execute\n        if inspect.iscoroutinefunction(execute):\n            return await execute(ctx)\n        result = await asyncio.to_thread(execute, ctx)\n        if inspect.isawaitable(result):\n            return await result\n        return result\n\n    def retry(self, attempts: int = 3, delay_seconds: float = 0.0):\n        \"\"\"Return a ref that retries failures/exceptions before applying fallback.\"\"\"\n        if attempts < 1:\n            raise ValueError(\"retry attempts must be at least 1\")\n        if delay_seconds < 0:\n            raise ValueError(\"retry delay_seconds cannot be negative\")\n        return self._clone(retries=attempts, delay_seconds=delay_seconds)\n\n    def fallback(self, component):\n        \"\"\"Return a ref that executes another component after terminal failure.\"\"\"\n        return self._clone(fallback=component)\n\n    def with_policy(self, *, retry: int = 0, delay_seconds: float = 0.0, fallback=None):\n        \"\"\"Configure retry and fallback in one declaration.\"\"\"\n        if retry < 0 or delay_seconds < 0:\n            raise ValueError(\"policy values cannot be negative\")\n        return self._clone(retries=retry, delay_seconds=delay_seconds, fallback=fallback)\n\n    def _clone(self, **changes):\n        return _ComponentRef(\n            self._id,\n            self._instance,\n            self._container,\n            replace(self._policy, **changes),\n            self._inputs,\n            self._outputs,\n        )\n\n    def _fallback_ref(self):\n        fallback = self._policy.fallback\n        if fallback is None:\n            return None\n        if isinstance(fallback, _ComponentRef):\n            return fallback\n        if isinstance(fallback, type) and self._container is not None:\n            return _ComponentRef(fallback.__name__, self._container.get(fallback), self._container)\n        raise TypeError(\"fallback must be a component class or S(Component) reference\")\n\n    def _execute_with_policy(self, ctx: PipelineContext):\n        started = perf_counter()\n        attempts = 0\n        last_error = None\n        raw_result = None\n        normalized = None\n        for attempt in range(self._policy.retries + 1):\n            attempts = attempt + 1\n            try:\n                input_errors = validate_contract_data(\n                    {**ctx.params, **ctx.data}, self._inputs, self._id,\n                )\n                if input_errors:\n                    raise ValueError(\"inputs schema validation failed: \" + \"; \".join(input_errors))\n                for key, value in materialize_contract_data(\n                    {**ctx.params, **ctx.data}, self._inputs,\n                ).items():\n                    ctx.set(key, value)\n                raw_result = self.execute(ctx)\n                if inspect.isawaitable(raw_result):\n                    if inspect.iscoroutine(raw_result):\n                        raw_result.close()\n                    raise RuntimeError(\n                        f\"component '{self._id}' is asynchronous; use execute_all_async(ctx)\"\n                    )\n                normalized = normalize_result(raw_result)\n                if isinstance(normalized, Success):\n                    output_errors = validate_contract_data(\n                        {**ctx.data, **normalized.output}, self._outputs, self._id,\n                    )\n                    if output_errors:\n                        raise ValueError(\"outputs schema validation failed: \" + \"; \".join(output_errors))\n                if isinstance(normalized, Success):\n                    break\n                last_error = normalized.error\n            except Exception as error:\n                last_error = f\"{type(error).__name__}: {error}\"\n                if attempt >= self._policy.retries:\n                    fallback_ref = self._fallback_ref()\n                    if fallback_ref is None:\n                        raise\n                normalized = Failure(str(error), code=type(error).__name__, retryable=True)\n            if attempt < self._policy.retries and self._policy.delay_seconds:\n                sleep(self._policy.delay_seconds)\n\n        fallback_ref = self._fallback_ref() if isinstance(normalized, Failure) else None\n        fallback_id = None\n        if fallback_ref is not None:\n            fallback_id = fallback_ref._id\n            raw_result, normalized = fallback_ref._execute_with_policy(ctx)[:2]\n\n        duration_ms = (perf_counter() - started) * 1000\n        return raw_result, normalized, {\n            \"status\": \"success\" if isinstance(normalized, Success) else \"failure\",\n            \"attempts\": attempts,\n            **({\"last_error\": last_error} if last_error else {}),\n            **({\"fallback\": fallback_id} if fallback_id else {}),\n            \"duration_ms\": duration_ms,\n        }\n\n    async def _execute_with_policy_async(self, ctx: PipelineContext):\n        started = perf_counter()\n        attempts = 0\n        last_error = None\n        raw_result = None\n        normalized = None\n        for attempt in range(self._policy.retries + 1):\n            attempts = attempt + 1\n            try:\n                input_errors = validate_contract_data(\n                    {**ctx.params, **ctx.data}, self._inputs, self._id,\n                )\n                if input_errors:\n                    raise ValueError(\"inputs schema validation failed: \" + \"; \".join(input_errors))\n                for key, value in materialize_contract_data(\n                    {**ctx.params, **ctx.data}, self._inputs,\n                ).items():\n                    ctx.set(key, value)\n                raw_result = await self.execute_async(ctx)\n                normalized = normalize_result(raw_result)\n                if isinstance(normalized, Success):\n                    output_errors = validate_contract_data(\n                        {**ctx.data, **normalized.output}, self._outputs, self._id,\n                    )\n                    if output_errors:\n                        raise ValueError(\"outputs schema validation failed: \" + \"; \".join(output_errors))\n                    break\n                last_error = normalized.error\n            except Exception as error:\n                last_error = f\"{type(error).__name__}: {error}\"\n                if attempt >= self._policy.retries:\n                    fallback_ref = self._fallback_ref()\n                    if fallback_ref is None:\n                        raise\n                normalized = Failure(str(error), code=type(error).__name__, retryable=True)\n            if attempt < self._policy.retries and self._policy.delay_seconds:\n                await asyncio.sleep(self._policy.delay_seconds)\n\n        fallback_ref = self._fallback_ref() if isinstance(normalized, Failure) else None\n        fallback_id = None\n        if fallback_ref is not None:\n            fallback_id = fallback_ref._id\n            raw_result, normalized = (await fallback_ref._execute_with_policy_async(ctx))[:2]\n\n        duration_ms = (perf_counter() - started) * 1000\n        return raw_result, normalized, {\n            \"status\": \"success\" if isinstance(normalized, Success) else \"failure\",\n            \"attempts\": attempts,\n            **({\"last_error\": last_error} if last_error else {}),\n            **({\"fallback\": fallback_id} if fallback_id else {}),\n            \"duration_ms\": duration_ms,\n        }\n\n    def execute_all(self, ctx: PipelineContext) -> dict:\n        \"\"\"Execute this single component and record the step (same API as _PipeChain).\"\"\"\n        result, normalized, metadata = self._execute_with_policy(ctx)\n        if isinstance(normalized, Success):\n            for key, value in normalized.output.items():\n                ctx.set(key, value)\n        ctx.record_step(\n            self._id,\n            serialize_result(result),\n            metadata.pop(\"duration_ms\"),\n            **metadata,\n        )\n        return result\n\n    async def execute_all_async(self, ctx: PipelineContext):\n        \"\"\"Asynchronously execute this component and record its trace step.\"\"\"\n        result, normalized, metadata = await self._execute_with_policy_async(ctx)\n        if isinstance(normalized, Success):\n            for key, value in normalized.output.items():\n                ctx.set(key, value)\n        ctx.record_step(\n            self._id,\n            serialize_result(result),\n            metadata.pop(\"duration_ms\"),\n            **metadata,\n        )\n        return result\n\n",
++            "seconds": 0.201,
+             "revision": 4
+           },
+           {
+-            "command": "python -c \"import ai_pod_cli, os; print(os.path.dirname(ai_pod_cli.__file__))\"",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli\n",
+-            "seconds": 0.248,
++            "command": "grep -rn -A4 \"flaskbb_registration_failure_handler\" tests",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "tests/unit/auth/test_registration.py:99:                def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/unit/auth/test_registration.py-100-                    failure(user_info, failures)\ntests/unit/auth/test_registration.py-101-\ntests/unit/auth/test_registration.py-102-            if post_process is not None:\ntests/unit/auth/test_registration.py-103-\n--\ntests/pipelines/test_registration_pipeline.py:59:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/pipelines/test_registration_pipeline.py-60-                failure_handler(user_info, failures)\ntests/pipelines/test_registration_pipeline.py-61-\ntests/pipelines/test_registration_pipeline.py-62-    return Plugin()\ntests/pipelines/test_registration_pipeline.py-63-\n--\ntests/services/test_registration_normalization_integration.py:69:        def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/services/test_registration_normalization_integration.py-70-            handle_failure(user_info, failures)\ntests/services/test_registration_normalization_integration.py-71-\ntests/services/test_registration_normalization_integration.py-72-    from flaskbb.core.auth.registration import UserValidator\ntests/services/test_registration_normalization_integration.py-73-    from flaskbb.core.exceptions import ValidationError\n--\ntests/services/test_registration_group_guard.py:72:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/services/test_registration_group_guard.py-73-                recorder.failures.append((user_info, failures))\ntests/services/test_registration_group_guard.py-74-\ntests/services/test_registration_group_guard.py-75-            @hookimpl\ntests/services/test_registration_group_guard.py-76-            def flaskbb_registration_post_processor(self, user):\n--\ntests/interfaces/test_registration_adapter_group_guard.py:77:            def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/interfaces/test_registration_adapter_group_guard.py-78-                recorder.failures.append((user_info, failures))\ntests/interfaces/test_registration_adapter_group_guard.py-79-\ntests/interfaces/test_registration_adapter_group_guard.py-80-            @hookimpl\ntests/interfaces/test_registration_adapter_group_guard.py-81-            def flaskbb_registration_post_processor(self, user):\n--\ntests/interfaces/test_registration_adapter.py:115:        def flaskbb_registration_failure_handler(self, user_info, failures):\ntests/interfaces/test_registration_adapter.py-116-            captured[\"username\"] = user_info.username\ntests/interfaces/test_registration_adapter.py-117-            captured[\"email\"] = user_info.email\ntests/interfaces/test_registration_adapter.py-118-            captured[\"failures\"] = failures\ntests/interfaces/test_registration_adapter.py-119-\n",
++            "seconds": 0.045,
+             "revision": 5
+           },
+           {
+-            "command": "grep -rn \"def execute_all\" /private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:264:    def execute_all(self, ctx: PipelineContext) -> dict:\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:278:    async def execute_all_async(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:310:    def execute_all(self, ctx: PipelineContext) -> dict:\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:332:    async def execute_all_async(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:382:    async def execute_all_async(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:448:    def execute_all(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:533:    def execute_all(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/container.py:564:    async def execute_all_async(self, ctx: PipelineContext):\n/private/tmp/aipod-comparison-venv/lib/python3.12/site-packages/ai_pod_cli/streaming.py:217:    async def execute_all_async(self, ctx: PipelineContext):\n",
+-            "seconds": 0.085,
++            "command": "python -c \"import ai_pod_cli.container as c, inspect; print(inspect.getsource(c.normalize_result)); print('---'); print(inspect.getsource(c.serialize_result))\"",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "def normalize_result(value: Any) -> Result:\n    \"\"\"Adapt legacy component returns to the structured result model.\"\"\"\n    if isinstance(value, (Success, Failure)):\n        return value\n    if isinstance(value, dict):\n        return Success(output=value)\n    if value is None:\n        return Success()\n    return Success(output={\"value\": value})\n\n---\ndef serialize_result(value: Any) -> Any:\n    \"\"\"Return a JSON-friendly representation while preserving legacy dicts.\"\"\"\n    if isinstance(value, (Success, Failure)):\n        return value.to_dict()\n    return value\n\n",
++            "seconds": 0.306,
+             "revision": 6
+           },
+           {
+-            "command": "python -m pytest -o addopts='' tests/pipelines tests/services/test_registration_group_guard.py tests/services/test_registration_group_guard_adapter.py -q",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "..................                                                       [100%]\n18 passed in 0.48s\n",
+-            "seconds": 1.331,
+-            "revision": 7
+-          },
+-          {
+-            "command": "grep -rn \"def plugin_manager\" tests",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "tests/fixtures/plugin.py:7:def plugin_manager():\n",
+-            "seconds": 0.046,
+-            "revision": 8
++            "command": "python -m pytest -o addopts='' tests/pipelines -q",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "...........                                                              [100%]\n11 passed in 0.29s\n",
++            "seconds": 1.232,
++            "revision": 9
+           },
+           {
+             "command": "python -m pytest -o addopts='' tests -q",
+             "exit_code": 0,
+             "timed_out": false,
+-            "output": "........................................................................ [ 14%]\n........................................................................ [ 29%]\n........................................................................ [ 44%]\n........................................................................ [ 58%]\n........................................................................ [ 73%]\n........................................................................ [ 88%]\n.........................................................                [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x10ef5bef0> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n489 passed, 1 warning in 27.05s\n",
+-            "seconds": 28.07,
+-            "revision": 9
++            "output": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 57%]\n........................................................................ [ 71%]\n........................................................................ [ 85%]\n........................................................................ [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x10ca43c50> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n504 passed, 1 warning in 27.24s\n",
++            "seconds": 28.222,
++            "revision": 10
+           }
+         ],
+         "status": "complete"
+       },
+       "artifacts": [
+         "pipelines/registration.py",
++        "tests/pipelines/test_registration_failure_path.py",
+         "tests/pipelines/test_registration_pipeline.py"
+       ]
+     },
+@@ -337,6 +344,9 @@
+               "path": "interfaces/registration/adapter.py",
+               "class_name": "RegistrationAdapter"
+             },
++            "routes": [
++              "register_user"
++            ],
+             "artifacts": [],
+             "lifecycle": {},
+             "support": {
+@@ -349,84 +359,51 @@
+               "pytest",
+               "-o",
+               "addopts=",
+-              "tests/interfaces/test_registration_adapter.py",
++              "tests/interfaces",
+               "-q"
+             ]
+           }
+         ]
+       },
+       "result": {
+-        "summary": "Interface layer preserved the existing `interfaces/registration` entry. The adapter continues to run the registered `register_user` Pipeline route (via `start`/`register` with `bind_registration`), never invoking Services directly, so the host re-export `flaskbb.auth.services.registration.RegistrationService` keeps original behavior. No components added/changed this layer (public import path stays `interfaces.registration.adapter::RegistrationAdapter`). Added focused interface-level tests in `tests/interfaces/test_registration_adapter_group_guard.py` (9 tests) proving through the delivered adapter: missing group (9999), None group, and each privileged flag group (admin, super_mod, mod, banned, guest) raise `StopValidation` with a `group` reason, invoke the failure hook exactly once, persist no user and call no post-processor; a newly created all-false ordinary group is accepted; and the guard holds with no plugin validators registered. Updated `docs/interfaces/registration.md` with behavior and startup instructions and noted there is no standalone launcher (FlaskBB app context required). Checks executed: `python -m ai_pod_cli interface --project-root . smoke registration` -> status passed (required_routes [\"register_user\"], no missing routes/payloads/contract errors); `python -m pytest -o addopts='' tests/interfaces/test_registration_adapter_group_guard.py -q` -> 9 passed; `python -m pytest -o addopts='' tests -q` -> 498 passed, 1 pre-existing warning. Remaining unverified: there is no multi-process HTTP/GUI server for this entry; end-to-end behavior is covered by the interface tests supplying a Flask app context, since the entry has no standalone launch command.",
++        "summary": "The delivered `interfaces/registration` entry (adapter re-exported as `flaskbb.auth.services.registration.RegistrationService`) runs the registered `register_user` Pipeline route via `start`/`register` and never invokes Services directly. Through this adapter the current requirement holds: on validation failure the registration failure hook is attempted exactly once and the caller still receives the original `StopValidation` with its original reasons even when the hook raises an ordinary `Exception`; a `StopValidation` raised directly by a validator is preserved as the exact instance; no user is persisted and no post-processor runs; `BaseException` subclasses propagate; successful registration/post-processor behavior is unchanged. Group guard and identity normalization remain covered. Added `tests/interfaces/test_registration_adapter_failure_hook.py` (6 tests) and updated `docs/interfaces/registration.md` with failure-path behavior and startup/check instructions (no standalone launcher; FlaskBB app context required). Checks executed: `python -m ai_pod_cli interface --project-root . smoke registration` -> passed (required_routes [\"register_user\"]); `python -m pytest -o addopts='' tests/interfaces -q` -> 14 passed; `python -m pytest -o addopts='' tests -q` -> 510 passed, 1 pre-existing warning, exit 0.",
+         "artifacts": [
+           "docs/interfaces/registration.md",
+           "interfaces/registration/adapter.py",
+-          "tests/interfaces/test_registration_adapter_group_guard.py",
+-          "tests/interfaces/test_registration_group_guard.py"
++          "tests/interfaces/test_registration_adapter_failure_hook.py"
+         ],
+         "checks": [
+           {
+-            "command": "find interfaces tests/interfaces docs/interfaces -type f -not -path '*/__pycache__/*' | sort && echo '---' && for f in $(find interfaces tests/interfaces docs/interfaces -type f -not -path '*/__pycache__/*' | sort); do echo \"===== $f =====\"; cat \"$f\"; done",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "docs/interfaces/registration.md\ninterfaces/__init__.py\ninterfaces/registration/__init__.py\ninterfaces/registration/adapter.py\ninterfaces/registration/interface.json\ntests/interfaces/test_registration_adapter.py\n---\n===== docs/interfaces/registration.md =====\n# Registration Interface\n\nEntry point for FlaskBB user self-registration. It is backed by the registered\n`register_user` Pipeline route and does not re-implement Service logic.\n\n## Adapter\n\n- Manifest: `interfaces/registration/interface.json` (name `registration`, kind `web`)\n- Adapter: `interfaces/registration/adapter.py`, class `RegistrationAdapter`\n- Routes: `register_user` (`pipelines/registration.py`)\n- Host compatibility: `flaskbb.auth.services.registration.RegistrationService`\n  re-exports this adapter, so FlaskBB's registration factory and views keep working.\n\n## No standalone launcher\n\nThis interface is hosted by FlaskBB. `start()` accepts a `RegistrationEnvelope`\nand runs the registered route; `register(user_info)` is the host-facing entry\nthat binds FlaskBB's plugin manager, `User` model and SQLAlchemy session, then\ndelegates to the same route. The adapter's `smoke_payloads()` returns a\nnon-destructive sample (`envelope: None`) used only for declaration checks.\n\n## Checks\n\nFrom the project root:\n\n```\npython -m ai_pod_cli interface --project-root . smoke registration\npython -m ai_pod_cli interface --project-root . run registration --payload '{\"envelope\": null}'\npython -m pytest -o addopts='' tests/interfaces/test_registration_adapter.py -q\npython -m pytest -o addopts='' tests -q\n```\n\nThe `run` CLI, like `start`, needs a FlaskBB application context and bound\nregistration resources, so end-to-end behavior is covered by\n`tests/interfaces/test_registration_adapter.py` and the host registration tests\nrather than by a standalone server process.\n===== interfaces/__init__.py =====\n===== interfaces/registration/__init__.py =====\n===== interfaces/registration/adapter.py =====\nfrom pathlib import Path\n\nfrom ai_pod_cli.interface import InterfaceAdapter, create_context, load_manifest\nfrom flaskbb.core.auth.registration import UserRegistrationService\nfrom modules.models.registration import RegistrationEnvelope\nfrom modules.providers.public.registration import bind_registration\n\n\nclass RegistrationAdapter(InterfaceAdapter, UserRegistrationService):\n    \"\"\"Interface entry for self-registration over the registered route.\n\n    ``start`` runs the frozen ``register_user`` pipeline route; ``register``\n    is the host-compatible adapter used by FlaskBB's registration factory.\n    \"\"\"\n\n    def __init__(self, plugins=None, users=None, db=None):\n        self.plugins, self.users, self.db = plugins, users, db\n\n    def required_routes(self):\n        return ['register_user']\n\n    def smoke_payloads(self):\n        return {'register_user': {'envelope': None}}\n\n    def start(self, context, payload=None):\n        params = payload or {}\n        if self.plugins is None:\n            return context.run_route('register_user', params)\n        with bind_registration(self.plugins, self.users, self.db):\n            return context.run_route('register_user', params)\n\n    def register(self, user_info):\n        root = Path(__file__).resolve().parents[2]\n        _, manifest = load_manifest('registration', root)\n        with bind_registration(self.plugins, self.users, self.db):\n            result = self.start(\n                create_context(manifest, root),\n                {'envelope': RegistrationEnvelope(info=user_info)},\n            )\n        return result['user']\n===== interfaces/registration/interface.json =====\n{\n  \"name\": \"registration\",\n  \"file\": \"interfaces/registration/interface.json\",\n  \"kind\": \"web\",\n  \"adapter\": {\n    \"path\": \"interfaces/registration/adapter.py\",\n    \"class_name\": \"RegistrationAdapter\"\n  },\n  \"artifacts\": [],\n  \"lifecycle\": {},\n  \"support\": {\n    \"standalone\": false,\n    \"host\": \"FlaskBB request/application context\"\n  },\n  \"verify\": [\n    \"{python}\",\n    \"-m\",\n    \"pytest\",\n    \"-o\",\n    \"addopts=\",\n    \"tests/interfaces/test_registration_adapter.py\",\n    \"-q\"\n  ]\n}\n===== tests/interfaces/test_registration_adapter.py =====\n\"\"\"Focused checks for the registered registration Interface entry.\"\"\"\n\nfrom pathlib import Path\n\nimport pytest\n\nfrom ai_pod_cli.interface import create_context, load_adapter, load_manifest\nfrom flaskbb.core.auth.registration import (\n    RegistrationFailureHandler,\n    UserRegistrationInfo,\n    UserValidator,\n)\nfrom flaskbb.core.exceptions import StopValidation, ValidationError\nfrom flaskbb.user.models import User\nfrom modules.models.registration import RegistrationEnvelope\nfrom pluggy import HookimplMarker\n\npytestmark = pytest.mark.usefixtures(\"default_settings\")\n\nPROJECT_ROOT = Path(__file__).resolve().parents[2]\nMANIFEST = \"registration\"\n\n\ndef _info(**overrides):\n    values = {\n        \"username\": \"  Fred  \",\n        \"password\": \"secret\",\n        \"email\": \"  Fred@Example.COM  \",\n        \"language\": \"en\",\n        \"group\": 4,\n    }\n    values.update(overrides)\n    return UserRegistrationInfo(**values)\n\n\ndef _adapter(plugin_manager, database):\n    _, manifest = load_manifest(MANIFEST, PROJECT_ROOT)\n    adapter = load_adapter(manifest, PROJECT_ROOT)\n    adapter.plugins = plugin_manager\n    adapter.users = User\n    adapter.db = database\n    return adapter\n\n\ndef test_manifest_and_smoke_report_passes():\n    manifest_path, manifest = load_manifest(MANIFEST, PROJECT_ROOT)\n    assert manifest_path.name == \"interface.json\"\n    adapter = load_adapter(manifest, PROJECT_ROOT)\n    context = create_context(manifest, PROJECT_ROOT)\n\n    report = adapter.smoke(context)\n\n    assert report[\"status\"] == \"passed\", report\n    assert report[\"required_routes\"] == [\"register_user\"]\n    assert context.route_names() == [\"register_user\"]\n\n\ndef test_start_runs_registered_route_without_standalone_service(\n    database, plugin_manager, default_groups\n):\n    _, manifest = load_manifest(MANIFEST, PROJECT_ROOT)\n    adapter = _adapter(plugin_manager, database)\n    context = create_context(manifest, PROJECT_ROOT)\n\n    result = adapter.start(\n        context, {\"envelope\": RegistrationEnvelope(info=_info())}\n    )\n\n    assert result[\"user\"].username == \"Fred\"\n    assert result[\"user\"].email == \"fred@example.com\"\n\n\ndef test_adapter_persists_normalized_identity(database, plugin_manager, default_groups):\n    adapter = _adapter(plugin_manager, database)\n\n    user = adapter.register(_info())\n\n    stored = User.query.filter(User.username == \"Fred\").one()\n    assert user.username == \"Fred\"\n    assert user.email == \"fred@example.com\"\n    assert stored.username == \"Fred\"\n    assert stored.email == \"fred@example.com\"\n    assert stored.password != \"secret\"\n    assert stored.language == \"en\"\n    assert stored.primary_group_id == 4\n\n\ndef test_adapter_does_not_mutate_frozen_info(database, plugin_manager, default_groups):\n    adapter = _adapter(plugin_manager, database)\n    info = _info()\n\n    adapter.register(info)\n\n    assert info.username == \"  Fred  \"\n    assert info.email == \"  Fred@Example.COM  \"\n\n\ndef test_adapter_failure_hook_sees_normalized_identity(\n    database, plugin_manager, default_groups\n):\n    captured = {}\n\n    impl = HookimplMarker(\"flaskbb\")\n\n    class RaisingValidator(UserValidator):\n        def validate(self, user_info):\n            raise ValidationError(\"username\", \"nope\")\n\n    class Impls:\n        @impl\n        def flaskbb_gather_registration_validators(self):\n            return [RaisingValidator()]\n\n        @impl\n        def flaskbb_registration_failure_handler(self, user_info, failures):\n            captured[\"username\"] = user_info.username\n            captured[\"email\"] = user_info.email\n            captured[\"failures\"] = failures\n\n    plugin_manager.register(Impls())\n    adapter = _adapter(plugin_manager, database)\n\n    with pytest.raises(StopValidation):\n        adapter.register(_info())\n\n    assert captured[\"username\"] == \"Fred\"\n    assert captured[\"email\"] == \"fred@example.com\"\n",
+-            "seconds": 0.046,
++            "command": "python -m ai_pod_cli interface --project-root . smoke registration && python -m pytest -o addopts='' tests/interfaces -q",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "{\n  \"status\": \"passed\",\n  \"required_routes\": [\n    \"register_user\"\n  ],\n  \"missing_routes\": [],\n  \"missing_smoke_payloads\": [],\n  \"contract_errors\": {}\n}\n..............                                                           [100%]\n14 passed in 0.41s\n",
++            "seconds": 2.335,
+             "revision": 1
+           },
+           {
+-            "command": "cat tests/conftest.py 2>/dev/null; echo '---FIXTURES---'; find tests/fixtures -type f | sort; echo '---'; for f in $(find tests/fixtures -type f | sort); do echo \"===== $f =====\"; cat \"$f\"; done",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "3,-1.3125 l 0,-12.05859 c -1e-5,-0.97525 -0.26889,-1.58593 -0.80665,-1.83203 -0.63802,-0.28254 -0.95703,-0.51497 -0.95703,-0.69727 0,-0.20051 0.18685,-0.3509 0.56055,-0.45117 0.48307,-0.11848 0.97982,-0.32811 1.49023,-0.62891 0.42839,-0.24608 0.68815,-0.36913 0.7793,-0.36914 0.27344,1e-5 0.49674,0.25067 0.66992,0.75196 0.25521,0.72917 0.42383,1.09376 0.50586,1.09375 0.0182,1e-5 0.41015,-0.21419 1.17578,-0.64258 0.83854,-0.46483 1.65885,-0.69726 2.46094,-0.69727 1.30338,1e-5 2.3789,0.36915 3.22656,1.10742 1.01171,0.8659 1.51757,2.11915 1.51758,3.75977 z m -2.32422,1.09375 c -10e-6,-1.48567 -0.36915,-2.64322 -1.10742,-3.47266 -0.60157,-0.6927 -1.30795,-1.03905 -2.11914,-1.03906 -0.62891,1e-5 -1.23047,0.21876 -1.80469,0.65625 -0.75651,0.56511 -1.13477,1.35352 -1.13476,2.36524 l 0,3.86914 c -1e-5,0.24609 0.34635,0.50586 1.03906,0.77929 0.74739,0.30079 1.55859,0.45118 2.43359,0.45118 1.79557,0 2.69335,-1.20313 2.69336,-3.60938 z\"\n         id=\"path2919\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 387.33673,187.16593 c -10e-6,0.1914 -0.34864,0.48079 -1.0459,0.86816 -0.69727,0.38737 -1.25554,0.58106 -1.6748,0.58106 -0.35548,0 -0.66993,-0.17318 -0.94336,-0.51954 -0.27345,-0.34635 -0.46485,-0.51953 -0.57422,-0.51953 -0.082,0 -0.51498,0.18685 -1.29883,0.56055 -0.78386,0.3737 -1.57227,0.56055 -2.36523,0.56055 -0.7474,0 -1.37175,-0.21875 -1.87305,-0.65625 -0.54688,-0.48308 -0.82031,-1.13932 -0.82031,-1.96875 0,-1.57682 1.80468,-2.70703 5.41406,-3.39063 0.61978,-0.11848 0.93424,-0.36913 0.94336,-0.75195 l 0.0273,-0.875 c 0.0547,-1.49478 -0.60612,-2.24218 -1.98242,-2.24219 -0.39193,1e-5 -0.76335,0.35092 -1.11426,1.05274 -0.35091,0.70183 -0.85449,1.08008 -1.51074,1.13476 -0.7474,0.0729 -1.12109,-0.24153 -1.12109,-0.94336 0,-0.43749 0.55598,-0.94791 1.66797,-1.53125 1.16666,-0.61067 2.28775,-0.916 3.36328,-0.91601 1.85025,1e-5 2.76626,0.87956 2.74804,2.63867 l -0.0547,5.63281 c -0.009,0.59245 0.24152,0.88867 0.75195,0.88867 0.10025,0 0.29166,-0.0228 0.57422,-0.0684 0.28254,-0.0456 0.4466,-0.0683 0.49219,-0.0684 0.26431,1e-5 0.39647,0.17774 0.39648,0.53321 z m -4.21094,-3.11719 c 0.009,-0.22786 -0.0433,-0.37825 -0.15722,-0.45117 -0.11394,-0.0729 -0.29396,-0.0866 -0.54004,-0.041 -2.19662,0.39193 -3.29493,1.10743 -3.29492,2.14649 -10e-6,1.04817 0.56965,1.57226 1.70898,1.57226 0.45572,0 0.92512,-0.0866 1.4082,-0.25976 0.5651,-0.20052 0.84765,-0.44206 0.84766,-0.72461 z\"\n         id=\"path2921\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 396.52423,187.19327 c -10e-6,0.4375 -0.40105,0.8112 -1.20312,1.12109 -0.71095,0.27344 -1.431,0.41016 -2.16016,0.41016 -1.97787,0 -2.9668,-1.05273 -2.9668,-3.1582 l 0,-4.94922 c 0,-0.6289 -0.0501,-1.01399 -0.15039,-1.15528 -0.10026,-0.14126 -0.43294,-0.28026 -0.99804,-0.41699 -0.14584,-0.0365 -0.21876,-0.17772 -0.21875,-0.42383 -1e-5,-0.26431 0.0547,-0.42381 0.16406,-0.47851 0.98437,-0.48306 1.84114,-1.34895 2.57031,-2.59766 0.10026,-0.17316 0.29622,-0.22785 0.58789,-0.16406 0.20052,0.0638 0.30533,0.1823 0.31445,0.35547 l 0.0547,1.70898 c 0,0.12762 0.0228,0.21876 0.0684,0.27344 0.0638,0.082 0.20963,0.12306 0.4375,0.12305 l 3.04883,0 c 0.17317,1e-5 0.17317,0.2142 0,0.64258 -0.20964,0.51954 -0.51954,0.7793 -0.92969,0.77929 l -2.06445,0 c -0.35548,1e-5 -0.57422,0.0593 -0.65625,0.17774 -0.0638,0.082 -0.0957,0.30534 -0.0957,0.66992 l 0,4.4707 c -1e-5,1.13021 0.10025,1.84571 0.30078,2.14649 0.26431,0.38281 0.87955,0.57422 1.8457,0.57422 0.319,0 0.70637,-0.0524 1.16211,-0.15723 0.45572,-0.10482 0.69726,-0.15723 0.72461,-0.15723 0.10936,0 0.16405,0.0684 0.16406,0.20508 z\"\n         id=\"path2923\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 416.32111,187.16593 c -2e-5,0.1914 -0.34865,0.48079 -1.0459,0.86816 -0.69728,0.38737 -1.25555,0.58106 -1.67481,0.58106 -0.35547,0 -0.66993,-0.17318 -0.94336,-0.51954 -0.27344,-0.34635 -0.46485,-0.51953 -0.57422,-0.51953 -0.082,0 -0.51498,0.18685 -1.29882,0.56055 -0.78386,0.3737 -1.57227,0.56055 -2.36524,0.56055 -0.7474,0 -1.37175,-0.21875 -1.87304,-0.65625 -0.54688,-0.48308 -0.82032,-1.13932 -0.82032,-1.96875 0,-1.57682 1.80469,-2.70703 5.41407,-3.39063 0.61978,-0.11848 0.93423,-0.36913 0.94335,-0.75195 l 0.0273,-0.875 c 0.0547,-1.49478 -0.60613,-2.24218 -1.98242,-2.24219 -0.39194,1e-5 -0.76335,0.35092 -1.11426,1.05274 -0.35092,0.70183 -0.8545,1.08008 -1.51074,1.13476 -0.7474,0.0729 -1.1211,-0.24153 -1.1211,-0.94336 0,-0.43749 0.55599,-0.94791 1.66797,-1.53125 1.16666,-0.61067 2.28776,-0.916 3.36328,-0.91601 1.85025,1e-5 2.76627,0.87956 2.74805,2.63867 l -0.0547,5.63281 c -0.009,0.59245 0.24153,0.88867 0.75196,0.88867 0.10025,0 0.29165,-0.0228 0.57421,-0.0684 0.28254,-0.0456 0.44661,-0.0683 0.49219,-0.0684 0.26431,1e-5 0.39647,0.17774 0.39649,0.53321 z m -4.21094,-3.11719 c 0.009,-0.22786 -0.0433,-0.37825 -0.15723,-0.45117 -0.11394,-0.0729 -0.29395,-0.0866 -0.54004,-0.041 -2.19662,0.39193 -3.29492,1.10743 -3.29492,2.14649 0,1.04817 0.56966,1.57226 1.70899,1.57226 0.45572,0 0.92512,-0.0866 1.4082,-0.25976 0.5651,-0.20052 0.84765,-0.44206 0.84765,-0.72461 z\"\n         id=\"path2925\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 432.45392,187.19327 c -10e-6,0.4375 -0.40105,0.8112 -1.20313,1.12109 -0.71094,0.27344 -1.43099,0.41016 -2.16015,0.41016 -1.97787,0 -2.9668,-1.05273 -2.9668,-3.1582 l 0,-4.94922 c 0,-0.6289 -0.0501,-1.01399 -0.15039,-1.15528 -0.10026,-0.14126 -0.43294,-0.28026 -0.99805,-0.41699 -0.14583,-0.0365 -0.21875,-0.17772 -0.21875,-0.42383 0,-0.26431 0.0547,-0.42381 0.16407,-0.47851 0.98437,-0.48306 1.84114,-1.34895 2.57031,-2.59766 0.10025,-0.17316 0.29622,-0.22785 0.58789,-0.16406 0.20051,0.0638 0.30533,0.1823 0.31445,0.35547 l 0.0547,1.70898 c -10e-6,0.12762 0.0228,0.21876 0.0684,0.27344 0.0638,0.082 0.20963,0.12306 0.4375,0.12305 l 3.04883,0 c 0.17317,1e-5 0.17317,0.2142 0,0.64258 -0.20965,0.51954 -0.51954,0.7793 -0.92969,0.77929 l -2.06445,0 c -0.35548,1e-5 -0.57423,0.0593 -0.65625,0.17774 -0.0638,0.082 -0.0957,0.30534 -0.0957,0.66992 l 0,4.4707 c 0,1.13021 0.10026,1.84571 0.30078,2.14649 0.26432,0.38281 0.87956,0.57422 1.84571,0.57422 0.319,0 0.70637,-0.0524 1.16211,-0.15723 0.45572,-0.10482 0.69725,-0.15723 0.72461,-0.15723 0.10936,0 0.16405,0.0684 0.16406,0.20508 z\"\n         id=\"path2927\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 439.30353,172.66007 c -1e-5,0.41928 -0.15723,0.80893 -0.47168,1.16894 -0.31446,0.36004 -0.65854,0.54006 -1.03223,0.54004 -0.42839,2e-5 -0.7793,-0.12759 -1.05273,-0.38281 -0.27344,-0.25519 -0.41016,-0.58788 -0.41016,-0.99805 0,-0.40102 0.16634,-0.77472 0.49902,-1.12109 0.33268,-0.34634 0.69043,-0.51952 1.07325,-0.51953 0.92968,1e-5 1.39452,0.43751 1.39453,1.3125 z m 1.51758,15.47656 c -0.0456,0.26432 -0.15496,0.41471 -0.32813,0.45117 -0.0456,0.009 -0.26433,0 -0.65625,-0.0273 -1.35808,-0.0911 -2.69336,-0.0729 -4.00586,0.0547 -0.35547,0.0365 -0.57878,0.0228 -0.66992,-0.041 -0.0912,-0.0638 -0.13672,-0.20964 -0.13672,-0.4375 0,-0.20964 0.24154,-0.38281 0.72461,-0.51953 0.52864,-0.15495 0.79297,-0.66081 0.79297,-1.51758 l 0,-3.58203 c 0,-0.72005 -0.0729,-1.22591 -0.21875,-1.51758 -0.20052,-0.40103 -0.61524,-0.70637 -1.24414,-0.91601 -0.28256,-0.10026 -0.42383,-0.25065 -0.42383,-0.45118 0,-0.26431 0.20508,-0.46027 0.61523,-0.58789 0.76563,-0.23697 1.44466,-0.55142 2.03711,-0.94336 0.47396,-0.32811 0.76562,-0.49217 0.875,-0.49218 0.36458,1e-5 0.54232,0.23699 0.53321,0.71093 -0.0365,2.38803 -0.0547,4.82162 -0.0547,7.30078 -10e-6,0.59245 0.0866,1.01628 0.25977,1.27149 0.1914,0.28255 0.55598,0.48307 1.09375,0.60156 0.59244,0.13672 0.86132,0.35091 0.80664,0.64258 z\"\n         id=\"path2929\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 464.89728,188.10929 c -3e-5,0.30078 -0.1413,0.44205 -0.42383,0.42382 -1.8594,-0.13671 -3.59117,-0.13671 -5.19531,0 -0.35549,0.0274 -0.53322,-0.13216 -0.53321,-0.47851 -1e-5,-0.27344 0.24152,-0.41927 0.72461,-0.4375 0.61066,-0.0365 0.916,-0.5332 0.91602,-1.49024 l 0,-3.63671 c -2e-5,-2.04166 -0.82945,-3.0625 -2.48828,-3.0625 -0.87502,0 -1.6771,0.15951 -2.40625,0.47851 -0.66538,0.28256 -1.00262,0.56511 -1.01172,0.84766 l -0.0547,5.42773 c -10e-6,0.56511 0.0684,0.9388 0.20508,1.1211 0.10025,0.1276 0.32355,0.21875 0.66992,0.27343 0.80207,0.13672 1.20311,0.30534 1.20313,0.50586 -2e-5,0.17318 -0.0228,0.29167 -0.0684,0.35547 -0.0547,0.0911 -0.21877,0.13216 -0.49219,0.12305 -1.03908,-0.0365 -2.5521,-0.0182 -4.53906,0.0547 -0.28256,0.009 -0.46486,-0.0137 -0.54688,-0.0684 -0.082,-0.0547 -0.12305,-0.1823 -0.12304,-0.38282 -10e-6,-0.23698 0.25975,-0.38281 0.77929,-0.4375 0.5651,-0.0638 0.84765,-0.57877 0.84766,-1.54492 l 0,-3.71875 c -10e-6,-1.0026 -0.22788,-1.77733 -0.6836,-2.32422 -0.40105,-0.49218 -0.91146,-0.73827 -1.53125,-0.73828 -0.91146,1e-5 -1.73177,0.18458 -2.46093,0.55371 -0.72917,0.36915 -1.09376,0.76336 -1.09375,1.18262 l 0,4.99023 c -1e-5,0.56511 0.14583,0.95704 0.4375,1.17579 0.26431,0.20052 0.74283,0.32356 1.43554,0.36914 0.37369,0.0182 0.56054,0.14583 0.56055,0.38281 -10e-6,0.26432 -0.1504,0.39648 -0.45117,0.39648 -2.27865,0 -3.92839,0.0638 -4.94922,0.19141 -0.34636,0.0456 -0.56966,0.0456 -0.66992,0 -0.082,-0.0456 -0.12305,-0.15495 -0.12305,-0.32813 0,-0.22786 0.33724,-0.42382 1.01172,-0.58789 0.41015,-0.10937 0.61523,-0.64257 0.61523,-1.59961 l 0,-4.19726 c 0,-1.0664 -0.28711,-1.68163 -0.86132,-1.8457 -0.48308,-0.13672 -0.77702,-0.23698 -0.88184,-0.30079 -0.10482,-0.0638 -0.15723,-0.16861 -0.15723,-0.31445 0,-0.16405 0.47396,-0.51041 1.42188,-1.03906 1.0026,-0.5651 1.61783,-0.84765 1.8457,-0.84766 0.1914,1e-5 0.35319,0.27573 0.48535,0.82715 0.13216,0.55144 0.2347,0.82716 0.30762,0.82715 0.10026,1e-5 0.37825,-0.14127 0.83399,-0.42383 0.56509,-0.35546 1.07551,-0.61978 1.53125,-0.79297 0.74738,-0.29165 1.51756,-0.43749 2.31054,-0.4375 0.63801,1e-5 1.194,0.13673 1.66797,0.41016 0.32811,0.1823 0.62434,0.43295 0.88867,0.75195 0.21874,0.27345 0.32812,0.41017 0.32813,0.41016 -10e-6,1e-5 0.23696,-0.13671 0.71094,-0.41016 0.55597,-0.319 1.09829,-0.56965 1.62695,-0.75195 0.77472,-0.27343 1.52667,-0.41015 2.25586,-0.41016 2.49737,1e-5 3.74607,1.37176 3.74609,4.11524 l 0,4.42968 c -2e-5,0.51954 0.12303,0.88868 0.36914,1.10743 0.21873,0.18229 0.64712,0.33724 1.28516,0.46484 0.48305,0.0911 0.72458,0.22786 0.72461,0.41016 z\"\n         id=\"path2931\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n      <path\n         d=\"m 476.45001,186.18155 c -1e-5,0.39193 -0.52865,0.87956 -1.58594,1.46289 -1.20313,0.64714 -2.43815,0.97071 -3.70507,0.97071 -1.37631,0 -2.53386,-0.45118 -3.47266,-1.35352 -1.00261,-0.95703 -1.50391,-2.23307 -1.50391,-3.82813 0,-1.80468 0.56055,-3.25389 1.68164,-4.34765 1.04818,-1.02082 2.33333,-1.53124 3.85547,-1.53125 0.90234,1e-5 1.74544,0.28712 2.5293,0.86133 0.70181,0.51042 1.16666,1.09376 1.39453,1.75 0.082,0.22787 0.20507,0.35547 0.36914,0.38281 0.23697,0.0456 0.35546,0.20508 0.35547,0.47851 -10e-6,0.37371 -0.44662,0.69272 -1.33984,0.95704 l -6.30274,1.87304 c 0.41016,2.16928 1.52213,3.25391 3.33594,3.25391 1.04817,0 2.24218,-0.38281 3.58203,-1.14844 0.20051,-0.11849 0.39648,-0.17773 0.58789,-0.17773 0.14582,0 0.21874,0.13216 0.21875,0.39648 z m -3.24023,-5.48242 c -1e-5,-0.50129 -0.20281,-0.94107 -0.6084,-1.31934 -0.40561,-0.37824 -0.90463,-0.56737 -1.49707,-0.56738 -1.67709,1e-5 -2.51563,1.20769 -2.51563,3.62305 l 0,0.32812 3.71875,-1.12109 c 0.60156,-0.17317 0.90234,-0.48762 0.90235,-0.94336 z\"\n         id=\"path2933\"\n         style=\"font-size:28px;font-variant:normal;font-stretch:normal;text-align:end;line-height:89.99999762%;writing-mode:lr-tb;text-anchor:end;font-family:High Tower Text;-inkscape-font-specification:High Tower Text\" />\n    </g>\n  </g>\n</svg>\n===== tests/fixtures/plugin.py =====\nimport pytest\nfrom flaskbb.plugins import spec\nfrom flaskbb.plugins.manager import FlaskBBPluginManager\n\n\n@pytest.fixture\ndef plugin_manager():\n    pluggy = FlaskBBPluginManager(\"flaskbb\")\n    pluggy.add_hookspecs(spec)\n    return pluggy\n===== tests/fixtures/user.py =====\nimport pytest\nfrom flaskbb.user.models import Guest, User\n\n\n@pytest.fixture\ndef guest():\n    \"\"\"Return a guest (not logged in) user.\"\"\"\n    return Guest()\n\n\n@pytest.fixture\ndef user(default_groups):\n    \"\"\"Creates a user with normal permissions.\"\"\"\n    user = User(\n        username=\"test_normal\",\n        email=\"test_normal@example.org\",\n        password=\"test\",\n        primary_group=default_groups[3],\n        activated=True,\n    )\n    user.save()\n    return user\n\n\n@pytest.fixture\ndef moderator_user(user, forum, default_groups):\n    \"\"\"Creates a test user with moderator permissions.\"\"\"\n\n    user = User(\n        username=\"test_mod\",\n        email=\"test_mod@example.org\",\n        password=\"test\",\n        primary_group=default_groups[2],\n        activated=True,\n    )\n    user.save()\n\n    forum.moderators.append(user)\n    forum.save()\n    return user\n\n\n@pytest.fixture\ndef other_moderator_user(default_groups):\n    \"\"\"Creates a second moderator who does not moderate any forum.\n\n    Models the cross-forum attacker from the ``mod_edituser`` advisory: same\n    group as ``moderator_user``, no overlapping moderation scope.\n    \"\"\"\n    user = User(\n        username=\"test_other_mod\",\n        email=\"test_other_mod@example.org\",\n        password=\"test\",\n        primary_group=default_groups[2],\n        activated=True,\n    )\n    user.save()\n    return user\n\n\n@pytest.fixture\ndef admin_user(default_groups):\n    \"\"\"Creates a admin user.\"\"\"\n    user = User(\n        username=\"test_admin\",\n        email=\"test_admin@example.org\",\n        password=\"test\",\n        primary_group=default_groups[0],\n        activated=True,\n    )\n    user.save()\n    return user\n\n\n@pytest.fixture\ndef super_moderator_user(default_groups):\n    \"\"\"Creates a super moderator user.\"\"\"\n    user = User(\n        username=\"test_super_mod\",\n        email=\"test_super@example.org\",\n        password=\"test\",\n        primary_group=default_groups[1],\n        activated=True,\n    )\n    user.save()\n    return user\n\n\n@pytest.fixture\ndef Fred(default_groups):\n    \"\"\"Fred is an interloper and bad intentioned user, he attempts to\n    access areas he shouldn't, he posts trollish and spammy content,\n    he does everything he can to destroy the board.\n\n    Our job is stop Fred.\n    \"\"\"\n    fred = User(\n        username=\"Fred\",\n        email=\"fred@fred.fred\",\n        password=\"fred\",\n        primary_group=default_groups[3],\n        activated=True,\n    )\n    fred.save()\n    return fred\n\n\n@pytest.fixture\ndef unactivated_user(default_groups):\n    \"\"\"\n    Creates an unactivated user in the default user group\n    \"\"\"\n    user = User(\n        username=\"notactive\",\n        email=\"notactive@example.com\",\n        password=\"password\",\n        primary_group=default_groups[3],\n        activated=False,\n    )\n    user.save()\n    return user\n",
+-            "seconds": 0.082,
+-            "revision": 2
+-          },
+-          {
+-            "command": "grep -rn \"def default_groups\" tests | head && echo '===GROUPGUARD===' && cat tests/services/test_registration_group_guard.py 2>/dev/null && echo '===ADAPTER-GUARD===' && cat tests/services/test_registration_group_guard_adapter.py 2>/dev/null && echo '===CONFTEST===' && ls tests && echo '---' && grep -rn \"default_groups\" tests/conftest.py tests/fixtures/*.py 2>/dev/null",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "tests/fixtures/app.py:52:def default_groups(database):\n===GROUPGUARD===\n\"\"\"Focused tests for the self-registration primary-group guard.\n\nThese drive the registered ``register_user`` pipeline with real registration\nresources bound, so the guard is exercised exactly as the host adapter runs it.\n\"\"\"\n\nimport pytest\nfrom pluggy import HookimplMarker\n\nfrom ai_pod_cli import PipelineContext\n\nfrom flaskbb.core.auth.registration import UserRegistrationInfo\nfrom flaskbb.core.exceptions import StopValidation\nfrom flaskbb.user.models import Group, User\n\nfrom modules.models.registration import RegistrationEnvelope\nfrom modules.providers.public.registration import bind_registration\n\nfrom pipelines.registration import run\n\npytestmark = pytest.mark.usefixtures(\"default_settings\")\n\nhookimpl = HookimplMarker(\"flaskbb\")\n\n#: The default \"Member\" group id used by the FlaskBB registration view.\nMEMBER_GROUP_ID = 4\n\n#: Index (in ``default_groups``) of the default groups carrying each flag.\nFLAGGED_GROUP_INDEX = {\n    \"admin\": 0,\n    \"super_mod\": 1,\n    \"mod\": 2,\n    \"banned\": 4,\n    \"guest\": 5,\n}\n\n\ndef make_info(**overrides):\n    values = {\n        \"username\": \"Newcomer\",\n        \"password\": \"secret\",\n        \"email\": \"newcomer@example.com\",\n        \"language\": \"en\",\n        \"group\": MEMBER_GROUP_ID,\n    }\n    values.update(overrides)\n    return UserRegistrationInfo(**values)\n\n\ndef run_pipeline(info, plugin_manager, database):\n    ctx = PipelineContext(params={\"envelope\": RegistrationEnvelope(info=info)})\n    with bind_registration(plugin_manager, User, database):\n        return run(ctx)\n\n\nclass Recorder:\n    \"\"\"Registration plugin that records hook invocations.\"\"\"\n\n    def __init__(self):\n        self.failures = []\n        self.post_processed = []\n\n    def plugin(self):\n        recorder = self\n\n        class Plugin:\n            @hookimpl\n            def flaskbb_gather_registration_validators(self):\n                return []\n\n            @hookimpl\n            def flaskbb_registration_failure_handler(self, user_info, failures):\n                recorder.failures.append((user_info, failures))\n\n            @hookimpl\n            def flaskbb_registration_post_processor(self, user):\n                recorder.post_processed.append(user)\n\n        return Plugin()\n\n\ndef test_rejects_missing_group(database, plugin_manager, default_groups):\n    recorder = Recorder()\n    plugin_manager.register(recorder.plugin())\n\n    with pytest.raises(StopValidation) as excinfo:\n        run_pipeline(make_info(group=9999), plugin_manager, database)\n\n    group_failures = [f for f in excinfo.value.reasons if f[0] == \"group\"]\n    assert len(group_failures) == 1\n    assert group_failures[0][1]\n    assert len(recorder.failures) == 1\n    assert recorder.failures[0][1] == excinfo.value.reasons\n    assert recorder.post_processed == []\n    assert User.query.count() == 0\n\n\ndef test_rejects_none_group(database, plugin_manager, default_groups):\n    with pytest.raises(StopValidation) as excinfo:\n        run_pipeline(make_info(group=None), plugin_manager, database)\n\n    assert any(attribute == \"group\" for attribute, _ in excinfo.value.reasons)\n    assert User.query.count() == 0\n\n\n@pytest.mark.parametrize(\"flag\", sorted(FLAGGED_GROUP_INDEX))\ndef test_rejects_privileged_group(flag, database, plugin_manager, default_groups):\n    group_id = default_groups[FLAGGED_GROUP_INDEX[flag]].id\n    recorder = Recorder()\n    plugin_manager.register(recorder.plugin())\n\n    with pytest.raises(StopValidation) as excinfo:\n        run_pipeline(make_info(group=group_id), plugin_manager, database)\n\n    assert any(attribute == \"group\" for attribute, _ in excinfo.value.reasons)\n    assert len(recorder.failures) == 1\n    assert recorder.post_processed == []\n    assert User.query.count() == 0\n\n\ndef test_accepts_default_member_group(database, plugin_manager, default_groups):\n    recorder = Recorder()\n    plugin_manager.register(recorder.plugin())\n\n    result = run_pipeline(make_info(group=MEMBER_GROUP_ID), plugin_manager, database)\n\n    stored = User.query.filter(User.username == \"Newcomer\").one()\n    assert result[\"user\"] is stored\n    assert stored.primary_group_id == MEMBER_GROUP_ID\n    assert recorder.failures == []\n    assert recorder.post_processed == [stored]\n\n\ndef test_accepts_newly_created_ordinary_group(database, plugin_manager, default_groups):\n    group = Group(name=\"Newcomers\")\n    group.save()\n\n    result = run_pipeline(make_info(group=group.id), plugin_manager, database)\n\n    assert result[\"user\"].primary_group_id == group.id\n\n\ndef test_guard_applies_without_registered_validators(\n    database, plugin_manager, default_groups\n):\n    # No plugin at all is registered: the guard must still reject.\n    with pytest.raises(StopValidation) as excinfo:\n        run_pipeline(make_info(group=9999), plugin_manager, database)\n\n    assert any(attribute == \"group\" for attribute, _ in excinfo.value.reasons)\n    assert User.query.count() == 0\n===ADAPTER-GUARD===\n\"\"\"Adapter-level checks for the self-registration primary-group guard.\n\nThe guard lives in the validation service, but it must also hold when the\nregistration is started through the host-compatible ``RegistrationService``\nadapter used by FlaskBB's registration view.\n\"\"\"\n\nimport pytest\nfrom pluggy import HookimplMarker\n\nfrom flaskbb.auth.services.registration import RegistrationService\nfrom flaskbb.core.auth.registration import UserRegistrationInfo\nfrom flaskbb.core.exceptions import StopValidation\nfrom flaskbb.user.models import User\n\npytestmark = pytest.mark.usefixtures(\"default_settings\")\n\nhookimpl = HookimplMarker(\"flaskbb\")\n\n\ndef make_info(**overrides):\n    values = {\n        \"username\": \"Newcomer\",\n        \"password\": \"secret\",\n        \"email\": \"newcomer@example.com\",\n        \"language\": \"en\",\n        \"group\": 4,\n    }\n    values.update(overrides)\n    return UserRegistrationInfo(**values)\n\n\ndef make_service(plugin_manager, database):\n    return RegistrationService(plugins=plugin_manager, users=User, db=database)\n\n\ndef test_adapter_rejects_missing_group(database, plugin_manager, default_groups):\n    with pytest.raises(StopValidation) as excinfo:\n        make_service(plugin_manager, database).register(make_info(group=9999))\n\n    assert any(attribute == \"group\" for attribute, _ in excinfo.value.reasons)\n    assert User.query.count() == 0\n\n\ndef test_adapter_rejects_admin_group_without_validators(\n    database, plugin_manager, default_groups\n):\n    admin_group_id = default_groups[0].id\n\n    with pytest.raises(StopValidation) as excinfo:\n        make_service(plugin_manager, database).register(\n            make_info(group=admin_group_id)\n        )\n\n    assert any(attribute == \"group\" for attribute, _ in excinfo.value.reasons)\n    assert User.query.count() == 0\n\n\ndef test_adapter_accepts_member_group(database, plugin_manager, default_groups):\n    user = make_service(plugin_manager, database).register(make_info(group=4))\n\n    assert user.id is not None\n    assert user.primary_group_id == 4\n===CONFTEST===\n__init__.py\nconftest.py\nendtoend\nfixtures\ninterfaces\npipelines\npod\nservices\nunit\n---\ntests/fixtures/app.py:6:from flaskbb.utils.populate import create_default_groups, create_default_settings\ntests/fixtures/app.py:52:def default_groups(database):\ntests/fixtures/app.py:54:    return create_default_groups()\ntests/fixtures/forum.py:26:def forum(category, default_settings, default_groups):\ntests/fixtures/forum.py:29:    forum.groups = default_groups\ntests/fixtures/user.py:12:def user(default_groups):\ntests/fixtures/user.py:18:        primary_group=default_groups[3],\ntests/fixtures/user.py:26:def moderator_user(user, forum, default_groups):\ntests/fixtures/user.py:33:        primary_group=default_groups[2],\ntests/fixtures/user.py:44:def other_moderator_user(default_groups):\ntests/fixtures/user.py:54:        primary_group=default_groups[2],\ntests/fixtures/user.py:62:def admin_user(default_groups):\ntests/fixtures/user.py:68:        primary_group=default_groups[0],\ntests/fixtures/user.py:76:def super_moderator_user(default_groups):\ntests/fixtures/user.py:82:        primary_group=default_groups[1],\ntests/fixtures/user.py:90:def Fred(default_groups):\ntests/fixtures/user.py:101:        primary_group=default_groups[3],\ntests/fixtures/user.py:109:def unactivated_user(default_groups):\ntests/fixtures/user.py:117:        primary_group=default_groups[3],\n",
+-            "seconds": 0.075,
++            "command": "python -m pytest -o addopts='' tests/interfaces/test_registration_adapter_failure_hook.py -q",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "......                                                                   [100%]\n6 passed in 0.16s\n",
++            "seconds": 0.911,
+             "revision": 3
+           },
+           {
+-            "command": "python -m pytest -o addopts='' tests/interfaces/test_registration_group_guard.py -q && python -m pytest -o addopts='' tests/interfaces -q",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": ".........                                                                [100%]\n9 passed in 0.19s\n..............                                                           [100%]\n14 passed in 0.39s\n",
+-            "seconds": 2.002,
+-            "revision": 5
+-          },
+-          {
+-            "command": "python -m ai_pod_cli interface --project-root . smoke registration && python -m pytest -o addopts='' tests -q",
+-            "exit_code": 2,
+-            "timed_out": false,
+-            "output": "{\n  \"status\": \"passed\",\n  \"required_routes\": [\n    \"register_user\"\n  ],\n  \"missing_routes\": [],\n  \"missing_smoke_payloads\": [],\n  \"contract_errors\": {}\n}\n\n==================================== ERRORS ====================================\n_______ ERROR collecting tests/services/test_registration_group_guard.py _______\nimport file mismatch:\nimported module 'test_registration_group_guard' has this __file__ attribute:\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/tests/interfaces/test_registration_group_guard.py\nwhich is not the same as the test file we want to collect:\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/tests/services/test_registration_group_guard.py\nHINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules\n=========================== short test summary info ============================\nERROR tests/services/test_registration_group_guard.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.37s\n",
+-            "seconds": 1.93,
++            "command": "python -m pytest -o addopts='' tests -q",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 70%]\n........................................................................ [ 84%]\n........................................................................ [ 98%]\n......                                                                   [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x11165dbb0> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n510 passed, 1 warning in 26.75s\n",
++            "seconds": 27.58,
++            "revision": 4
++          },
++          {
++            "command": "python -m ai_pod_cli interface --project-root . smoke registration",
++            "exit_code": 0,
++            "timed_out": false,
++            "output": "{\n  \"status\": \"passed\",\n  \"required_routes\": [\n    \"register_user\"\n  ],\n  \"missing_routes\": [],\n  \"missing_smoke_payloads\": [],\n  \"contract_errors\": {}\n}\n",
++            "seconds": 1.027,
+             "revision": 6
+-          },
+-          {
+-            "command": "rm -f tests/interfaces/test_registration_group_guard.py && rm -rf tests/interfaces/__pycache__",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "",
+-            "seconds": 0.047,
+-            "revision": 7
+-          },
+-          {
+-            "command": "python -m pytest -o addopts='' tests/interfaces/test_registration_adapter_group_guard.py -q && python -m pytest -o addopts='' tests -q",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": ".........                                                                [100%]\n9 passed in 0.18s\n........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 43%]\n........................................................................ [ 57%]\n........................................................................ [ 72%]\n........................................................................ [ 86%]\n..................................................................       [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x110f8aa50> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n498 passed, 1 warning in 26.72s\n",
+-            "seconds": 28.472,
+-            "revision": 9
+-          },
+-          {
+-            "command": "python -m pytest -o addopts='' tests -q",
+-            "exit_code": 0,
+-            "timed_out": false,
+-            "output": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 43%]\n........................................................................ [ 57%]\n........................................................................ [ 72%]\n........................................................................ [ 86%]\n..................................................................       [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x10d83a870> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n498 passed, 1 warning in 27.56s\n",
+-            "seconds": 28.761,
+-            "revision": 11
+           }
+         ],
+         "status": "complete"
+@@ -434,25 +411,47 @@
+       "artifacts": [
+         "docs/interfaces/registration.md",
+         "interfaces/registration/adapter.py",
+-        "tests/interfaces/test_registration_adapter_group_guard.py",
+-        "tests/interfaces/test_registration_group_guard.py"
++        "tests/interfaces/test_registration_adapter_failure_hook.py"
+       ]
+     }
+   },
+   "agent": {
+-    "status": "running",
++    "status": "complete",
+     "step": 0,
+     "history": [],
+     "verification": {
+-      "status": "pending",
+-      "attempts": 0,
+-      "repairs": 0
++      "summary": "Pod final-delivery-review layer complete. The delivered `registration` Interface (adapter re-exported as `flaskbb.auth.services.registration.RegistrationService`) satisfies the current objective and all preserved earlier requirements. Behavior confirmed through the registered `register_user` route: on validation failure the registration failure hook is attempted exactly once and the caller still receives the original `StopValidation` with its original reasons even when the hook raises an ordinary Exception; a validator-raised `StopValidation` is preserved as the exact instance; no user is persisted and no post-processor runs; BaseException subclasses (KeyboardInterrupt/SystemExit) propagate; successful registration/post-processor behavior unchanged; group guard rejects missing/None or privileged groups (admin/super_mod/mod/guest/banned) while accepting existing all-false ordinary groups; identity normalization (trim username, lowercase email, preserve object identity when unchanged, no mutation of frozen info) remains intact. Checks executed: (1) `python -m pytest -o addopts='' tests -q` -> 510 passed, 1 pre-existing SAWarning, exit 0; (2) `python -m ai_pod_cli interface --project-root . smoke registration` -> status passed, required_routes [\"register_user\"], no missing routes/payloads, no contract errors; (3) `python -m pytest -o addopts='' tests/interfaces/test_registration_adapter_failure_hook.py tests/services/test_registration_group_guard_adapter.py tests/pipelines/test_registration_failure_path.py -q` -> 15 passed. No upstream corrections were required and no owner change requests are outstanding. This layer adds no source; no new or changed Components, pipelines, routes or interfaces, so component/pipeline/interface registration lists are omitted to keep existing registrations intact. Remaining unverified: long-lived HTTP/GUI behavior is not applicable (the registration adapter requires a FlaskBB app context and has no standalone launcher, per MIGRATION.md).",
++      "artifacts": [],
++      "checks": [
++        {
++          "command": "python -m pytest -o addopts='' tests -q",
++          "exit_code": 0,
++          "timed_out": false,
++          "output": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 70%]\n........................................................................ [ 84%]\n........................................................................ [ 98%]\n......                                                                   [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x10f11a780> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n510 passed, 1 warning in 26.51s\n",
++          "seconds": 27.813,
++          "revision": 1
++        },
++        {
++          "command": "python -m ai_pod_cli interface --project-root . smoke registration",
++          "exit_code": 0,
++          "timed_out": false,
++          "output": "{\n  \"status\": \"passed\",\n  \"required_routes\": [\n    \"register_user\"\n  ],\n  \"missing_routes\": [],\n  \"missing_smoke_payloads\": [],\n  \"contract_errors\": {}\n}\n",
++          "seconds": 0.971,
++          "revision": 2
++        },
++        {
++          "command": "python -m pytest -o addopts='' tests/interfaces/test_registration_adapter_failure_hook.py tests/services/test_registration_group_guard_adapter.py tests/pipelines/test_registration_failure_path.py -q",
++          "exit_code": 0,
++          "timed_out": false,
++          "output": "...............                                                          [100%]\n15 passed in 0.31s\n",
++          "seconds": 1.017,
++          "revision": 3
++        }
++      ],
++      "status": "passed",
++      "mode": "agent_shell_checks"
+     },
+-    "current_request": "Work in the current repository only. This is an existing FlaskBB application; keep unrelated features and public imports compatible. Dependencies and translations are already installed/built. Run python -m pytest -o addopts='' tests -q for the original full regression suite. Independent acceptance is withheld and will run after submission. Add your own focused tests if useful. Do not modify existing tests, test fixtures or build configuration to bypass verification. No new dependencies, external services, deployment or network operations are needed. Keep changes focused. Each task has at most 180 actual model HTTP requests including translations/retries. A fresh task conversation is used for each successive requirement while files are retained.\nYour repository working directory is /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project. The shell starts there. Read only this repository and installed runtime documentation; evaluator data, other workspaces and host home directories are outside this task.\nThis project has a migrated AIPod registration slice; read MIGRATION.md and preserve its Models/Providers/Services/Pipeline/Interface responsibilities and public entry. Original FlaskBB host modules and plugins outside that slice remain legacy compatibility code. Registration tests exercise the real host adapter; it requires a Flask app context and has no standalone launch command.\n\nCURRENT CHANGE:\nContinue the prior identity change. Self-registration must reject a requested primary group that does not exist (including None), or whose current database flags include admin, super_mod, mod, guest or banned. Reject via StopValidation containing a reason with attribute 'group'; invoke the normal registration failure hook once and do not persist a user or call post-processors. Accept any existing group with all five flags false, including newly created ordinary groups; do not hardcode allowed or forbidden IDs. This guard must apply even when no plugin validators are registered. Existing validation failures and all prior identity rules must remain correct. Preserve original public APIs and unrelated forum functionality.\nEARLIER REQUIREMENTS TO PRESERVE:\nNormalize FlaskBB self-registration identities consistently. Trim leading/trailing whitespace from username and email; preserve username display case, and lowercase email. Registration validators, failure hooks and stored users must see the same normalized identity. Do not mutate the caller's frozen UserRegistrationInfo. Preserve the existing object identity when no field needs normalization, because existing plugins rely on it. UsernameUniquenessValidator and EmailUniquenessValidator must also reject ASCII case variants and surrounding whitespace when invoked directly against existing users. Keep password, language and group unchanged. Preserve original public import paths, registration exceptions, plugins and unrelated forum functionality.",
++    "current_request": "Work in the current repository only. This is an existing FlaskBB application; keep unrelated features and public imports compatible. Dependencies and translations are already installed/built. Run python -m pytest -o addopts='' tests -q for the original full regression suite. Independent acceptance is withheld and will run after submission. Add your own focused tests if useful. Do not modify existing tests, test fixtures or build configuration to bypass verification. No new dependencies, external services, deployment or network operations are needed. Keep changes focused. Each task has at most 180 actual model HTTP requests including translations/retries. A fresh task conversation is used for each successive requirement while files are retained.\nYour repository working directory is /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project. The shell starts there. Read only this repository and installed runtime documentation; evaluator data, other workspaces and host home directories are outside this task.\nThis project has a migrated AIPod registration slice; read MIGRATION.md and preserve its Models/Providers/Services/Pipeline/Interface responsibilities and public entry. Original FlaskBB host modules and plugins outside that slice remain legacy compatibility code. Registration tests exercise the real host adapter; it requires a Flask app context and has no standalone launch command.\n\nCURRENT CHANGE:\nContinue the prior identity and group changes. When registration validation fails, attempt the registration failure hook exactly once. If that hook raises an ordinary Exception, the caller must still receive the original StopValidation with its original reasons; when a validator raised a StopValidation instance directly, preserve that exact instance. Never persist a user or call post-processors on this failure path. Do not swallow BaseException subclasses such as KeyboardInterrupt or SystemExit. Keep successful registration and post-processor exception behavior unchanged, and preserve all earlier requirements and original public APIs.\nEARLIER REQUIREMENTS TO PRESERVE:\nNormalize FlaskBB self-registration identities consistently. Trim leading/trailing whitespace from username and email; preserve username display case, and lowercase email. Registration validators, failure hooks and stored users must see the same normalized identity. Do not mutate the caller's frozen UserRegistrationInfo. Preserve the existing object identity when no field needs normalization, because existing plugins rely on it. UsernameUniquenessValidator and EmailUniquenessValidator must also reject ASCII case variants and surrounding whitespace when invoked directly against existing users. Keep password, language and group unchanged. Preserve original public import paths, registration exceptions, plugins and unrelated forum functionality.\nContinue the prior identity change. Self-registration must reject a requested primary group that does not exist (including None), or whose current database flags include admin, super_mod, mod, guest or banned. Reject via StopValidation containing a reason with attribute 'group'; invoke the normal registration failure hook once and do not persist a user or call post-processors. Accept any existing group with all five flags false, including newly created ordinary groups; do not hardcode allowed or forbidden IDs. This guard must apply even when no plugin validators are registered. Existing validation failures and all prior identity rules must remain correct. Preserve original public APIs and unrelated forum functionality.",
+     "mode": "workspace"
+-  },
+-  "revision": {
+-    "from_stage": "services",
+-    "instruction": "Work in the current repository only. This is an existing FlaskBB application; keep unrelated features and public imports compatible. Dependencies and translations are already installed/built. Run python -m pytest -o addopts='' tests -q for the original full regression suite. Independent acceptance is withheld and will run after submission. Add your own focused tests if useful. Do not modify existing tests, test fixtures or build configuration to bypass verification. No new dependencies, external services, deployment or network operations are needed. Keep changes focused. Each task has at most 180 actual model HTTP requests including translations/retries. A fresh task conversation is used for each successive requirement while files are retained.\nYour repository working directory is /private/tmp/aipod-flaskbb-context-policy/aipod-governed/project. The shell starts there. Read only this repository and installed runtime documentation; evaluator data, other workspaces and host home directories are outside this task.\nThis project has a migrated AIPod registration slice; read MIGRATION.md and preserve its Models/Providers/Services/Pipeline/Interface responsibilities and public entry. Original FlaskBB host modules and plugins outside that slice remain legacy compatibility code. Registration tests exercise the real host adapter; it requires a Flask app context and has no standalone launch command.\n\nCURRENT CHANGE:\nContinue the prior identity change. Self-registration must reject a requested primary group that does not exist (including None), or whose current database flags include admin, super_mod, mod, guest or banned. Reject via StopValidation containing a reason with attribute 'group'; invoke the normal registration failure hook once and do not persist a user or call post-processors. Accept any existing group with all five flags false, including newly created ordinary groups; do not hardcode allowed or forbidden IDs. This guard must apply even when no plugin validators are registered. Existing validation failures and all prior identity rules must remain correct. Preserve original public APIs and unrelated forum functionality.\nEARLIER REQUIREMENTS TO PRESERVE:\nNormalize FlaskBB self-registration identities consistently. Trim leading/trailing whitespace from username and email; preserve username display case, and lowercase email. Registration validators, failure hooks and stored users must see the same normalized identity. Do not mutate the caller's frozen UserRegistrationInfo. Preserve the existing object identity when no field needs normalization, because existing plugins rely on it. UsernameUniquenessValidator and EmailUniquenessValidator must also reject ASCII case variants and surrounding whitespace when invoked directly against existing users. Keep password, language and group unchanged. Preserve original public import paths, registration exceptions, plugins and unrelated forum functionality."
+   }
+ }--- a/docs/interfaces/registration.md
++++ b/docs/interfaces/registration.md
+@@ -24,6 +24,15 @@
+ user nor runs post-processors. Any existing group with all five flags false is
+ accepted (no hardcoded IDs). The guard applies even with no plugin validators.
+ 
++When registration validation fails, the entry attempts the registration failure
++hook exactly once and then still raises the original `StopValidation` with its
++original reasons. If the hook raises an ordinary `Exception`, the caller still
++receives the original `StopValidation`; a `StopValidation` raised directly by a
++validator is preserved as the exact instance. `BaseException` subclasses such as
++`KeyboardInterrupt` or `SystemExit` raised by the hook are not swallowed and
++propagate. No user is persisted and no post-processor runs on this failure path.
++Successful registration and post-processor exception behavior are unchanged.
++
+ ## No standalone launcher
+ 
+ This interface is hosted by FlaskBB. The adapter's `smoke_payloads()` returns a
+@@ -43,5 +52,6 @@
+ The `run` CLI, like `start`, needs a FlaskBB application context and bound
+ registration resources, so end-to-end behavior is covered by
+ `tests/interfaces/test_registration_adapter.py`,
+-`tests/interfaces/test_registration_adapter_group_guard.py` and the host
++`tests/interfaces/test_registration_adapter_group_guard.py`,
++`tests/interfaces/test_registration_adapter_failure_hook.py` and the host
+ registration tests rather than by a standalone server process.
+--- a/interfaces/registration/interface.json
++++ b/interfaces/registration/interface.json
+@@ -5,6 +5,9 @@
+     "path": "interfaces/registration/adapter.py",
+     "class_name": "RegistrationAdapter"
+   },
++  "routes": [
++    "register_user"
++  ],
+   "artifacts": [],
+   "lifecycle": {},
+   "support": {
+@@ -17,7 +20,7 @@
+     "pytest",
+     "-o",
+     "addopts=",
+-    "tests/interfaces/test_registration_adapter.py",
++    "tests/interfaces",
+     "-q"
+   ]
+ }
+--- a/pipelines/registration.contract.json
++++ b/pipelines/registration.contract.json
+@@ -3,8 +3,7 @@
+   "inputs": {
+     "envelope": {
+       "type": "any",
+-      "required": true,
+-      "description": "RegistrationEnvelope wrapping the caller-owned UserRegistrationInfo; normalization is applied by the Services."
++      "required": true
+     }
+   },
+   "verification_cases": []
+--- a/pipelines/registration.py
++++ b/pipelines/registration.py
+@@ -9,17 +9,27 @@
+ def run(ctx):
+     S = Pod(build_container(load_beans()))
+     S(ValidateRegistration).execute_all(ctx)
++
+     error = ctx.get('native_error')
+     if error is not None and not isinstance(error, StopValidation):
++        # Validation crashed outright; propagate the original exception.
+         raise error
+     if isinstance(error, StopValidation):
++        # A validator raised StopValidation directly: keep its reasons and the
++        # exact instance so the caller receives the same object.
+         ctx.set('failures', error.reasons)
+-    if ctx.get('failures') or isinstance(error, StopValidation):
+-        error = error or StopValidation(ctx.get('failures'))
++
++    failures = ctx.get('failures')
++    if failures or isinstance(error, StopValidation):
++        original = error if isinstance(error, StopValidation) else StopValidation(failures)
++        # The registration failure hook is attempted exactly once. Ordinary
++        # Exceptions raised by the hook are ignored so the caller still receives
++        # the original StopValidation with its original reasons. BaseException
++        # subclasses (KeyboardInterrupt, SystemExit) are not swallowed and
++        # propagate from the hook attempt below.
+         S(ReportRegistrationFailure).execute_all(ctx)
+-        if ctx.get('native_error') is not None:
+-            raise ctx.get('native_error')
+-        raise error
++        raise original
++
+     S(PersistRegistration).execute_all(ctx)
+     if ctx.get('native_error') is not None:
+         raise ctx.get('native_error')
+--- a/tests/interfaces/test_registration_adapter_failure_hook.py
++++ b/tests/interfaces/test_registration_adapter_failure_hook.py
+@@ -0,0 +1,197 @@
++"""Interface-level checks for the registration failure-hook path.
++
++These drive the delivered ``RegistrationAdapter`` (the entry re-exported as
++``flaskbb.auth.services.registration.RegistrationService``) so the behavior is
++exercised through the registered ``register_user`` Pipeline route exactly as the
++FlaskBB registration view runs it. When registration validation fails the
++adapter must attempt the registration failure hook exactly once and still
++surface the original ``StopValidation`` even if that hook raises an ordinary
++``Exception``; a ``StopValidation`` raised directly by a validator must be
++preserved as the exact instance. No user is persisted and no post-processor runs
++on this path, and ``BaseException`` subclasses from the hook are not swallowed.
++"""
++
++from pathlib import Path
++
++import pytest
++from pluggy import HookimplMarker
++
++from ai_pod_cli.interface import load_adapter, load_manifest
++from flaskbb.core.auth.registration import UserRegistrationInfo, UserValidator
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import User
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++MANIFEST = "registration"
++
++hookimpl = HookimplMarker("flaskbb")
++
++
++def make_info(**overrides):
++    values = {
++        "username": "Fred",
++        "password": "secret",
++        "email": "fred@example.com",
++        "language": "en",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++def make_adapter(plugin_manager, database):
++    _, manifest = load_manifest(MANIFEST, PROJECT_ROOT)
++    adapter = load_adapter(manifest, PROJECT_ROOT)
++    adapter.plugins = plugin_manager
++    adapter.users = User
++    adapter.db = database
++    return adapter
++
++
++class RaisingValidator(UserValidator):
++    def validate(self, user_info):
++        raise ValidationError("username", "nope")
++
++
++class DirectStopValidator(UserValidator):
++    def __init__(self, error):
++        self.error = error
++
++    def validate(self, user_info):
++        raise self.error
++
++
++def make_plugin(validators, failure_handler=None, post_processor=None):
++    class Plugin:
++        @hookimpl
++        def flaskbb_gather_registration_validators(self):
++            return list(validators)
++
++        if failure_handler is not None:
++
++            @hookimpl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure_handler(user_info, failures)
++
++        if post_processor is not None:
++
++            @hookimpl
++            def flaskbb_registration_post_processor(self, user):
++                post_processor(user)
++
++    return Plugin()
++
++
++def test_hook_exception_still_raises_original_stopvalidation(
++    database, plugin_manager, default_groups
++):
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(make_plugin([RaisingValidator()], handler))
++    adapter = make_adapter(plugin_manager, database)
++
++    with pytest.raises(StopValidation) as excinfo:
++        adapter.register(make_info())
++
++    assert excinfo.value.reasons == [("username", "nope")]
++    assert calls == [[("username", "nope")]]
++    assert User.query.count() == 0
++
++
++def test_direct_stopvalidation_instance_is_preserved(
++    database, plugin_manager, default_groups
++):
++    original = StopValidation([("email", "taken")])
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(make_plugin([DirectStopValidator(original)], handler))
++    adapter = make_adapter(plugin_manager, database)
++
++    with pytest.raises(StopValidation) as excinfo:
++        adapter.register(make_info())
++
++    assert excinfo.value is original
++    assert excinfo.value.reasons == [("email", "taken")]
++    assert calls == [[("email", "taken")]]
++    assert User.query.count() == 0
++
++
++def test_hook_attempted_exactly_once(database, plugin_manager, default_groups):
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(make_plugin([RaisingValidator()], handler))
++    adapter = make_adapter(plugin_manager, database)
++
++    with pytest.raises(StopValidation):
++        adapter.register(make_info())
++
++    assert len(calls) == 1
++
++
++def test_failure_path_skips_persistence_and_post_processors(
++    database, plugin_manager, default_groups
++):
++    post_calls = []
++
++    def handler(user_info, failures):
++        raise RuntimeError("hook blew up")
++
++    def post(user):
++        post_calls.append(user)
++
++    plugin_manager.register(
++        make_plugin([RaisingValidator()], handler, post)
++    )
++    adapter = make_adapter(plugin_manager, database)
++
++    with pytest.raises(StopValidation):
++        adapter.register(make_info())
++
++    assert post_calls == []
++    assert User.query.count() == 0
++
++
++def test_base_exception_from_hook_propagates(
++    database, plugin_manager, default_groups
++):
++    def handler(user_info, failures):
++        raise KeyboardInterrupt()
++
++    plugin_manager.register(make_plugin([RaisingValidator()], handler))
++    adapter = make_adapter(plugin_manager, database)
++
++    with pytest.raises(KeyboardInterrupt):
++        adapter.register(make_info())
++
++    assert User.query.count() == 0
++
++
++def test_successful_registration_still_runs_post_processors(
++    database, plugin_manager, default_groups
++):
++    post_calls = []
++
++    def post(user):
++        post_calls.append(user)
++
++    plugin_manager.register(make_plugin([], post_processor=post))
++    adapter = make_adapter(plugin_manager, database)
++
++    user = adapter.register(make_info())
++
++    assert post_calls == [user]
++    assert User.query.count() == 1
+--- a/tests/pipelines/test_registration_failure_path.py
++++ b/tests/pipelines/test_registration_failure_path.py
+@@ -0,0 +1,190 @@
++"""Focused tests for the registration pipeline failure path.
++
++When validation fails, the pipeline must attempt the registration failure hook
++exactly once and then still raise the original ``StopValidation`` with its
++original reasons, even if the hook itself raises an ordinary ``Exception``.
++A ``StopValidation`` raised directly by a validator must be preserved as the
++exact instance. ``BaseException`` subclasses from the hook are not swallowed.
++"""
++
++import pytest
++from pluggy import HookimplMarker
++
++from ai_pod_cli import PipelineContext
++
++from flaskbb.core.auth.registration import UserRegistrationInfo, UserValidator
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import User
++
++from modules.models.registration import RegistrationEnvelope
++from modules.providers.public.registration import bind_registration
++
++from pipelines.registration import run
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++hookimpl = HookimplMarker("flaskbb")
++
++
++def make_info(**overrides):
++    values = {
++        "username": "  Fred  ",
++        "password": "secret",
++        "email": "  Fred@Example.COM  ",
++        "language": "en",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++def run_pipeline(info, plugin_manager, database):
++    ctx = PipelineContext(params={"envelope": RegistrationEnvelope(info=info)})
++    with bind_registration(plugin_manager, User, database):
++        result = run(ctx)
++    return result, ctx
++
++
++class RaisingValidator(UserValidator):
++    def validate(self, user_info):
++        raise ValidationError("username", "nope")
++
++
++class DirectStopValidator(UserValidator):
++    def __init__(self, error):
++        self.error = error
++
++    def validate(self, user_info):
++        raise self.error
++
++
++def plugin_with_validators(validators, failure_handler=None, post_processor=None):
++    class Plugin:
++        @hookimpl
++        def flaskbb_gather_registration_validators(self):
++            return list(validators)
++
++        if failure_handler is not None:
++
++            @hookimpl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure_handler(user_info, failures)
++
++        if post_processor is not None:
++
++            @hookimpl
++            def flaskbb_registration_post_processor(self, user):
++                post_processor(user)
++
++    return Plugin()
++
++
++def test_hook_exception_still_raises_original_stopvalidation(
++    database, plugin_manager, default_groups
++):
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(
++        plugin_with_validators([RaisingValidator()], handler)
++    )
++
++    with pytest.raises(StopValidation) as excinfo:
++        run_pipeline(make_info(), plugin_manager, database)
++
++    assert excinfo.value.reasons == [("username", "nope")]
++    assert calls == [[("username", "nope")]]
++    assert User.query.count() == 0
++
++
++def test_direct_stopvalidation_instance_is_preserved(
++    database, plugin_manager, default_groups
++):
++    original = StopValidation([("email", "taken")])
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(
++        plugin_with_validators([DirectStopValidator(original)], handler)
++    )
++
++    with pytest.raises(StopValidation) as excinfo:
++        run_pipeline(make_info(), plugin_manager, database)
++
++    assert excinfo.value is original
++    assert excinfo.value.reasons == [("email", "taken")]
++    assert calls == [[("email", "taken")]]
++    assert User.query.count() == 0
++
++
++def test_hook_is_invoked_exactly_once(database, plugin_manager, default_groups):
++    calls = []
++
++    def handler(user_info, failures):
++        calls.append(failures)
++        raise RuntimeError("hook blew up")
++
++    plugin_manager.register(
++        plugin_with_validators([RaisingValidator()], handler)
++    )
++
++    with pytest.raises(StopValidation):
++        run_pipeline(make_info(), plugin_manager, database)
++
++    assert len(calls) == 1
++
++
++def test_failure_path_skips_post_processors(database, plugin_manager, default_groups):
++    post_calls = []
++
++    def handler(user_info, failures):
++        raise RuntimeError("hook blew up")
++
++    def post(user):
++        post_calls.append(user)
++
++    plugin_manager.register(
++        plugin_with_validators([RaisingValidator()], handler, post)
++    )
++
++    with pytest.raises(StopValidation):
++        run_pipeline(make_info(), plugin_manager, database)
++
++    assert post_calls == []
++    assert User.query.count() == 0
++
++
++def test_base_exception_from_hook_propagates(database, plugin_manager, default_groups):
++    def handler(user_info, failures):
++        raise KeyboardInterrupt()
++
++    plugin_manager.register(
++        plugin_with_validators([RaisingValidator()], handler)
++    )
++
++    with pytest.raises(KeyboardInterrupt):
++        run_pipeline(make_info(), plugin_manager, database)
++
++    assert User.query.count() == 0
++
++
++def test_successful_registration_still_runs_post_processors(
++    database, plugin_manager, default_groups
++):
++    post_calls = []
++
++    def post(user):
++        post_calls.append(user)
++
++    plugin_manager.register(plugin_with_validators([], post_processor=post))
++
++    result, _ = run_pipeline(make_info(), plugin_manager, database)
++
++    assert post_calls == [result["user"]]
++    assert User.query.count() == 1

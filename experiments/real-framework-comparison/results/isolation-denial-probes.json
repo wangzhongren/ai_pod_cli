@@ -1,0 +1,16 @@
+{
+  "probe": {
+    "command": "python -c 'from pathlib import Path\npaths=['\"'\"'/tmp/aipod-comparison-original-future.log'\"'\"','\"'\"'/tmp/aipod-comparison-governed-future.xml'\"'\"','\"'\"'/tmp/aipod-flaskbb-trial-invalid-1/mini-original/round-1/changes.patch'\"'\"','\"'\"'/tmp/aipod-flaskbb-trial/tasks.json'\"'\"','\"'\"'/tmp/aipod-flaskbb-trial/mini-original/project/flaskbb/auth/services/registration.py'\"'\"','\"'\"'/Users/wangzhongren/code/vibeingcode/ai-pod-cli/experiments/real-framework-comparison/test_acceptance.py'\"'\"']\nfor p in paths:\n try: Path(p).read_text()\n except PermissionError: print('\"'\"'DENIED'\"'\"',p)\n else: raise AssertionError('\"'\"'Unexpected readable path: '\"'\"'+p)\nassert Path('\"'\"'flaskbb/auth/services/registration.py'\"'\"').read_text()\nprint('\"'\"'PROJECT READ OK'\"'\"')'",
+    "exit_code": 0,
+    "timed_out": false,
+    "output": "DENIED /tmp/aipod-comparison-original-future.log\nDENIED /tmp/aipod-comparison-governed-future.xml\nDENIED /tmp/aipod-flaskbb-trial-invalid-1/mini-original/round-1/changes.patch\nDENIED /tmp/aipod-flaskbb-trial/tasks.json\nDENIED /tmp/aipod-flaskbb-trial/mini-original/project/flaskbb/auth/services/registration.py\nDENIED /Users/wangzhongren/code/vibeingcode/ai-pod-cli/experiments/real-framework-comparison/test_acceptance.py\nPROJECT READ OK\n",
+    "seconds": 0.043
+  },
+  "heredoc": {
+    "command": "python - <<'CODE'\nprint('HEREDOC OK')\nCODE",
+    "exit_code": 1,
+    "timed_out": false,
+    "output": "/bin/sh: cannot create temp file for here document: Operation not permitted\n",
+    "seconds": 0.012
+  }
+}

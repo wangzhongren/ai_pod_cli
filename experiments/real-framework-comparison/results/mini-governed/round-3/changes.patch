@@ -1,0 +1,24 @@
+--- a/pipelines/registration.py
++++ b/pipelines/registration.py
+@@ -15,11 +15,16 @@
+     if isinstance(error, StopValidation):
+         ctx.set('failures', error.reasons)
+     if ctx.get('failures') or isinstance(error, StopValidation):
+-        error = error or StopValidation(ctx.get('failures'))
+-        S(ReportRegistrationFailure).execute_all(ctx)
+-        if ctx.get('native_error') is not None:
+-            raise ctx.get('native_error')
+-        raise error
++        original_error = error if isinstance(error, StopValidation) else StopValidation(ctx.get('failures'))
++        try:
++            S(ReportRegistrationFailure).execute_all(ctx)
++        except Exception:
++            # The failure hook is best-effort: a normal exception raised while
++            # reporting must not replace the validation error the caller asked
++            # for.  BaseException (e.g. KeyboardInterrupt/SystemExit) still
++            # propagates and is never swallowed.
++            pass
++        raise original_error
+     S(PersistRegistration).execute_all(ctx)
+     if ctx.get('native_error') is not None:
+         raise ctx.get('native_error')

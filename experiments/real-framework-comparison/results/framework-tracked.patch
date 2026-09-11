@@ -1,0 +1,176 @@
+diff --git a/ai_pod_cli/workspace_agent.py b/ai_pod_cli/workspace_agent.py
+index 1808d46..94285ed 100644
+--- a/ai_pod_cli/workspace_agent.py
++++ b/ai_pod_cli/workspace_agent.py
+@@ -9,6 +9,7 @@ from ai_pod_cli.source_codec import encode_source_artifact
+ from ai_pod_cli.instruction_protocol import INSTRUCTION_SET_PROMPT, parse_error_feedback, instruction_recovery_feedback
+ from ai_pod_cli.sdk_reference import sdk_reference
+ from ai_pod_cli.instruction_translator import DEFAULT_INSTRUCTION_MODE, InstructionTranslator, NEED_PROMPT, parse_need, encode_need
++from ai_pod_cli.context_memory import ContextMemory
+ 
+ DEFAULT_AGENT_MAX_STEPS = 100
+ DEFAULT_POD_MAX_STEPS = 200
+@@ -90,10 +91,19 @@ class WorkspaceAgent:
+         system = (protocol + "\nLayer: " + self.tools.stage + "\n"
+                   + LAYER_PROMPTS[self.tools.stage] + "\n\n" + sdk_reference(self.tools.stage))
+         history = []
++        memory = ContextMemory(self.llm, self.tools.scratch, progress_callback=self.progress)
+         initial = {"objective": objective, "writable_paths": self.tools.paths,
+                    "temporary_directory": str(self.tools.scratch), "project": context}
+         for step in range(self.max_steps):
++            current_state = {"revision": self.tools.revision, "changed_files": sorted(self.tools.changed),
++                             "checks": [{**check, "output": check.get("output", "")[-1500:]}
++                                        for check in self.tools.checks[-3:]]}
++            compaction = memory.compact_if_needed(history, initial, current_state)
++            if compaction:
++                print(f"   [{self.tools.stage}] context_compaction: " + json.dumps(compaction, ensure_ascii=False))
+             conversation = [{"role": "user", "content": "Current layer task and project context:\n" + json.dumps(initial, ensure_ascii=False)}]
++            if memory.summary:
++                conversation[0]["content"] += "\n" + memory.message() + "\nCurrent controller tool state:\n" + json.dumps(current_state, ensure_ascii=False)
+             for item in history:
+                 observation = (
+                         "Instruction parsing failed; nothing was executed:\n" if "parse_error" in item["observation"] else "Instruction result:\n"
+@@ -109,7 +119,7 @@ class WorkspaceAgent:
+                 f"\nRequests remaining for this layer: {self.max_steps - step}. Describe the next operation inside need_function_tool; request completion after implementation and checks."
+                 if self.translator else
+                 f"\nInstructions remaining for this layer: {self.max_steps - step}. Finish with registrations after the required implementation and a successful check.")
+-            raw = self.llm(system, json.dumps({"task": initial, "history": history}, ensure_ascii=False),
++            raw = self.llm(system, json.dumps({"task": initial, "memory": memory.summary, "history": history}, ensure_ascii=False),
+                            json_mode=False, temperature=0.1, progress_callback=self.progress,
+                            progress_label=f"Working layer: {self.tools.stage}", conversation=conversation)
+             action = None
+@@ -147,6 +157,4 @@ class WorkspaceAgent:
+                             if self.translator else encode_source_artifact(action["path"], "[large source omitted; read the workspace file if needed]"))
+             history.append({"assistant": recorded, "observation": result} if action is not None else
+                            {"assistant": None, "observation": result if self.translator else instruction_recovery_feedback(result)})
+-            while len(json.dumps(history, ensure_ascii=False)) > 80000 and len(history) > 2:
+-                history.pop(0)
+         raise RuntimeError(f"{self.tools.stage} Agent reached {self.max_steps} steps; files are preserved for resume")
+diff --git a/aipod-node/src/agent/workspace.ts b/aipod-node/src/agent/workspace.ts
+index dca42df..4de9367 100644
+--- a/aipod-node/src/agent/workspace.ts
++++ b/aipod-node/src/agent/workspace.ts
+@@ -9,6 +9,7 @@ import { encodeSourceArtifact } from "./source-codec.js";
+ import { INSTRUCTION_SET_PROMPT, parseErrorFeedback, instructionRecoveryFeedback } from "./instruction-protocol.js";
+ import { sdkReference } from "./sdk-reference.js";
+ import {InstructionTranslator, NEED_PROMPT, parseNeed, encodeNeed} from "./instruction-translator.js";
++import {ContextMemory, type HistoryExchange} from "./context-memory.js";
+ 
+ export type Owner = StageName | "pod";
+ export const DEFAULT_AGENT_MAX_STEPS = 100;
+@@ -232,11 +233,18 @@ export class WorkspaceAgent {
+     if (!this.client.completeText) throw new Error("completeText is required for workspace actions");
+     const protocol = this.translator ? NEED_PROMPT + INSTRUCTION_PROMPT.slice(INSTRUCTION_SET_PROMPT.length) : INSTRUCTION_PROMPT;
+     const system = `WORKSPACE_AGENT:${this.tools.owner}\n${protocol}\n${roles[this.tools.owner]}\n\n${sdkReference(this.tools.owner)}`;
+-    const history: {assistant: string | null; observation: Record<string, unknown>}[] = [];
++    const history: HistoryExchange[] = [];
++    const memory = new ContextMemory(this.client, this.tools.scratch);
+     const task = { objective, writablePaths: this.tools.paths, temporaryDirectory: this.tools.scratch, project };
+     for (let step = 0; step < this.maxSteps; step += 1) {
++      if (this.cancelled()) throw new Error("Pod Agent cancelled");
++      const currentState = {revision:this.tools.revision,changedFiles:[...this.tools.changed],
++        checks:this.tools.checks.slice(-3).map(check=>({...check,output:check.output.slice(-1500)}))};
++      const compaction = await memory.compactIfNeeded(history,task,currentState);
++      if (compaction) await this.onAction({tool:"context_compaction"},compaction); // Controller event, not an executable model instruction.
+       if (this.cancelled()) throw new Error("Pod Agent cancelled");
+       const conversation: ConversationMessage[] = [{role: "user", content: "Current layer task and project context:\n" + JSON.stringify(task)}];
++      if (memory.summary) conversation[0]!.content += "\n" + memory.message() + "\nCurrent controller tool state:\n" + JSON.stringify(currentState);
+       for (const item of history) {
+         const observation = (item.observation.parse_error ? "Instruction parsing failed; nothing was executed:\n" : "Instruction result:\n") + JSON.stringify(item.observation);
+         if (item.assistant === null) conversation[conversation.length - 1]!.content += "\n" + observation;
+@@ -245,7 +253,7 @@ export class WorkspaceAgent {
+       conversation[conversation.length - 1]!.content += this.translator
+         ? `\nRequests remaining for this layer: ${this.maxSteps - step}. Describe the next operation inside need_function_tool; request completion after implementation and checks.`
+         : `\nInstructions remaining for this layer: ${this.maxSteps - step}. Finish with registrations after the required implementation and a successful check.`;
+-      const raw = await this.client.completeText(system, JSON.stringify({ task, history }), conversation);
++      const raw = await this.client.completeText(system, JSON.stringify({ task, memory:memory.summary, history }), conversation);
+       if (this.cancelled()) throw new Error("Pod Agent cancelled");
+       let action: Action | undefined, result: Record<string, unknown>;
+       try {
+@@ -274,7 +282,6 @@ export class WorkspaceAgent {
+             ? this.translator ? encodeNeed(`Write ${String(action.path)}. [Large source omitted from history; read the workspace file if needed.]`)
+               : encodeSourceArtifact({path: String(action.path), content: "[large source omitted; read the workspace file if needed]"})
+             : raw, observation: result});
+-      while (JSON.stringify(history).length > 80000 && history.length > 2) history.shift();
+     }
+     throw new Error(`${this.tools.owner} Agent reached ${this.maxSteps} steps; files are preserved for resume`);
+   }
+diff --git a/aipod-node/test/sdk-reference.test.ts b/aipod-node/test/sdk-reference.test.ts
+index bf51609..a3e1607 100644
+--- a/aipod-node/test/sdk-reference.test.ts
++++ b/aipod-node/test/sdk-reference.test.ts
+@@ -13,7 +13,7 @@ import {
+   loadContainer, loadRunner, ModelRepository, PipelineContext, sdkReference, validateContract,
+ } from "../src/index.js";
+ 
+-test("each role keeps its bundled SDK reference after conversation history is trimmed", async () => {
++test("each role keeps its bundled SDK reference after AI history compaction", async () => {
+   const root = await mkdtemp(resolve(tmpdir(), "aipod-sdk-prompt-"));
+   try {
+     for (const role of Object.keys(SDK_ROLE_SECTIONS) as Owner[]) {
+@@ -22,7 +22,10 @@ test("each role keeps its bundled SDK reference after conversation history is tr
+       tools.execute = async () => ({ content: `observation-${observation++}:` + "x".repeat(41000) });
+       const calls: { system: string; prompt: string }[] = [];
+       const client: ModelClient = {
+-        async complete() { throw new Error("Text instructions expected"); },
++        async complete(system) {
++          assert.ok(system.startsWith("CONTEXT_COMPACTION"));
++          return {summary:"Earlier file observations were read; no implementation or check occurred."};
++        },
+         async completeText(system, prompt) {
+           calls.push({ system, prompt });
+           return calls.length <= 4 ? "<read><path>README.md</path></read>"
+@@ -40,6 +43,7 @@ test("each role keeps its bundled SDK reference after conversation history is tr
+       }
+       assert.ok(!calls.at(-1)!.prompt.includes("observation-0:"));
+       assert.ok(calls.at(-1)!.prompt.includes("observation-3:"));
++      assert.ok(calls.at(-1)!.prompt.includes("Earlier file observations"));
+     }
+     assert.ok(sdkReference("models").includes(SDK_EXAMPLES.model));
+     assert.ok(!sdkReference("models").includes("INTERFACE SDK"));
+diff --git a/tests/test_sdk_reference.py b/tests/test_sdk_reference.py
+index 3f1608b..a639726 100644
+--- a/tests/test_sdk_reference.py
++++ b/tests/test_sdk_reference.py
+@@ -16,29 +16,38 @@ from ai_pod_cli.workspace_agent import WorkspaceAgent
+ 
+ 
+ class SDKReferenceTests(unittest.TestCase):
+-    def test_role_reference_survives_conversation_trimming(self):
++    def test_role_reference_survives_ai_history_compaction(self):
+         with tempfile.TemporaryDirectory() as directory:
+             for role in ROLE_SECTIONS:
+                 with self.subTest(role=role):
+                     tools = WorkspaceTools(Path(directory), role)
+-                    # Force old observations out of history without executing any SDK discovery.
++                    # Cross the compaction threshold without executing SDK discovery.
+                     tools.execute = Mock(side_effect=[
+                         {"content": f"observation-{i}:" + "x" * 41000} for i in range(4)
+                     ])
+-                    llm = Mock(side_effect=[
++                    replies = iter([
+                         '<read><path>README.md</path></read>' for _ in range(4)
+                     ] + ['<finish><summary>Checked</summary></finish>'])
++                    def respond(system, _user, **_kwargs):
++                        if system.startswith("CONTEXT_COMPACTION"):
++                            return {"summary": "Earlier file observations were read; no implementation or check occurred."}
++                        return next(replies)
++                    llm = Mock(side_effect=respond)
+                     WorkspaceAgent(llm, tools, max_steps=5, instruction_mode="direct").run(
+                         "Check example", {}, request_change=Mock(),
+                         finish=lambda action, _tools: action,
+                     )
+                     for call in llm.call_args_list:
+                         system = call.args[0]
++                        if system.startswith("CONTEXT_COMPACTION"):
++                            self.assertTrue(call.kwargs["json_mode"])
++                            continue
+                         self.assertIn(sdk_reference(role), system)
+                         self.assertIn("AIPod Instruction Set", system)
+                         self.assertFalse(call.kwargs["json_mode"])
+                     self.assertNotIn("observation-0:", llm.call_args_list[-1].args[1])
+                     self.assertIn("observation-3:", llm.call_args_list[-1].args[1])
++                    self.assertIn("Earlier file observations", llm.call_args_list[-1].args[1])
+         self.assertIn(SDK_EXAMPLES["model"], sdk_reference("models"))
+         self.assertNotIn("INTERFACE SDK", sdk_reference("models"))
+         self.assertNotIn("CONFIGURATION, DEPENDENCIES AND STORAGE", sdk_reference("interfaces"))

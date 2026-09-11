@@ -1,0 +1,20 @@
+{
+  "mini-original": {
+    "tests": 26,
+    "passed": 26,
+    "failures": 0,
+    "errors": 0
+  },
+  "mini-governed": {
+    "tests": 26,
+    "passed": 26,
+    "failures": 0,
+    "errors": 0
+  },
+  "aipod-governed": {
+    "tests": 26,
+    "passed": 26,
+    "failures": 0,
+    "errors": 0
+  }
+}

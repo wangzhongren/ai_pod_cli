@@ -1,0 +1,228 @@
+--- a/flaskbb/auth/services/registration.py
++++ b/flaskbb/auth/services/registration.py
+@@ -43,6 +43,7 @@
+     "AutoActivateUserPostProcessor",
+     "AutologinPostProcessor",
+     "EmailUniquenessValidator",
++    "PrimaryGroupValidator",
+     "RegistrationService",
+     "SendActivationPostProcessor",
+     "UsernameRequirements",
+@@ -115,5 +116,5 @@
+ 
+ 
+ from modules.models.registration import UsernameRequirements as UsernameRequirements
+-from modules.services.public.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator
++from modules.services.public.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator, PrimaryGroupValidator as PrimaryGroupValidator
+ from interfaces.registration.adapter import RegistrationAdapter as RegistrationService
+--- a/modules/providers/impl/registration.py
++++ b/modules/providers/impl/registration.py
+@@ -5,7 +5,7 @@
+ import sqlalchemy as sa
+ from pytz import UTC
+ from flaskbb.extensions import db as default_db
+-from flaskbb.user.models import User
++from flaskbb.user.models import Group, User
+ from flaskbb.core.exceptions import PersistenceError
+ 
+ _resources = ContextVar('registration_resources')
+@@ -20,8 +20,15 @@
+ 
+ class RegistrationResources:
+     def validators(self):
+-        plugins, _, _ = _resources.get()
+-        return list(chain.from_iterable(plugins.hook.flaskbb_gather_registration_validators()))
++        plugins, _, db = _resources.get()
++        # Imported lazily: the validator service module imports this provider.
++        from modules.services.impl.validators import PrimaryGroupValidator
++
++        builtin = [PrimaryGroupValidator(Group, db)]
++        plugin_validators = list(
++            chain.from_iterable(plugins.hook.flaskbb_gather_registration_validators())
++        )
++        return builtin + plugin_validators
+ 
+     def report_failure(self, info, failures):
+         plugins, _, _ = _resources.get()
+--- a/modules/services/impl/validators.py
++++ b/modules/services/impl/validators.py
+@@ -9,6 +9,43 @@
+     normalize_username,
+ )
+ from modules.providers.public.registration import RegistrationResources
++
++_RESTRICTED_GROUP_FLAGS = ("admin", "super_mod", "mod", "guest", "banned")
++
++
++class PrimaryGroupValidator(UserValidator):
++    """Ensure the requested primary group is safe for self-registration.
++
++    A requested group is rejected when it does not exist (``None`` included)
++    or when any of its current database type flags
++    (``admin``/``super_mod``/``mod``/``guest``/``banned``) is set.  Ordinary
++    groups with all five flags false are accepted even if they were created
++    after startup; no group ids are hardcoded.
++    """
++
++    def __init__(self, groups, db):
++        self.groups = groups
++        self.db = db
++
++    @t.override
++    def validate(self, user_info: UserRegistrationInfo):
++        group_id = getattr(user_info, "group", None)
++        group = None
++        if group_id is not None:
++            try:
++                group = self.db.session.get(self.groups, group_id)
++            except Exception:
++                group = None
++
++        is_restricted = any(
++            bool(getattr(group, flag, False)) for flag in _RESTRICTED_GROUP_FLAGS
++        )
++        if group is None or is_restricted:
++            raise ValidationError(
++                "group",
++                _("The selected group is not available for registration."),
++            )
++
+ 
+ class UsernameValidator(UserValidator):
+     """
+--- a/modules/services/public/validators.py
++++ b/modules/services/public/validators.py
+@@ -1 +1 @@
+-from ..impl.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator
++from ..impl.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator, PrimaryGroupValidator as PrimaryGroupValidator
+--- a/tests/unit/auth/test_registration_group.py
++++ b/tests/unit/auth/test_registration_group.py
+@@ -0,0 +1,128 @@
++import pytest
++from flaskbb.auth.services.registration import RegistrationService
++from flaskbb.core.auth.registration import (
++    RegistrationFailureHandler,
++    RegistrationPostProcessor,
++    UserRegistrationInfo,
++)
++from flaskbb.core.exceptions import StopValidation
++from flaskbb.user.models import Group, User
++from pluggy import HookimplMarker
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++
++def _info(group):
++    return UserRegistrationInfo(
++        username="brandnew",
++        password="secret",
++        email="brandnew@example.com",
++        language="en",
++        group=group,
++    )
++
++
++def _service(plugin_manager, database):
++    return RegistrationService(plugins=plugin_manager, users=User, db=database)
++
++
++def _hooks(validator=None, failure=None, post_process=None):
++    impl = HookimplMarker("flaskbb")
++
++    class Impls:
++        if validator is not None:
++
++            @impl
++            def flaskbb_gather_registration_validators(self):
++                return [validator]
++
++        if failure is not None:
++
++            @impl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure(user_info, failures)
++
++        if post_process is not None:
++
++            @impl
++            def flaskbb_registration_post_processor(self, user):
++                post_process(user)
++
++    return Impls()
++
++
++def _count_users():
++    return User.query.count()
++
++
++@pytest.mark.parametrize(
++    "index",
++    [0, 1, 2, 4, 5],
++    ids=["admin", "super_mod", "mod", "banned", "guest"],
++)
++def test_rejects_flagged_groups_without_plugin_validators(
++    database, plugin_manager, default_groups, mocker, index
++):
++    failure = mocker.MagicMock(spec=RegistrationFailureHandler)
++    post_process = mocker.MagicMock(spec=RegistrationPostProcessor)
++    plugin_manager.register(_hooks(failure=failure, post_process=post_process))
++    service = _service(plugin_manager, database)
++
++    with pytest.raises(StopValidation) as excinfo:
++        service.register(_info(default_groups[index].id))
++
++    assert any(attribute == "group" for attribute, _ in excinfo.value.reasons)
++    failure.assert_called_once()
++    post_process.assert_not_called()
++    assert _count_users() == 0
++
++
++def test_rejects_missing_group(database, plugin_manager, default_groups):
++    service = _service(plugin_manager, database)
++
++    with pytest.raises(StopValidation) as excinfo:
++        service.register(_info(999999))
++
++    assert any(attribute == "group" for attribute, _ in excinfo.value.reasons)
++    assert _count_users() == 0
++
++
++def test_rejects_none_group(database, plugin_manager, default_groups):
++    service = _service(plugin_manager, database)
++
++    with pytest.raises(StopValidation) as excinfo:
++        service.register(_info(None))
++
++    assert any(attribute == "group" for attribute, _ in excinfo.value.reasons)
++    assert _count_users() == 0
++
++
++def test_accepts_existing_ordinary_group(database, plugin_manager, default_groups):
++    service = _service(plugin_manager, database)
++
++    user = service.register(_info(default_groups[3].id))
++
++    assert user.id is not None
++    assert user.primary_group_id == default_groups[3].id
++
++
++def test_accepts_newly_created_ordinary_group(database, plugin_manager, default_groups):
++    ordinary = Group(name="Ordinary")
++    ordinary.save()
++    service = _service(plugin_manager, database)
++
++    user = service.register(_info(ordinary.id))
++
++    assert user.id is not None
++    assert user.primary_group_id == ordinary.id
++
++
++def test_failure_hook_called_once_for_group_rejection(database, plugin_manager, default_groups, mocker):
++    failure = mocker.MagicMock(spec=RegistrationFailureHandler)
++    plugin_manager.register(_hooks(failure=failure))
++    service = _service(plugin_manager, database)
++
++    with pytest.raises(StopValidation):
++        service.register(_info(default_groups[0].id))
++
++    failure.assert_called_once()

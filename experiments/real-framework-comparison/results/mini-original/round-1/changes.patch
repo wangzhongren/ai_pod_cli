@@ -1,0 +1,381 @@
+--- a/flaskbb/auth/forms.py
++++ b/flaskbb/auth/forms.py
+@@ -36,6 +36,20 @@
+ is_valid_username = regexp(USERNAME_RE, message=_("You can only use letters, numbers or dashes."))
+ 
+ 
++def _strip_whitespace(value):
++    """WTForms filter that trims surrounding whitespace, if any."""
++    if isinstance(value, str):
++        return value.strip()
++    return value
++
++
++def _normalize_email(value):
++    """WTForms filter that trims and lowercases an email address."""
++    if isinstance(value, str):
++        return value.strip().lower()
++    return value
++
++
+ @add_recaptcha_field()
+ class LoginForm(FlaskBBForm):
+     login = StringField(
+@@ -57,6 +71,7 @@
+ class RegisterForm(FlaskBBForm):
+     username = StringField(
+         _("Username"),
++        filters=[_strip_whitespace],
+         validators=[
+             DataRequired(message=_("A valid username is required")),
+             is_valid_username,
+@@ -65,6 +80,7 @@
+ 
+     email = StringField(
+         _("Email address"),
++        filters=[_normalize_email],
+         validators=[
+             DataRequired(message=_("A valid email address is required.")),
+             Email(message=_("Invalid email address.")),
+--- a/flaskbb/auth/services/registration.py
++++ b/flaskbb/auth/services/registration.py
+@@ -29,6 +29,7 @@
+     UserRegistrationInfo,
+     UserRegistrationService,
+     UserValidator,
++    normalize_registration_info,
+ )
+ from ...core.exceptions import (
+     PersistenceError,
+@@ -107,7 +108,7 @@
+     def validate(self, user_info: UserRegistrationInfo):
+         count = db.session.execute(
+             sa.select(sa.func.count(self.users.id)).filter(
+-                sa.func.lower(self.users.username) == user_info.username
++                sa.func.lower(self.users.username) == sa.func.lower(user_info.username.strip())
+             )
+         ).scalar_one()
+         if count != 0:  # pragma: no branch
+@@ -132,7 +133,7 @@
+     def validate(self, user_info: UserRegistrationInfo):
+         count = db.session.execute(
+             sa.select(sa.func.count(self.users.id)).filter(
+-                sa.func.lower(self.users.email) == user_info.email
++                sa.func.lower(self.users.email) == sa.func.lower(user_info.email.strip())
+             )
+         ).scalar_one()
+         if count != 0:  # pragma: no branch
+@@ -216,6 +217,8 @@
+ 
+     @t.override
+     def register(self, user_info: UserRegistrationInfo):
++        user_info = normalize_registration_info(user_info)
++
+         try:
+             self._validate_registration(user_info)
+         except StopValidation as e:
+--- a/flaskbb/core/auth/registration.py
++++ b/flaskbb/core/auth/registration.py
+@@ -29,6 +29,33 @@
+     email: str
+     language: str
+     group: int
++
++
++def normalize_registration_info(
++    user_info: UserRegistrationInfo,
++) -> UserRegistrationInfo:
++    """Return registration information with normalized identities.
++
++    Leading and trailing whitespace is removed from both the username and the
++    email; the username keeps its display casing while the email is lowercased.
++    The password, language and group are passed through unchanged.
++
++    The original object is returned untouched when no field requires
++    normalization, so plugins that rely on object identity keep working.
++    """
++    username = user_info.username.strip()
++    email = user_info.email.strip().lower()
++
++    if username == user_info.username and email == user_info.email:
++        return user_info
++
++    return UserRegistrationInfo(
++        username=username,
++        password=user_info.password,
++        email=email,
++        language=user_info.language,
++        group=user_info.group,
++    )
+ 
+ 
+ class UserValidator(ABC):
+--- a/tests/unit/auth/test_registration_normalization.py
++++ b/tests/unit/auth/test_registration_normalization.py
+@@ -0,0 +1,266 @@
++import pytest
++from flask_login import logout_user
++from pluggy import HookimplMarker
++
++from flaskbb.auth.services.registration import (
++    EmailUniquenessValidator,
++    RegistrationService,
++    UsernameUniquenessValidator,
++)
++from flaskbb.core.auth.registration import (
++    RegistrationFailureHandler,
++    UserRegistrationInfo,
++    UserValidator,
++    normalize_registration_info,
++)
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import User
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++
++def make_info(**overrides):
++    values = {
++        "username": "Fred",
++        "password": "secret",
++        "email": "fred@example.com",
++        "language": "en",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++class TestNormalizeRegistrationInfo:
++    def test_returns_same_object_when_nothing_needs_normalizing(self):
++        info = make_info()
++
++        assert normalize_registration_info(info) is info
++
++    def test_trims_username_and_preserves_display_case(self):
++        info = make_info(username="  Fred  ")
++
++        normalized = normalize_registration_info(info)
++
++        assert normalized is not info
++        assert normalized.username == "Fred"
++        assert normalized.password == info.password
++        assert normalized.email == info.email
++        assert normalized.language == info.language
++        assert normalized.group == info.group
++
++    def test_trims_and_lowercases_email(self):
++        info = make_info(email="  Fred@Example.COM  ")
++
++        normalized = normalize_registration_info(info)
++
++        assert normalized is not info
++        assert normalized.email == "fred@example.com"
++        assert normalized.username == info.username
++        assert normalized.password == info.password
++        assert normalized.language == info.language
++        assert normalized.group == info.group
++
++    def test_does_not_mutate_frozen_input(self):
++        info = make_info(username="  Fred  ", email="  Fred@Example.COM  ")
++
++        normalize_registration_info(info)
++
++        assert info.username == "  Fred  "
++        assert info.email == "  Fred@Example.COM  "
++
++
++class RecordingValidator(UserValidator):
++    def __init__(self, error=None):
++        self.error = error
++        self.received = None
++
++    def validate(self, user_info):
++        self.received = user_info
++        if self.error is not None:
++            raise self.error
++
++
++class RecordingFailureHandler(RegistrationFailureHandler):
++    def __init__(self):
++        self.received = None
++
++    def handle_failure(self, user_info, failures):
++        self.received = user_info
++
++
++def _register(plugin_manager, validator, failure=None):
++    impl = HookimplMarker("flaskbb")
++
++    class Impls:
++        @impl
++        def flaskbb_gather_registration_validators(self):
++            return [validator]
++
++        if failure is not None:
++
++            @impl
++            def flaskbb_registration_failure_handler(self, user_info, failures):
++                failure.handle_failure(user_info, failures)
++
++    plugin_manager.register(Impls())
++
++
++class TestRegistrationServiceNormalization:
++    def test_stores_normalized_username_and_email(
++        self, database, plugin_manager, default_groups
++    ):
++        service = RegistrationService(plugins=plugin_manager, users=User, db=database)
++
++        service.register(make_info(username="  Fred  ", email="  FRED@EXAMPLE.COM  "))
++
++        user = User.query.filter_by(username="Fred").one()
++        assert user.email == "fred@example.com"
++
++    def test_validator_and_failure_handler_see_same_normalized_identity(
++        self, database, plugin_manager, default_groups
++    ):
++        service = RegistrationService(plugins=plugin_manager, users=User, db=database)
++        validator = RecordingValidator(ValidationError("username", "nope"))
++        failure = RecordingFailureHandler()
++        _register(plugin_manager, validator, failure)
++        info = make_info(username="  Fred  ", email="  FRED@Example.com  ")
++
++        with pytest.raises(StopValidation):
++            service.register(info)
++
++        assert validator.received is failure.received
++        assert validator.received is not info
++        assert validator.received.username == "Fred"
++        assert validator.received.email == "fred@example.com"
++
++    def test_preserves_identity_when_no_normalization_needed(
++        self, database, plugin_manager, default_groups
++    ):
++        service = RegistrationService(plugins=plugin_manager, users=User, db=database)
++        validator = RecordingValidator()
++        _register(plugin_manager, validator)
++        info = make_info(username="IdentityUser", email="identity@example.com")
++
++        service.register(info)
++
++        assert validator.received is info
++
++
++class TestUniquenessValidatorsRejectVariants:
++    @pytest.mark.parametrize(
++        "username",
++        ["fred", "FRED", "Fred", "  fred  ", "\tFRED\n"],
++    )
++    def test_username_rejects_ascii_case_variants_and_whitespace(self, Fred, username):
++        validator = UsernameUniquenessValidator(User)
++
++        with pytest.raises(ValidationError) as excinfo:
++            validator(make_info(username=username, email="other@example.com"))
++
++        assert excinfo.value.attribute == "username"
++
++    @pytest.mark.parametrize(
++        "email",
++        [
++            "fred@fred.fred",
++            "FRED@FRED.FRED",
++            "Fred@Fred.Fred",
++            "  fred@fred.fred  ",
++            "\tFRED@FRED.FRED\n",
++        ],
++    )
++    def test_email_rejects_ascii_case_variants_and_whitespace(self, Fred, email):
++        validator = EmailUniquenessValidator(User)
++
++        with pytest.raises(ValidationError) as excinfo:
++            validator(make_info(username="other", email=email))
++
++        assert excinfo.value.attribute == "email"
++
++    def test_username_allows_a_different_name(self, Fred):
++        validator = UsernameUniquenessValidator(User)
++
++        validator(make_info(username="Freddie", email="other@example.com"))
++
++    def test_username_rejects_non_ascii_exact_match(self, database, default_groups):
++        User(
++            username="Ünïcode",
++            email="unicode@example.com",
++            password="secret",
++            primary_group=default_groups[3],
++        ).save()
++        validator = UsernameUniquenessValidator(User)
++
++        with pytest.raises(ValidationError):
++            validator(make_info(username="Ünïcode", email="other@example.com"))
++
++    def test_email_allows_a_different_address(self, Fred):
++        validator = EmailUniquenessValidator(User)
++
++        validator(make_info(username="other", email="other@example.com"))
++
++
++class TestRegisterViewNormalization:
++    def test_register_view_stores_normalized_identity(
++        self, application, default_settings, default_groups
++    ):
++        from flaskbb.settings import flaskbb_config
++
++        flaskbb_config["ACTIVATE_ACCOUNT"] = False
++        application.config["WTF_CSRF_ENABLED"] = False
++        client = application.test_client()
++
++        response = client.post(
++            "/auth/register",
++            data={
++                "username": "  NewUser  ",
++                "email": "  NewUser@Example.COM  ",
++                "password": "secret",
++                "confirm_password": "secret",
++                "language": "en",
++                "accept_tos": "y",
++            },
++        )
++
++        assert response.status_code == 302
++        user = User.query.filter_by(username="NewUser").one()
++        assert user.email == "newuser@example.com"
++
++        # The autologin post-processor logs the new user in on the package
++        # scoped application context; clear it so later tests start fresh.
++        with application.test_request_context():
++            logout_user()
++
++
++class TestRegisterViewRejectsVariants:
++    def _post(self, application, **overrides):
++        data = {
++            "username": "NewUser",
++            "email": "newuser@example.com",
++            "password": "secret",
++            "confirm_password": "secret",
++            "language": "en",
++            "accept_tos": "y",
++        }
++        data.update(overrides)
++        application.config["WTF_CSRF_ENABLED"] = False
++        return application.test_client().post("/auth/register", data=data)
++
++    def test_rejects_case_variant_username(
++        self, application, default_settings, default_groups, Fred
++    ):
++        response = self._post(application, username="  fReD  ", email="other@example.com")
++
++        assert response.status_code == 200
++        assert User.query.filter_by(username="fReD").count() == 0
++
++    def test_rejects_case_variant_email(
++        self, application, default_settings, default_groups, Fred
++    ):
++        response = self._post(
++            application, username="AnotherUser", email="  FRED@FRED.FRED  "
++        )
++
++        assert response.status_code == 200
++        assert User.query.filter_by(username="AnotherUser").count() == 0

@@ -1,0 +1,649 @@
+--- a/MIGRATION.md
++++ b/MIGRATION.md
+@@ -0,0 +1,11 @@
++# Evaluated boundary
++Only registration and its validators are migrated. Models preserve legacy registration data;
++Providers hold Flask/SQLAlchemy/plugin resources; four Services split validation, persistence,
++post-processing and failure reporting; Pipeline owns their ordering and native exception propagation.
++The existing FlaskBB RegistrationService import is a host adapter over the registered route.
++Native plugin implementations and unrelated forum/auth features remain legacy. ORM user handles and
++registration values use explicit `any` compatibility contracts. This is not a claim of full-project
++AIPod migration or complete static capability control of plugins.
++Run `python -m pytest tests -q` from this repository for the original regression suite.
++The Interface requires a FlaskBB host context; verify through the actual application tests, not
++an invented standalone app.py. Keep existing public classes, hook behavior and import paths compatible.
+--- a/aipod_plan.json
++++ b/aipod_plan.json
+@@ -0,0 +1,37 @@
++{
++  "version": 6,
++  "objective": "Maintain FlaskBB registration behavior and preserve unrelated forum features",
++  "current_stage": "models",
++  "stages": {
++    "models": {
++      "status": "complete",
++      "plan": null
++    },
++    "providers": {
++      "status": "complete",
++      "plan": null
++    },
++    "services": {
++      "status": "complete",
++      "plan": null
++    },
++    "pipelines": {
++      "status": "complete",
++      "plan": null
++    },
++    "interfaces": {
++      "status": "complete",
++      "plan": null
++    }
++  },
++  "agent": {
++    "status": "complete",
++    "step": 0,
++    "history": [],
++    "verification": {
++      "status": "pending",
++      "attempts": 0,
++      "repairs": 0
++    }
++  }
++}--- a/beans_config.json
++++ b/beans_config.json
+@@ -0,0 +1,84 @@
++{
++  "beans": [
++    {
++      "id": "RegistrationEnvelope",
++      "category": "model",
++      "class_path": "modules.models.registration.RegistrationEnvelope",
++      "dependencies": [],
++      "inputs": {},
++      "outputs": {}
++    },
++    {
++      "id": "RegistrationResources",
++      "category": "provider",
++      "class_path": "modules.providers.public.registration.RegistrationResources",
++      "dependencies": [],
++      "inputs": {},
++      "outputs": {},
++      "methods": {}
++    },
++    {
++      "id": "ValidateRegistration",
++      "category": "service",
++      "class_path": "modules.services.public.validate.ValidateRegistration",
++      "dependencies": [
++        "RegistrationResources"
++      ],
++      "inputs": {
++        "envelope": "any"
++      },
++      "outputs": {
++        "failures": "any",
++        "native_error": "any"
++      },
++      "methods": {}
++    },
++    {
++      "id": "PersistRegistration",
++      "category": "service",
++      "class_path": "modules.services.public.persist.PersistRegistration",
++      "dependencies": [
++        "RegistrationResources"
++      ],
++      "inputs": {
++        "envelope": "any"
++      },
++      "outputs": {
++        "user": "any",
++        "native_error": "any"
++      },
++      "methods": {}
++    },
++    {
++      "id": "PostprocessRegistration",
++      "category": "service",
++      "class_path": "modules.services.public.postprocess.PostprocessRegistration",
++      "dependencies": [
++        "RegistrationResources"
++      ],
++      "inputs": {
++        "user": "any"
++      },
++      "outputs": {
++        "native_error": "any"
++      },
++      "methods": {}
++    },
++    {
++      "id": "ReportRegistrationFailure",
++      "category": "service",
++      "class_path": "modules.services.public.failure.ReportRegistrationFailure",
++      "dependencies": [
++        "RegistrationResources"
++      ],
++      "inputs": {
++        "envelope": "any",
++        "failures": "any"
++      },
++      "outputs": {
++        "native_error": "any"
++      },
++      "methods": {}
++    }
++  ]
++}
+--- a/config.toml
++++ b/config.toml
+@@ -0,0 +1 @@
++# Host supplies FlaskBB resources per registration invocation.
+--- a/flaskbb/auth/services/registration.py
++++ b/flaskbb/auth/services/registration.py
+@@ -51,95 +51,12 @@
+ )
+ 
+ 
+-@dataclass(init=True, repr=True, frozen=True, eq=False, order=False)
+-class UsernameRequirements:
+-    """
+-    Configuration for username requirements, minimum and maximum length
+-    and disallowed names.
+-    """
+-
+-    min: int
+-    max: int
+-    blacklist: list[str]
+ 
+ 
+-class UsernameValidator(UserValidator):
+-    """
+-    Validates that the username for the registering user meets the minimum
+-    requirements (appropriate length, not a forbidden name).
+-    """
+-
+-    def __init__(self, requirements: UsernameRequirements):
+-        self._requirements = requirements
+-
+-    @t.override
+-    def validate(self, user_info: UserRegistrationInfo):
+-        if not (self._requirements.min <= len(user_info.username) <= self._requirements.max):
+-            raise ValidationError(
+-                "username",
+-                _(
+-                    "Username must be between %(min)s and %(max)s characters long",  # noqa
+-                    min=self._requirements.min,
+-                    max=self._requirements.max,
+-                ),
+-            )
+-
+-        is_blacklisted = user_info.username in self._requirements.blacklist
+-        if is_blacklisted:  # pragma: no branch
+-            raise ValidationError(
+-                "username",
+-                _(
+-                    "%(username)s is a forbidden username",
+-                    username=user_info.username,
+-                ),
+-            )
+ 
+ 
+-class UsernameUniquenessValidator(UserValidator):
+-    """
+-    Validates that the provided username is unique in the application.
+-    """
+-
+-    def __init__(self, users: type[User]):
+-        self.users = users
+-
+-    @t.override
+-    def validate(self, user_info: UserRegistrationInfo):
+-        count = db.session.execute(
+-            sa.select(sa.func.count(self.users.id)).filter(
+-                sa.func.lower(self.users.username) == user_info.username
+-            )
+-        ).scalar_one()
+-        if count != 0:  # pragma: no branch
+-            raise ValidationError(
+-                "username",
+-                _(
+-                    "%(username)s is already registered",
+-                    username=user_info.username,
+-                ),
+-            )
+ 
+ 
+-class EmailUniquenessValidator(UserValidator):
+-    """
+-    Validates that the provided email is unique in the application.
+-    """
+-
+-    def __init__(self, users: type[User]):
+-        self.users = users
+-
+-    @t.override
+-    def validate(self, user_info: UserRegistrationInfo):
+-        count = db.session.execute(
+-            sa.select(sa.func.count(self.users.id)).filter(
+-                sa.func.lower(self.users.email) == user_info.email
+-            )
+-        ).scalar_one()
+-        if count != 0:  # pragma: no branch
+-            raise ValidationError(
+-                "email",
+-                _("%(email)s is already registered", email=user_info.email),
+-            )
+ 
+ 
+ class SendActivationPostProcessor(RegistrationPostProcessor):
+@@ -196,69 +113,7 @@
+             self.db.session.commit()
+ 
+ 
+-class RegistrationService(UserRegistrationService):
+-    """
+-    Default registration service for FlaskBB, runs the registration information
+-    against the provided validators and if it passes, creates the user.
+ 
+-    If any of the provided
+-    :class:`UserValidators<flaskbb.core.auth.registration.UserValidator>`
+-    raise a :class:`ValidationError<flaskbb.core.exceptions.ValidationError>`
+-    then the register method will raise a
+-    :class:`StopValidation<flaskbb.core.exceptions.StopValidation>` with all
+-    reasons why the registration was prevented.
+-    """
+-
+-    def __init__(self, plugins: "FlaskBBPluginManager", users: type[User], db: SQLAlchemy):
+-        self.plugins = plugins
+-        self.users = users
+-        self.db = db
+-
+-    @t.override
+-    def register(self, user_info: UserRegistrationInfo):
+-        try:
+-            self._validate_registration(user_info)
+-        except StopValidation as e:
+-            self._handle_failure(user_info, e.reasons)
+-            raise
+-
+-        user = self._store_user(user_info)
+-        self._post_process(user)
+-        return user
+-
+-    def _validate_registration(self, user_info: UserRegistrationInfo):
+-        failures: list[tuple[str, str]] = []
+-        validators = self.plugins.hook.flaskbb_gather_registration_validators()
+-
+-        for v in chain.from_iterable(validators):
+-            try:
+-                v(user_info)
+-            except ValidationError as e:
+-                failures.append((e.attribute, e.reason))
+-        if failures:
+-            raise StopValidation(failures)
+-
+-    def _handle_failure(self, user_info: UserRegistrationInfo, failures: list[tuple[str, str]]):
+-        self.plugins.hook.flaskbb_registration_failure_handler(
+-            user_info=user_info, failures=failures
+-        )
+-
+-    def _store_user(self, user_info: UserRegistrationInfo):
+-        try:
+-            user = User(
+-                username=user_info.username,
+-                email=user_info.email,
+-                password=user_info.password,
+-                language=user_info.language,
+-                primary_group_id=user_info.group,
+-                date_joined=datetime.now(UTC),
+-            )
+-            self.db.session.add(user)
+-            self.db.session.commit()
+-            return user
+-        except Exception as e:
+-            self.db.session.rollback()
+-            raise PersistenceError("Could not persist user") from e
+-
+-    def _post_process(self, user: User):
+-        self.plugins.hook.flaskbb_registration_post_processor(user=user)
++from modules.models.registration import UsernameRequirements as UsernameRequirements
++from modules.services.public.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator
++from interfaces.registration.adapter import RegistrationAdapter as RegistrationService
+--- a/interfaces/registration/adapter.py
++++ b/interfaces/registration/adapter.py
+@@ -0,0 +1,25 @@
++from pathlib import Path
++from ai_pod_cli.interface import InterfaceAdapter, create_context, load_manifest
++from flaskbb.core.auth.registration import UserRegistrationService
++from modules.models.registration import RegistrationEnvelope
++from modules.providers.public.registration import bind_registration
++
++class RegistrationAdapter(InterfaceAdapter, UserRegistrationService):
++    def __init__(self, plugins=None, users=None, db=None):
++        self.plugins, self.users, self.db = plugins, users, db
++
++    def required_routes(self):
++        return ['register_user']
++
++    def smoke_payloads(self):
++        return {'register_user': {'envelope': None}}
++
++    def start(self, context, payload=None):
++        return context.run_route('register_user', payload or {})
++
++    def register(self, user_info):
++        root = Path(__file__).resolve().parents[2]
++        _, manifest = load_manifest('registration', root)
++        with bind_registration(self.plugins, self.users, self.db):
++            result = self.start(create_context(manifest, root), {'envelope': RegistrationEnvelope(info=user_info)})
++        return result['user']
+--- a/interfaces/registration/interface.json
++++ b/interfaces/registration/interface.json
+@@ -0,0 +1,14 @@
++{
++  "name": "registration",
++  "kind": "web",
++  "adapter": {
++    "path": "interfaces/registration/adapter.py",
++    "class_name": "RegistrationAdapter"
++  },
++  "artifacts": [],
++  "lifecycle": {},
++  "support": {
++    "standalone": false,
++    "host": "FlaskBB request/application context"
++  }
++}--- a/modules/models/registration.py
++++ b/modules/models/registration.py
+@@ -0,0 +1,17 @@
++from typing import Any
++from dataclasses import dataclass
++from ai_pod_cli import Model
++
++class RegistrationEnvelope(Model):
++    info: Any
++
++@dataclass(init=True, repr=True, frozen=True, eq=False, order=False)
++class UsernameRequirements:
++    """
++    Configuration for username requirements, minimum and maximum length
++    and disallowed names.
++    """
++
++    min: int
++    max: int
++    blacklist: list[str]
+--- a/modules/providers/impl/registration.py
++++ b/modules/providers/impl/registration.py
+@@ -0,0 +1,48 @@
++from contextlib import contextmanager
++from contextvars import ContextVar
++from datetime import datetime
++from itertools import chain
++import sqlalchemy as sa
++from pytz import UTC
++from flaskbb.extensions import db as default_db
++from flaskbb.user.models import User
++from flaskbb.core.exceptions import PersistenceError
++
++_resources = ContextVar('registration_resources')
++
++@contextmanager
++def bind_registration(plugins, users, db):
++    token = _resources.set((plugins, users, db))
++    try:
++        yield
++    finally:
++        _resources.reset(token)
++
++class RegistrationResources:
++    def validators(self):
++        plugins, _, _ = _resources.get()
++        return list(chain.from_iterable(plugins.hook.flaskbb_gather_registration_validators()))
++
++    def report_failure(self, info, failures):
++        plugins, _, _ = _resources.get()
++        plugins.hook.flaskbb_registration_failure_handler(user_info=info, failures=failures)
++
++    def store(self, info):
++        _, _, db = _resources.get()
++        try:
++            user = User(username=info.username, email=info.email, password=info.password,
++                        language=info.language, primary_group_id=info.group, date_joined=datetime.now(UTC))
++            db.session.add(user)
++            db.session.commit()
++            return user
++        except Exception as error:
++            db.session.rollback()
++            raise PersistenceError('Could not persist user') from error
++
++    def post_process(self, user):
++        plugins, _, _ = _resources.get()
++        plugins.hook.flaskbb_registration_post_processor(user=user)
++
++    @staticmethod
++    def count_users(users, field, value):
++        return default_db.session.execute(sa.select(sa.func.count(users.id)).filter(sa.func.lower(getattr(users, field)) == value)).scalar_one()
+--- a/modules/providers/public/registration.py
++++ b/modules/providers/public/registration.py
+@@ -0,0 +1 @@
++from ..impl.registration import RegistrationResources as RegistrationResources, bind_registration as bind_registration
+--- a/modules/services/impl/failure.py
++++ b/modules/services/impl/failure.py
+@@ -0,0 +1,16 @@
++from injector import inject
++from ai_pod_cli import PipelineContext
++from modules.providers.public.registration import RegistrationResources
++from flaskbb.core.exceptions import ValidationError
++
++class ReportRegistrationFailure:
++    @inject
++    def __init__(self, resources: RegistrationResources):
++        self.resources = resources
++
++    def execute(self, ctx: PipelineContext):
++        try:
++            self.resources.report_failure(ctx.get('envelope').info, ctx.get('failures'))
++            return {'native_error': None}
++        except Exception as error:
++            return {'native_error': error}
+--- a/modules/services/impl/persist.py
++++ b/modules/services/impl/persist.py
+@@ -0,0 +1,15 @@
++from injector import inject
++from ai_pod_cli import PipelineContext
++from modules.providers.public.registration import RegistrationResources
++from flaskbb.core.exceptions import ValidationError
++
++class PersistRegistration:
++    @inject
++    def __init__(self, resources: RegistrationResources):
++        self.resources = resources
++
++    def execute(self, ctx: PipelineContext):
++        try:
++            return {'user': self.resources.store(ctx.get('envelope').info), 'native_error': None}
++        except Exception as error:
++            return {'user': None, 'native_error': error}
+--- a/modules/services/impl/postprocess.py
++++ b/modules/services/impl/postprocess.py
+@@ -0,0 +1,16 @@
++from injector import inject
++from ai_pod_cli import PipelineContext
++from modules.providers.public.registration import RegistrationResources
++from flaskbb.core.exceptions import ValidationError
++
++class PostprocessRegistration:
++    @inject
++    def __init__(self, resources: RegistrationResources):
++        self.resources = resources
++
++    def execute(self, ctx: PipelineContext):
++        try:
++            self.resources.post_process(ctx.get('user'))
++            return {'native_error': None}
++        except Exception as error:
++            return {'native_error': error}
+--- a/modules/services/impl/validate.py
++++ b/modules/services/impl/validate.py
+@@ -0,0 +1,21 @@
++from injector import inject
++from ai_pod_cli import PipelineContext
++from modules.providers.public.registration import RegistrationResources
++from flaskbb.core.exceptions import ValidationError
++
++class ValidateRegistration:
++    @inject
++    def __init__(self, resources: RegistrationResources):
++        self.resources = resources
++
++    def execute(self, ctx: PipelineContext):
++        failures = []
++        try:
++            for validator in self.resources.validators():
++                try:
++                    validator(ctx.get('envelope').info)
++                except ValidationError as error:
++                    failures.append((error.attribute, error.reason))
++            return {'failures': failures, 'native_error': None}
++        except Exception as error:
++            return {'failures': failures, 'native_error': error}
+--- a/modules/services/impl/validators.py
++++ b/modules/services/impl/validators.py
+@@ -0,0 +1,75 @@
++import typing as t
++from flask_babelplus import gettext as _
++from flaskbb.core.auth.registration import UserValidator, UserRegistrationInfo
++from flaskbb.core.exceptions import ValidationError
++from flaskbb.user.models import User
++from modules.models.registration import UsernameRequirements
++from modules.providers.public.registration import RegistrationResources
++
++class UsernameValidator(UserValidator):
++    """
++    Validates that the username for the registering user meets the minimum
++    requirements (appropriate length, not a forbidden name).
++    """
++
++    def __init__(self, requirements: UsernameRequirements):
++        self._requirements = requirements
++
++    @t.override
++    def validate(self, user_info: UserRegistrationInfo):
++        if not (self._requirements.min <= len(user_info.username) <= self._requirements.max):
++            raise ValidationError(
++                "username",
++                _(
++                    "Username must be between %(min)s and %(max)s characters long",  # noqa
++                    min=self._requirements.min,
++                    max=self._requirements.max,
++                ),
++            )
++
++        is_blacklisted = user_info.username in self._requirements.blacklist
++        if is_blacklisted:  # pragma: no branch
++            raise ValidationError(
++                "username",
++                _(
++                    "%(username)s is a forbidden username",
++                    username=user_info.username,
++                ),
++            )
++
++class UsernameUniquenessValidator(UserValidator):
++    """
++    Validates that the provided username is unique in the application.
++    """
++
++    def __init__(self, users: type[User]):
++        self.users = users
++
++    @t.override
++    def validate(self, user_info: UserRegistrationInfo):
++        count = RegistrationResources.count_users(self.users, 'username', user_info.username)
++        if count != 0:  # pragma: no branch
++            raise ValidationError(
++                "username",
++                _(
++                    "%(username)s is already registered",
++                    username=user_info.username,
++                ),
++            )
++
++class EmailUniquenessValidator(UserValidator):
++    """
++    Validates that the provided email is unique in the application.
++    """
++
++    def __init__(self, users: type[User]):
++        self.users = users
++
++    @t.override
++    def validate(self, user_info: UserRegistrationInfo):
++        count = RegistrationResources.count_users(self.users, 'email', user_info.email)
++        if count != 0:  # pragma: no branch
++            raise ValidationError(
++                "email",
++                _("%(email)s is already registered", email=user_info.email),
++            )
+--- a/modules/services/public/failure.py
++++ b/modules/services/public/failure.py
+@@ -0,0 +1 @@
++from ..impl.failure import ReportRegistrationFailure as ReportRegistrationFailure
+--- a/modules/services/public/persist.py
++++ b/modules/services/public/persist.py
+@@ -0,0 +1 @@
++from ..impl.persist import PersistRegistration as PersistRegistration
+--- a/modules/services/public/postprocess.py
++++ b/modules/services/public/postprocess.py
+@@ -0,0 +1 @@
++from ..impl.postprocess import PostprocessRegistration as PostprocessRegistration
+--- a/modules/services/public/validate.py
++++ b/modules/services/public/validate.py
+@@ -0,0 +1 @@
++from ..impl.validate import ValidateRegistration as ValidateRegistration
+--- a/modules/services/public/validators.py
++++ b/modules/services/public/validators.py
+@@ -0,0 +1 @@
++from ..impl.validators import UsernameValidator as UsernameValidator, UsernameUniquenessValidator as UsernameUniquenessValidator, EmailUniquenessValidator as EmailUniquenessValidator
+--- a/pipelines/registration.py
++++ b/pipelines/registration.py
+@@ -0,0 +1,29 @@
++from ai_pod_cli.config import load_beans
++from ai_pod_cli.container import Pod, build_container
++from flaskbb.core.exceptions import StopValidation
++from modules.services.public.validate import ValidateRegistration
++from modules.services.public.persist import PersistRegistration
++from modules.services.public.postprocess import PostprocessRegistration
++from modules.services.public.failure import ReportRegistrationFailure
++
++def run(ctx):
++    S = Pod(build_container(load_beans()))
++    S(ValidateRegistration).execute_all(ctx)
++    error = ctx.get('native_error')
++    if error is not None and not isinstance(error, StopValidation):
++        raise error
++    if isinstance(error, StopValidation):
++        ctx.set('failures', error.reasons)
++    if ctx.get('failures') or isinstance(error, StopValidation):
++        error = error or StopValidation(ctx.get('failures'))
++        S(ReportRegistrationFailure).execute_all(ctx)
++        if ctx.get('native_error') is not None:
++            raise ctx.get('native_error')
++        raise error
++    S(PersistRegistration).execute_all(ctx)
++    if ctx.get('native_error') is not None:
++        raise ctx.get('native_error')
++    S(PostprocessRegistration).execute_all(ctx)
++    if ctx.get('native_error') is not None:
++        raise ctx.get('native_error')
++    return {'user': ctx.get('user')}
+--- a/routes.toml
++++ b/routes.toml
+@@ -0,0 +1,2 @@
++[register_user]
++pipeline = "pipelines/registration.py"

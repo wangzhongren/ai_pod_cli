@@ -1,0 +1,24 @@
+...F....ssssssssssssssssss                                               [100%]
+=================================== FAILURES ===================================
+_________________________ test_normalized_failure_hook _________________________
+
+plugin_manager = <flaskbb.plugins.manager.FlaskBBPluginManager object at 0x10ab12900>
+database = <SQLAlchemy sqlite://>
+default_groups = [<Group 1 Administrator>, <Group 2 Super Moderator>, <Group 3 Moderator>, <Group 4 Member>, <Group 5 Banned>, <Group 6 Guest>]
+
+    def test_normalized_failure_hook(plugin_manager, database, default_groups):
+        def reject(value):
+            raise ValidationError("username", "rejected")
+        supplied = info(username=" NewMember ", email=" NEW@Example.Org ")
+        hooks = Hooks(validator=reject)
+        with pytest.raises(StopValidation):
+            service(plugin_manager, database, hooks).register(supplied)
+        assert len(hooks.failures) == 1
+        failed_info, reasons = hooks.failures[0]
+>       assert failed_info is hooks.validated[0]
+E       AssertionError: assert UserRegistrationInfo(username='NewMember', email='new@example.org', language='en', group=4) is UserRegistrationInfo(username='NewMember', email='new@example.org', language='en', group=4)
+
+/Users/wangzhongren/code/vibeingcode/ai-pod-cli/experiments/real-framework-comparison/test_acceptance.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED ../../../../../Users/wangzhongren/code/vibeingcode/ai-pod-cli/experiments/real-framework-comparison/test_acceptance.py::test_normalized_failure_hook
+1 failed, 7 passed, 18 skipped in 0.51s

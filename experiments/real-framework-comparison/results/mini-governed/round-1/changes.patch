@@ -1,0 +1,348 @@
+--- a/interfaces/registration/adapter.py
++++ b/interfaces/registration/adapter.py
+@@ -1,7 +1,7 @@
+ from pathlib import Path
+ from ai_pod_cli.interface import InterfaceAdapter, create_context, load_manifest
+ from flaskbb.core.auth.registration import UserRegistrationService
+-from modules.models.registration import RegistrationEnvelope
++from modules.models.registration import RegistrationEnvelope, normalize_registration_info
+ from modules.providers.public.registration import bind_registration
+ 
+ class RegistrationAdapter(InterfaceAdapter, UserRegistrationService):
+@@ -20,6 +20,8 @@
+     def register(self, user_info):
+         root = Path(__file__).resolve().parents[2]
+         _, manifest = load_manifest('registration', root)
++        normalized_info = normalize_registration_info(user_info)
++        payload = {'envelope': RegistrationEnvelope(info=normalized_info)}
+         with bind_registration(self.plugins, self.users, self.db):
+-            result = self.start(create_context(manifest, root), {'envelope': RegistrationEnvelope(info=user_info)})
++            result = self.start(create_context(manifest, root), payload)
+         return result['user']
+--- a/modules/models/registration.py
++++ b/modules/models/registration.py
+@@ -1,6 +1,8 @@
+ from typing import Any
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ from ai_pod_cli import Model
++
++from flaskbb.core.auth.registration import UserRegistrationInfo
+ 
+ class RegistrationEnvelope(Model):
+     info: Any
+@@ -15,3 +17,27 @@
+     min: int
+     max: int
+     blacklist: list[str]
++
++
++def normalize_username(username: str) -> str:
++    """Trim surrounding whitespace while preserving the display case."""
++    return username.strip()
++
++
++def normalize_email(email: str) -> str:
++    """Trim surrounding whitespace and lowercase the email address."""
++    return email.strip().lower()
++
++
++def normalize_registration_info(info: UserRegistrationInfo) -> UserRegistrationInfo:
++    """Return ``info`` with normalized username/email.
++
++    The caller's frozen registration info is never mutated and the original
++    object is returned unchanged when no normalization is required so existing
++    plugins that compare identity continue to work.
++    """
++    username = normalize_username(info.username)
++    email = normalize_email(info.email)
++    if username == info.username and email == info.email:
++        return info
++    return replace(info, username=username, email=email)
+--- a/modules/services/impl/validate.py
++++ b/modules/services/impl/validate.py
+@@ -1,5 +1,6 @@
+ from injector import inject
+ from ai_pod_cli import PipelineContext
++from modules.models.registration import RegistrationEnvelope, normalize_registration_info
+ from modules.providers.public.registration import RegistrationResources
+ from flaskbb.core.exceptions import ValidationError
+ 
+@@ -11,9 +12,14 @@
+     def execute(self, ctx: PipelineContext):
+         failures = []
+         try:
++            envelope = ctx.get('envelope')
++            info = normalize_registration_info(envelope.info)
++            if info is not envelope.info:
++                envelope = RegistrationEnvelope(info=info)
++                ctx.set('envelope', envelope)
+             for validator in self.resources.validators():
+                 try:
+-                    validator(ctx.get('envelope').info)
++                    validator(info)
+                 except ValidationError as error:
+                     failures.append((error.attribute, error.reason))
+             return {'failures': failures, 'native_error': None}
+--- a/modules/services/impl/validators.py
++++ b/modules/services/impl/validators.py
+@@ -3,7 +3,11 @@
+ from flaskbb.core.auth.registration import UserValidator, UserRegistrationInfo
+ from flaskbb.core.exceptions import ValidationError
+ from flaskbb.user.models import User
+-from modules.models.registration import UsernameRequirements
++from modules.models.registration import (
++    UsernameRequirements,
++    normalize_email,
++    normalize_username,
++)
+ from modules.providers.public.registration import RegistrationResources
+ 
+ class UsernameValidator(UserValidator):
+@@ -47,13 +51,14 @@
+ 
+     @t.override
+     def validate(self, user_info: UserRegistrationInfo):
+-        count = RegistrationResources.count_users(self.users, 'username', user_info.username)
++        username = normalize_username(user_info.username).lower()
++        count = RegistrationResources.count_users(self.users, 'username', username)
+         if count != 0:  # pragma: no branch
+             raise ValidationError(
+                 "username",
+                 _(
+                     "%(username)s is already registered",
+-                    username=user_info.username,
++                    username=normalize_username(user_info.username),
+                 ),
+             )
+ 
+@@ -67,9 +72,13 @@
+ 
+     @t.override
+     def validate(self, user_info: UserRegistrationInfo):
+-        count = RegistrationResources.count_users(self.users, 'email', user_info.email)
++        email = normalize_email(user_info.email)
++        count = RegistrationResources.count_users(self.users, 'email', email)
+         if count != 0:  # pragma: no branch
+             raise ValidationError(
+                 "email",
+-                _("%(email)s is already registered", email=user_info.email),
++                _(
++                    "%(email)s is already registered",
++                    email=normalize_email(user_info.email),
++                ),
+             )
+--- a/tests/unit/auth/test_registration_normalization.py
++++ b/tests/unit/auth/test_registration_normalization.py
+@@ -0,0 +1,211 @@
++import pytest
++from flaskbb.auth.services.registration import (
++    EmailUniquenessValidator,
++    RegistrationService,
++    UsernameUniquenessValidator,
++)
++from flaskbb.core.auth.registration import UserRegistrationInfo, UserValidator
++from flaskbb.core.exceptions import StopValidation, ValidationError
++from flaskbb.user.models import User
++from pluggy import HookimplMarker
++
++pytestmark = pytest.mark.usefixtures("default_settings")
++
++
++class RaisingValidator(UserValidator):
++    def validate(self, user_info):
++        raise ValidationError("username", "nope")
++
++
++class CapturingValidator(UserValidator):
++    def __init__(self):
++        self.seen = []
++
++    def validate(self, user_info):
++        self.seen.append(user_info)
++
++
++def _service(plugin_manager, database):
++    return RegistrationService(plugins=plugin_manager, users=User, db=database)
++
++
++def _info(**overrides):
++    values = {
++        "username": "  Fred  ",
++        "password": "secret",
++        "email": "  FRED@Example.COM  ",
++        "language": "de",
++        "group": 4,
++    }
++    values.update(overrides)
++    return UserRegistrationInfo(**values)
++
++
++def test_registration_stores_normalized_identity(database, plugin_manager, default_groups):
++    service = _service(plugin_manager, database)
++    info = _info()
++
++    user = service.register(info)
++
++    assert user.username == "Fred"
++    assert user.email == "fred@example.com"
++    assert user.language == "de"
++    assert user.primary_group_id == 4
++    assert user.check_password("secret")
++    # The caller's frozen info must not be mutated.
++    assert info.username == "  Fred  "
++    assert info.email == "  FRED@Example.COM  "
++    assert info.password == "secret"
++
++
++def test_validator_and_failure_hook_see_same_normalized_identity(
++    database, plugin_manager, default_groups
++):
++    seen = {}
++    validator = CapturingValidator()
++    impl = HookimplMarker("flaskbb")
++
++    class Impls:
++        @impl
++        def flaskbb_gather_registration_validators(self):
++            return [validator, RaisingValidator()]
++
++        @impl
++        def flaskbb_registration_failure_handler(self, user_info, failures):
++            seen["failure"] = user_info
++
++    plugin_manager.register(Impls())
++    service = _service(plugin_manager, database)
++
++    with pytest.raises(StopValidation):
++        service.register(_info())
++
++    assert seen["failure"] is validator.seen[0]
++    assert seen["failure"].username == "Fred"
++    assert seen["failure"].email == "fred@example.com"
++
++
++def test_identity_preserved_when_no_normalization_needed(database, plugin_manager):
++    seen = {}
++    impl = HookimplMarker("flaskbb")
++
++    class Impls:
++        @impl
++        def flaskbb_gather_registration_validators(self):
++            return [RaisingValidator()]
++
++        @impl
++        def flaskbb_registration_failure_handler(self, user_info, failures):
++            seen["failure"] = user_info
++
++    plugin_manager.register(Impls())
++    service = _service(plugin_manager, database)
++    info = UserRegistrationInfo(
++        username="Fred",
++        password="secret",
++        email="fred@example.com",
++        language="de",
++        group=4,
++    )
++
++    with pytest.raises(StopValidation):
++        service.register(info)
++
++    assert seen["failure"] is info
++
++
++def test_username_uniqueness_rejects_case_variant_and_whitespace(Fred):
++    validator = UsernameUniquenessValidator(User)
++    registration = UserRegistrationInfo(
++        username="  fReD  ",
++        email="other@example.com",
++        language="en",
++        group=4,
++        password="secret",
++    )
++
++    with pytest.raises(ValidationError) as excinfo:
++        validator(registration)
++
++    assert excinfo.value.attribute == "username"
++
++
++def test_email_uniqueness_rejects_case_variant_and_whitespace(Fred):
++    validator = EmailUniquenessValidator(User)
++    registration = UserRegistrationInfo(
++        username="brandnew",
++        email="  FRED@FRED.FRED  ",
++        language="en",
++        group=4,
++        password="secret",
++    )
++
++    with pytest.raises(ValidationError) as excinfo:
++        validator(registration)
++
++    assert excinfo.value.attribute == "email"
++
++
++def test_adapter_passes_normalized_info_to_registered_route(monkeypatch):
++    from interfaces.registration.adapter import RegistrationAdapter
++
++    captured = {}
++
++    def fake_start(self, context, payload=None):
++        captured["info"] = payload["envelope"].info
++        return {"user": "stub"}
++
++    monkeypatch.setattr(RegistrationAdapter, "start", fake_start)
++    adapter = RegistrationAdapter()
++    info = _info()
++
++    assert adapter.register(info) == "stub"
++    assert captured["info"] is not info
++    assert captured["info"].username == "Fred"
++    assert captured["info"].email == "fred@example.com"
++    # The caller's info is untouched.
++    assert info.username == "  Fred  "
++    assert info.email == "  FRED@Example.COM  "
++
++
++def test_adapter_preserves_identity_when_already_normalized(monkeypatch):
++    from interfaces.registration.adapter import RegistrationAdapter
++
++    captured = {}
++
++    def fake_start(self, context, payload=None):
++        captured["info"] = payload["envelope"].info
++        return {"user": "stub"}
++
++    monkeypatch.setattr(RegistrationAdapter, "start", fake_start)
++    adapter = RegistrationAdapter()
++    info = UserRegistrationInfo(
++        username="Fred",
++        password="secret",
++        email="fred@example.com",
++        language="de",
++        group=4,
++    )
++
++    adapter.register(info)
++
++    assert captured["info"] is info
++
++
++def test_pipeline_normalizes_when_invoked_directly(
++    database, plugin_manager, default_groups
++):
++    from ai_pod_cli import PipelineContext
++    from modules.models.registration import RegistrationEnvelope
++    from modules.providers.public.registration import bind_registration
++    from pipelines.registration import run
++
++    info = _info()
++    ctx = PipelineContext(params={"envelope": RegistrationEnvelope(info=info)})
++
++    with bind_registration(plugin_manager, User, database):
++        result = run(ctx)
++
++    assert result["user"].username == "Fred"
++    assert result["user"].email == "fred@example.com"
++    assert info.username == "  Fred  "

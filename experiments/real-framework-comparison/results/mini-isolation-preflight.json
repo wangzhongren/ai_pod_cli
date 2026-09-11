@@ -1,0 +1,17 @@
+{
+  "heredoc": {
+    "output": "HEREDOC OK\n",
+    "returncode": 0,
+    "exception_info": ""
+  },
+  "denial": {
+    "output": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1027, in read_text\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nPermissionError: [Errno 1] Operation not permitted: '/tmp/aipod-comparison-original-future.log'\n",
+    "returncode": 1,
+    "exception_info": ""
+  },
+  "regression": {
+    "output": "........................................................................ [ 15%]\n........................................................................ [ 31%]\n........................................................................ [ 47%]\n........................................................................ [ 63%]\n........................................................................ [ 79%]\n........................................................................ [ 95%]\n......................                                                   [100%]\n=============================== warnings summary ===============================\ntests/unit/test_editor_hooks.py::test_layout_renders_plugin_script\n  /private/tmp/aipod-flaskbb-trial/mini-original/project/flaskbb/user/models.py:384: SAWarning: Instance <User at 0x1102256a0> is detached, dynamic relationship cannot return a correct result.   This warning will become a DetachedInstanceError in a future release.\n    return [self.primary_group] + list(self.secondary_groups)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n454 passed, 1 warning in 23.73s\n",
+    "returncode": 0,
+    "exception_info": ""
+  }
+}
